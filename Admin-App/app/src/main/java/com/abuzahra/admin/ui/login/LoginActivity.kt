@@ -56,7 +56,10 @@ class LoginActivity : AppCompatActivity() {
         val entry = "[$timestamp] $msg"
         Log.d(TAG, entry)
         debugLogs.add(0, entry)
-        if (debugLogs.size > 30) debugLogs.removeRange(30, debugLogs.size)
+        if (debugLogs.size > 30) {
+            val excess = debugLogs.subList(30, debugLogs.size)
+            excess.clear()
+        }
         if (debugPanelReady && ::debugLogText.isInitialized && ::debugLogScroll.isInitialized) {
             val sb = StringBuilder()
             for (log in debugLogs) sb.append(log).append("\n")
@@ -164,8 +167,9 @@ class LoginActivity : AppCompatActivity() {
             addLog("❌ خدمات Google Play غير متوفرة! رمز الخطأ: $code")
             if (availability.isUserResolvableError(code)) {
                 addLog("   يمكن إصلاح المشكلة - سيتم طلب التحديث")
-                availability.showErrorDialogFragment(this, code, 1) { _, _ ->
+                availability.showErrorDialogFragment(this, code, 1) { dialog ->
                     addLog("تم رفض تحديث خدمات Google Play")
+                    dialog?.dismiss()
                 }
             } else {
                 addLog("   الجهاز لا يدعم خدمات Google Play - لا يمكن استخدام تسجيل جوجل")

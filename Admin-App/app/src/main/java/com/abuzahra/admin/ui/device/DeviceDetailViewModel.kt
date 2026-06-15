@@ -52,7 +52,10 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
         val logs = _debugLogs.value ?: mutableListOf()
         logs.add(0, entry)  // newest first
         // Keep max 50 entries
-        if (logs.size > 50) logs.removeRange(50, logs.size)
+        if (logs.size > 50) {
+            val excess = logs.subList(50, logs.size)
+            excess.clear()
+        }
         _debugLogs.postValue(logs)
     }
 

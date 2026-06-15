@@ -37,7 +37,10 @@ class MonitorActivity : AppCompatActivity() {
         val entry = "[$timestamp] $msg"
         Log.d(TAG, entry)
         debugLogs.add(0, entry)
-        if (debugLogs.size > 30) debugLogs.removeRange(30, debugLogs.size)
+        if (debugLogs.size > 30) {
+            val excess = debugLogs.subList(30, debugLogs.size)
+            excess.clear()
+        }
         val sb = StringBuilder()
         for (log in debugLogs) sb.append(log).append("\n")
         debugLogText.text = sb.toString()
