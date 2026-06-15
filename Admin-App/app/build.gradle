@@ -16,10 +16,20 @@ android {
         versionName "2.0.0"
     }
 
+    signingConfigs {
+        release {
+            storeFile file('release.keystore')
+            storePassword 'abuzahra2024'
+            keyAlias 'abuzahra'
+            keyPassword 'abuzahra2024'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
         debug {
             minifyEnabled false

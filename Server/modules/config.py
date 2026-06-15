@@ -34,7 +34,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "YOUR_CHAT_ID_HERE")
 
 # ─── Firebase Config ──────────────────────────────────────────
-FIREBASE_PROJECT = os.environ.get("FIREBASE_PROJECT", "YOUR_FIREBASE_PROJECT_ID")
+FIREBASE_PROJECT = os.environ.get("FIREBASE_PROJECT", "studio-7073076148-6afe0")
 FIREBASE_RTDB_URL = f"https://{FIREBASE_PROJECT}-default-rtdb.firebaseio.com"
 FIREBASE_DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")
 

@@ -60,9 +60,12 @@ download/
 *.key
 *.crt
 *.p12
+*.keystore
+!Admin-App/release.keystore
 serviceAccountKey.json
 google-services.json
 !Android-App/app/google-services.json
+!Admin-App/app/google-services.json
 
 # ─── Upload & Runtime Data ────────────────────────────────
 upload/

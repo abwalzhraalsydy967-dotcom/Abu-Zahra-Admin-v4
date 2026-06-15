@@ -1,26 +1,173 @@
 {
   "project_info": {
-    "project_number": "7073076148",
+    "project_number": "787676787951",
+    "firebase_url": "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com",
     "project_id": "studio-7073076148-6afe0",
-    "storage_bucket": "studio-7073076148-6afe0.appspot.com"
+    "storage_bucket": "studio-7073076148-6afe0.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:7073076148:android:a1b2c3d4e5f6",
+        "mobilesdk_app_id": "1:787676787951:android:78bb939f7ab24b0494171a",
         "android_client_info": {
           "package_name": "com.abuzahra.manager"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "787676787951-05ee3u5m89k5fn6mmnhrnm21sjsclemg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "6f0df4078451f0d84b3143da1b085b273ea9c085"
+          }
+        },
+        {
+          "client_id": "787676787951-1vreujdnk52evutc6ktt0tj2cfqeh8m2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "6cfe3668b1618975c1185f91b64d7211ae3ca3cd"
+          }
+        },
+        {
+          "client_id": "787676787951-2lvg60hmtjkdb9mbie389ir8j5ad3p71.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "c9da63407701bfb63bda69f836dd39aed213c1fa"
+          }
+        },
+        {
+          "client_id": "787676787951-37vhv5mbo8m0u5e4phog3q1mupn4jvdl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "dee91178ee258d4734f3e1cd2b75fbb46fbccbe5"
+          }
+        },
+        {
+          "client_id": "787676787951-4s89kvjfgs7tp7t02sos22sbeddupcrv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "6a33b844298ab7a717fe66bebd4b6d8746bfc413"
+          }
+        },
+        {
+          "client_id": "787676787951-5ver5r77jsj2i4bjph46ro2njl9sd5mk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "fbcf541bf4857e4494b154f30945a848e02c0fad"
+          }
+        },
+        {
+          "client_id": "787676787951-827srgbv5m68240ise2058bja5hm0ads.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "b453fd07d058dbeef308263bac8afe04c948ff0f"
+          }
+        },
+        {
+          "client_id": "787676787951-87v94594m979tml1figecp6qvu5tspj6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "df26a77542a7e82567f0d5ef5748e0f752393f00"
+          }
+        },
+        {
+          "client_id": "787676787951-999kfc6uuut3n9an7tj0q67hnjjo3ab8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "caf18e400be78469829eb9bd1afc429f433290e4"
+          }
+        },
+        {
+          "client_id": "787676787951-9b4cm80ekgrik5maojhshlfffq8anqr2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "180ced4c4e45ac961c4526c09a3fe16f1c8e627a"
+          }
+        },
+        {
+          "client_id": "787676787951-gh7c2srnj55pvvihof781cb5emia8drp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "e89afe5af6c95a51d760265b9c25339b2ade0b9f"
+          }
+        },
+        {
+          "client_id": "787676787951-i8kpuf1trrkak07j4uif3a18o0repssh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "31d05a9484972b5c37b1e763c08d1d54ca3810ab"
+          }
+        },
+        {
+          "client_id": "787676787951-lup7uc900lqhu6mtpor7tomtrot9ffh1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "b9951c83ee067558fe6b025205839b6240695a69"
+          }
+        },
+        {
+          "client_id": "787676787951-m8koj3s11vfd362pjvu31tdj1k8feghp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "f9ad3193a29281eea303ec4e00002ccda47632a3"
+          }
+        },
+        {
+          "client_id": "787676787951-rinvrt8e1ren2b2eg9t7pj2sr6up6t7q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "faeaa15d0324deac48a2c81e6dc2136b7bb7c98a"
+          }
+        },
+        {
+          "client_id": "787676787951-s7tt64qovnre7iiv0l2uqk1q422m2788.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "18ad57570667db0cd38a3b1a14cb65df1228a778"
+          }
+        },
+        {
+          "client_id": "787676787951-tnth3s6kj4290gnmf7o2rbqf3chi751u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "d7f1ab4cb36bd0e8fc20d3b4bfe09829deb97090"
+          }
+        },
+        {
+          "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyDummyKeyForBuild"
+          "current_key": "AIzaSyASBVIQ0AvrsLqAgbT9k6L7bCpZKoqdvjo"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

@@ -1,0 +1,108 @@
+name: Build Android APKs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Admin-App/**'
+      - 'Android-App/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-admin:
+    name: Build Admin App (Release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Create release keystore
+        working-directory: Admin-App/app
+        run: |
+          keytool -genkeypair -v \
+            -keystore release.keystore \
+            -alias abuzahra \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass abuzahra2024 -keypass abuzahra2024 \
+            -dname "CN=Abu Zahra,OU=Dev,O=AbuZahra,L=Sanaa,ST=Sanaa,C=YE"
+
+      - name: Build Admin App
+        working-directory: Admin-App
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload Admin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Admin-App-APK
+          path: Admin-App/app/build/outputs/apk/release/*.apk
+
+  build-manager:
+    name: Build Manager App (Debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build Manager App
+        working-directory: Android-App
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Manager APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-App-APK
+          path: Android-App/app/build/outputs/apk/debug/*.apk
+
+  release:
+    name: Create GitHub Release
+    needs: [build-admin, build-manager]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Rename APKs
+        run: |
+          mv Admin-App-APK/*.apk AbuZahra-Admin-v2.0.0.apk 2>/dev/null || true
+          mv Android-App-APK/*.apk AbuZahra-Manager-v3.5.0.apk 2>/dev/null || true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0-${{ github.run_number }}
+          name: "Abu-Zahra v2.0.0 Build #${{ github.run_number }}"
+          body: |
+            ## Abu-Zahra Admin & Manager Apps
+            
+            ### Changes in v2.0.0:
+            - **Admin App**: Firebase Auth (Google Sign-In), all 8 command categories, streaming, data viewer, monitor, users management
+            - **Manager App**: Firebase config updated with real credentials
+            
+            ### SHA1 Fingerprint (Admin App):
+            `0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4`
+          files: |
+            AbuZahra-Admin-v2.0.0.apk
+            AbuZahra-Manager-v3.5.0.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
