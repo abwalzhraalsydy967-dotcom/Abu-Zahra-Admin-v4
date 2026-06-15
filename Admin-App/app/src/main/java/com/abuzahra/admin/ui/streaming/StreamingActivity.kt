@@ -142,7 +142,7 @@ class StreamingActivity : AppCompatActivity() {
     }
 
     private fun startFramePolling() {
-        streamRunnable = object : Runnable {
+        val runnable = object : Runnable {
             override fun run() {
                 if (!isStreaming) return
 
@@ -164,12 +164,13 @@ class StreamingActivity : AppCompatActivity() {
                     } catch (_: Exception) {}
 
                     if (isStreaming) {
-                        handler.postDelayed(this, intervalMs)
+                        handler.postDelayed(this@runnable, intervalMs)
                     }
                 }
             }
         }
-        handler.post(streamRunnable!!)
+        streamRunnable = runnable
+        handler.post(runnable)
     }
 
     private fun stopStreaming() {

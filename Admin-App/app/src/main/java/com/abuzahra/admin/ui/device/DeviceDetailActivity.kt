@@ -182,7 +182,6 @@ class DeviceDetailActivity : AppCompatActivity() {
         params.forEachIndexed { index, param ->
             val til = TextInputLayout(this).apply {
                 hint = param.label
-                isSingleLine = true
                 if (index > 0) {
                     (layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin =
                         resources.getDimensionPixelSize(R.dimen.margin_md)
@@ -198,7 +197,9 @@ class DeviceDetailActivity : AppCompatActivity() {
                 }
                 textDirection = View.TEXT_DIRECTION_LTR
                 setText(param.defaultValue)
-                if (param.type == "multiline") {
+                if (param.type != "multiline") {
+                    setSingleLine(true)
+                } else {
                     minLines = 3
                     maxLines = 5
                 }
