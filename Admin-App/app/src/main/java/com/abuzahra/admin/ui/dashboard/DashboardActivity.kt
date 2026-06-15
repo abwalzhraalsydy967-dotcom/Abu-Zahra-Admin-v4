@@ -9,7 +9,6 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doOnTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -23,7 +22,6 @@ import com.abuzahra.admin.ui.logs.LogsActivity
 import com.abuzahra.admin.ui.login.LoginActivity
 import com.abuzahra.admin.ui.settings.SettingsActivity
 import com.abuzahra.admin.util.Preferences
-import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 

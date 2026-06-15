@@ -22,7 +22,6 @@ import com.abuzahra.admin.ui.login.LoginActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch as coroutineLaunch

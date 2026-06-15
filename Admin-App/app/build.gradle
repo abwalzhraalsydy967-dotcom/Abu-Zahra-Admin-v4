@@ -64,9 +64,6 @@ dependencies {
     // ConstraintLayout
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // CardView
-    implementation 'androidx.cardview:cardview:1.0.0'
-
     // Networking
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
@@ -79,18 +76,4 @@ dependencies {
     // Security (EncryptedSharedPreferences)
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
-    // Security (biometric)
-    implementation 'androidx.biometric:biometric:1.1.0'
-
-    // Image loading
-    implementation 'io.coil-kt:coil:2.5.0'
-
-    // WebSocket
-    implementation 'org.java-websocket:Java-WebSocket:1.5.4'
-
-    // Preference
-    implementation 'androidx.preference:preference-ktx:1.2.1'
-
-    // WorkManager for notifications
-    implementation 'androidx.work:work-runtime-ktx:2.9.0'
 }

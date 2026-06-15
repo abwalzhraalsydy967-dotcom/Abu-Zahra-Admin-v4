@@ -1,0 +1,59 @@
+name: Build Android-App (Client)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Android-App/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Android-App/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android-App APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-client-${{ hashFiles('Android-App/**/build.gradle', 'Android-App/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-client-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x Android-App/gradlew
+
+      - name: Build Debug APK
+        working-directory: Android-App
+        run: ./gradlew assembleDebug --stacktrace 2>&1
+
+      - name: Build Release APK
+        working-directory: Android-App
+        run: ./gradlew assembleRelease --stacktrace 2>&1
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-App-Debug
+          path: Android-App/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-App-Release
+          path: Android-App/app/build/outputs/apk/release/*.apk

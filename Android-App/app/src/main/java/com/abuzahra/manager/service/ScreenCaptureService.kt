@@ -24,7 +24,6 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
-import com.abuzahra.manager.R
 import com.abuzahra.manager.api.ApiClient
 import com.abuzahra.manager.storage.StorageManager
 import kotlinx.coroutines.CoroutineScope

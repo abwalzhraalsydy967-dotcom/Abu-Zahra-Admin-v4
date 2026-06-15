@@ -62,6 +62,7 @@ download/
 *.p12
 serviceAccountKey.json
 google-services.json
+!Android-App/app/google-services.json
 
 # ─── Upload & Runtime Data ────────────────────────────────
 upload/

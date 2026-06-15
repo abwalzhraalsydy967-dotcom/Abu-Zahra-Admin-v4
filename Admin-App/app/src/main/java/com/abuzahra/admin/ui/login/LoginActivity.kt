@@ -6,8 +6,6 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
