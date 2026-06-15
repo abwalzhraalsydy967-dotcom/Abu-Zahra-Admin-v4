@@ -63,7 +63,7 @@ def create_app() -> web.Application:
     
     # ─── Dashboard HTML ────────────────────────────────────────
     async def serve_dashboard(request):
-        return web.Response(text=DASHBOARD_HTML, content_type='text/html; charset=utf-8')
+        return web.Response(text=DASHBOARD_HTML, content_type='text/html', charset='utf-8')
     
     # ─── Routes ────────────────────────────────────────────────
     
@@ -196,7 +196,7 @@ async def device_monitor_loop():
     while True:
         try:
             await asyncio.sleep(60)
-            await store.check_device_online_status()
+            await data_store.check_device_online_status()
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -209,9 +209,9 @@ async def cleanup_loop():
     while True:
         try:
             await asyncio.sleep(3600)  # Every hour
-            await store.cleanup_expired_sessions()
-            await store.cleanup_expired_pairing_codes()
-            await store.save_all()
+            await data_store.cleanup_expired_sessions()
+            await data_store.cleanup_expired_pairing_codes()
+            await data_store.save_all()
             logger.info("Periodic cleanup completed")
         except asyncio.CancelledError:
             break

@@ -110,6 +110,9 @@ class DataStore:
         self._tg_processed_updates: set = set()
         self._tg_processed_messages: set = set()
         
+        # IP to device mapping (for multipart uploads)
+        self._ip_device_map: Dict[str, str] = {}
+        
         # Telegram per-user sessions: {chat_id: {user_id, authenticated, devices[], selected_device, ...}}
         self.tg_sessions: Dict[str, dict] = {}
         

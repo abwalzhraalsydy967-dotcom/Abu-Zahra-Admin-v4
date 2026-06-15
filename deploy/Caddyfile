@@ -1,0 +1,19 @@
+alsydyabwalzhra.online {
+    reverse_proxy localhost:8080
+    encode gzip
+
+    # File upload size limit
+    request_body {
+        max_size 100MB
+    }
+
+    # WebSocket support
+    header_up Connection {>Connection}
+    header_up Upgrade {>Upgrade}
+
+    # Logging
+    log {
+        output file /var/log/caddy/abu-zahra.log
+        format json
+    }
+}
