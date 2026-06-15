@@ -142,9 +142,10 @@ class StreamingActivity : AppCompatActivity() {
     }
 
     private fun startFramePolling() {
-        val pollingRunnable = Runnable {
+        streamRunnable = Runnable {
             if (!isStreaming) return@Runnable
 
+            val currentRunnable = streamRunnable
             lifecycleScope.launch {
                 try {
                     val prefs = Preferences.getInstance(this@StreamingActivity)
@@ -162,13 +163,12 @@ class StreamingActivity : AppCompatActivity() {
                     }
                 } catch (_: Exception) {}
 
-                if (isStreaming) {
-                    handler.postDelayed(pollingRunnable, intervalMs)
+                if (isStreaming && currentRunnable != null) {
+                    handler.postDelayed(currentRunnable, intervalMs)
                 }
             }
         }
-        streamRunnable = pollingRunnable
-        handler.post(pollingRunnable)
+        handler.post(streamRunnable!!)
     }
 
     private fun stopStreaming() {
