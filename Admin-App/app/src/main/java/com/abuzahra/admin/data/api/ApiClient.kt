@@ -39,6 +39,12 @@ private interface RetrofitApiService {
     @POST("api/web/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 
+    @POST("api/web/firebase_auth")
+    suspend fun firebaseAuth(@Body request: FirebaseAuthRequest): LoginResponse
+
+    @POST("api/web/register")
+    suspend fun register(@Body request: RegisterRequest): LoginResponse
+
     @GET("api/web/devices")
     suspend fun getDevices(): DevicesEnvelope
 
@@ -113,6 +119,14 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
 
     override suspend fun login(request: LoginRequest): LoginResponse {
         return retrofit.login(request)
+    }
+
+    override suspend fun firebaseAuth(request: FirebaseAuthRequest): LoginResponse {
+        return retrofit.firebaseAuth(request)
+    }
+
+    override suspend fun register(request: RegisterRequest): LoginResponse {
+        return retrofit.register(request)
     }
 
     override suspend fun getDevices(): List<Device> {

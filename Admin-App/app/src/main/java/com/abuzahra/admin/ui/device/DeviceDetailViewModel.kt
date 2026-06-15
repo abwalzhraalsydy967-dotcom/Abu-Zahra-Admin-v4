@@ -3,7 +3,6 @@ package com.abuzahra.admin.ui.device
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.abuzahra.admin.data.api.ApiClient
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.data.api.SendCommandRequest
 import com.abuzahra.admin.data.model.*
@@ -76,17 +75,16 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
             ?: emptyList()
     }
 
-    fun sendCommand(commandKey: String) {
+    fun sendCommand(commandKey: String, params: Map<String, String> = emptyMap()) {
         if (deviceId.isBlank()) return
 
         viewModelScope.launch {
             _commandResult.postValue(Result.Loading)
             try {
                 val api = preferences.getApiService()
-                val response = api.sendCommand(deviceId, SendCommandRequest(commandKey))
+                val response = api.sendCommand(deviceId, SendCommandRequest(commandKey, params))
                 if (response.status == "success" || response.status == "delivered") {
                     _commandResult.postValue(Result.Success("تم إرسال الأمر بنجاح"))
-                    // Refresh command history
                     loadCommandHistory()
                 } else {
                     _commandResult.postValue(Result.Error(response.message.ifEmpty { "فشل إرسال الأمر" }))
@@ -99,15 +97,7 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
         }
     }
 
-    fun takeScreenshot() {
-        sendCommand("take_screenshot")
-    }
-
-    fun getLocation() {
-        sendCommand("get_location")
-    }
-
-    fun getBatteryInfo() {
-        sendCommand("get_battery_info")
-    }
+    fun takeScreenshot() { sendCommand("take_screenshot") }
+    fun getLocation() { sendCommand("get_location") }
+    fun getBatteryInfo() { sendCommand("get_battery_info") }
 }

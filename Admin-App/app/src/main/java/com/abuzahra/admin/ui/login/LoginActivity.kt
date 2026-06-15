@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import com.abuzahra.admin.R
@@ -11,6 +12,16 @@ import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
 import com.abuzahra.admin.ui.dashboard.DashboardActivity
 import com.abuzahra.admin.util.Preferences
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
 
 class LoginActivity : AppCompatActivity() {
 
@@ -19,26 +30,50 @@ class LoginActivity : AppCompatActivity() {
         LoginViewModelFactory(Preferences.getInstance(this))
     }
 
+    private lateinit var googleSignInClient: GoogleSignInClient
+    private lateinit var auth: FirebaseAuth
+
+    private val googleSignInLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
+            firebaseAuthWithGoogle(account)
+        } catch (e: ApiException) {
+            showError("فشل تسجيل الدخول بحساب جوجل")
+            binding.progressBar.visibility = View.GONE
+            binding.btnLogin.isEnabled = true
+            binding.btnGoogleSignIn.isEnabled = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Check auto-login
+        auth = Firebase.auth
+
         if (viewModel.isLoggedIn) {
             navigateToDashboard()
             return
         }
 
+        setupGoogleSignIn()
         setupViews()
         observeViewModel()
     }
 
-    private fun setupViews() {
-        // Pre-fill server URL
-        binding.etServerUrl.setText(viewModel.serverUrl)
+    private fun setupGoogleSignIn() {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+    }
 
-        // Password field: submit on IME action
+    private fun setupViews() {
         binding.etPassword.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO) {
                 attemptLogin()
@@ -48,36 +83,33 @@ class LoginActivity : AppCompatActivity() {
             }
         }
 
-        // Login button
         binding.btnLogin.setOnClickListener {
             attemptLogin()
         }
 
-        // Clear errors on text change
-        binding.etUsername.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) binding.tilUsername.error = null
+        binding.btnGoogleSignIn.setOnClickListener {
+            startGoogleSignIn()
+        }
+
+        binding.btnCreateAccount.setOnClickListener {
+            startActivity(Intent(this, RegisterActivity::class.java))
+        }
+
+        binding.etEmail.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) binding.tilEmail.error = null
         }
         binding.etPassword.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) binding.tilPassword.error = null
         }
-        binding.etServerUrl.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) binding.tilServerUrl.error = null
-        }
     }
 
     private fun attemptLogin() {
-        val serverUrl = binding.etServerUrl.text.toString().trim()
-        val username = binding.etUsername.text.toString().trim()
+        val email = binding.etEmail.text.toString().trim()
         val password = binding.etPassword.text.toString().trim()
 
-        // Validate
         var hasError = false
-        if (serverUrl.isBlank()) {
-            binding.tilServerUrl.error = "يرجى إدخال رابط الخادم"
-            hasError = true
-        }
-        if (username.isBlank()) {
-            binding.tilUsername.error = "يرجى إدخال اسم المستخدم"
+        if (email.isBlank()) {
+            binding.tilEmail.error = "يرجى إدخال البريد الإلكتروني"
             hasError = true
         }
         if (password.isBlank()) {
@@ -86,33 +118,87 @@ class LoginActivity : AppCompatActivity() {
         }
         if (hasError) return
 
-        viewModel.login(username, password, serverUrl)
+        viewModel.login(email, password)
+    }
+
+    private fun startGoogleSignIn() {
+        showLoading(true)
+        val signInIntent = googleSignInClient.signInIntent
+        googleSignInLauncher.launch(signInIntent)
+    }
+
+    private fun firebaseAuthWithGoogle(account: GoogleSignInAccount) {
+        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    val user = auth.currentUser
+                    viewModel.loginWithFirebase(
+                        email = user?.email ?: "",
+                        displayName = user?.displayName ?: "",
+                        idToken = account.idToken ?: ""
+                    )
+                } else {
+                    showError("فشل المصادقة بحساب جوجل")
+                    showLoading(false)
+                }
+            }
+    }
+
+    private fun showLoading(loading: Boolean) {
+        binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE
+        binding.btnLogin.isEnabled = !loading
+        binding.btnGoogleSignIn.isEnabled = !loading
+        if (loading) {
+            binding.tvError.visibility = View.GONE
+        }
+    }
+
+    private fun showError(message: String) {
+        binding.tvError.text = message
+        binding.tvError.visibility = View.VISIBLE
     }
 
     private fun observeViewModel() {
         viewModel.loginResult.observe(this) { result ->
             when (result) {
                 is Result.Loading -> {
-                    binding.progressBar.visibility = View.VISIBLE
-                    binding.btnLogin.isEnabled = false
-                    binding.btnLogin.text = getString(R.string.logging_in)
-                    binding.tvError.visibility = View.GONE
+                    showLoading(true)
                 }
                 is Result.Success -> {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnLogin.isEnabled = true
-                    binding.btnLogin.text = getString(R.string.login)
-                    navigateToDashboard()
+                    showLoading(false)
+                    val code = result.data.permanentCode
+                    if (!code.isNullOrEmpty()) {
+                        showLinkCodeDialog(code)
+                    } else {
+                        navigateToDashboard()
+                    }
                 }
                 is Result.Error -> {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnLogin.isEnabled = true
-                    binding.btnLogin.text = getString(R.string.login)
-                    binding.tvError.text = result.message
-                    binding.tvError.visibility = View.VISIBLE
+                    showLoading(false)
+                    if (result.code == 401) {
+                        showError("البريد الإلكتروني أو كلمة المرور غير صحيحة")
+                    } else {
+                        showError(result.message)
+                    }
                 }
             }
         }
+    }
+
+    private fun showLinkCodeDialog(code: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("كود الربط الخاص بك")
+            .setMessage("كود الربط الدائم لحسابك:\n\n$code\n\nاحفظ هذا الكود لربط الأجهزة المستهدفة. هذا الكود صالح مدى الحياة.")
+            .setPositiveButton("نسخ الكود") { _, _ ->
+                val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                val clip = android.content.ClipData.newPlainText("link_code", code)
+                clipboard.setPrimaryClip(clip)
+                navigateToDashboard()
+            }
+            .setNegativeButton("متابعة", null)
+            .setCancelable(false)
+            .show()
     }
 
     private fun navigateToDashboard() {

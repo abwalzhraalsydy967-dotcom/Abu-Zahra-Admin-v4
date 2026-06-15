@@ -40,5 +40,6 @@
     <color name="pending_color">#F57F17</color>
     <color name="skeleton">#E0E0E0</color>
     <color name="ripple_color">#1F1B5E20</color>
+<color name="border_color">#E0E0E0</color>
 <color name="bg_dark">#0a0a0f</color>
 </resources>

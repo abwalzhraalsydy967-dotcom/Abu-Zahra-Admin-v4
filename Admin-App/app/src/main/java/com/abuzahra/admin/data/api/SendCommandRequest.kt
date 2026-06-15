@@ -3,7 +3,7 @@ package com.abuzahra.admin.data.api
 import com.google.gson.annotations.SerializedName
 
 data class SendCommandRequest(
-    val command: String,
-    val params: Map<String, Any> = emptyMap(),
+    @SerializedName("command") val command: String,
+    @SerializedName("params") val params: Map<String, String> = emptyMap(),
     @SerializedName("device_id") val deviceId: String = ""
 )

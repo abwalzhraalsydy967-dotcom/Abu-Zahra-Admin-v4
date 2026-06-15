@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.EditText
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
@@ -16,10 +17,12 @@ import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.data.model.Event
 import com.abuzahra.admin.databinding.ActivityDeviceDetailBinding
 import com.abuzahra.admin.ui.login.LoginActivity
+import com.abuzahra.admin.ui.streaming.StreamingActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputLayout
 
 class DeviceDetailActivity : AppCompatActivity() {
 
@@ -30,22 +33,14 @@ class DeviceDetailActivity : AppCompatActivity() {
 
     private val commandAdapter: CommandAdapter by lazy {
         CommandAdapter { commandDef ->
-            MaterialAlertDialogBuilder(this)
-                .setTitle("إرسال أمر")
-                .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟")
-                .setPositiveButton(R.string.confirm) { _, _ ->
-                    viewModel.sendCommand(commandDef.key)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            handleCommandClick(commandDef)
         }
     }
 
     private val commandHistoryAdapter: EventAdapter by lazy {
         EventAdapter { command ->
-            // Show command result details
             val message = if (command.result != null) {
-                "${command.command}\n\nالنتيجة: ${command.result}"
+                "${command.command}\n\nالنتيجة:\n${command.result}"
             } else {
                 "${command.command}\n\nالحالة: ${command.displayStatus}"
             }
@@ -105,7 +100,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         binding.btnLocation.setOnClickListener { viewModel.getLocation() }
         binding.btnBatteryInfo.setOnClickListener { viewModel.getBatteryInfo() }
 
-        // Command category chips
+        // All 8 command category chips
         setupCategoryChips()
 
         // Swipe to refresh
@@ -133,35 +128,106 @@ class DeviceDetailActivity : AppCompatActivity() {
     }
 
     private fun setupCategoryChips() {
-        val chips = mapOf(
-            binding.chipCatData to CommandDefinitions.Category.DATA,
-            binding.chipCatControl to CommandDefinitions.Category.CONTROL,
-            binding.chipCatFiles to CommandDefinitions.Category.FILES,
-            binding.chipCatSecurity to CommandDefinitions.Category.SECURITY,
-            binding.chipCatMonitor to CommandDefinitions.Category.MONITOR
+        val allChips = mapOf(
+            CommandDefinitions.Category.DATA to binding.chipCatData,
+            CommandDefinitions.Category.CONTROL to binding.chipCatControl,
+            CommandDefinitions.Category.FILES to binding.chipCatFiles,
+            CommandDefinitions.Category.SECURITY to binding.chipCatSecurity,
+            CommandDefinitions.Category.MONITOR to binding.chipCatMonitor,
+            CommandDefinitions.Category.SOCIAL to binding.chipCatSocial,
+            CommandDefinitions.Category.APPS to binding.chipCatApps,
+            CommandDefinitions.Category.STREAMING to binding.chipCatStreaming
         )
 
-        chips.forEach { (chip, category) ->
+        allChips.forEach { (category, chip) ->
             chip.setOnClickListener {
-                // Uncheck all, check clicked
-                chips.values.forEach { c ->
-                    val id = when (c) {
-                        CommandDefinitions.Category.DATA -> binding.chipCatData.id
-                        CommandDefinitions.Category.CONTROL -> binding.chipCatControl.id
-                        CommandDefinitions.Category.FILES -> binding.chipCatFiles.id
-                        CommandDefinitions.Category.SECURITY -> binding.chipCatSecurity.id
-                        CommandDefinitions.Category.MONITOR -> binding.chipCatMonitor.id
-                        CommandDefinitions.Category.SOCIAL -> -1
-                        CommandDefinitions.Category.APPS -> -1
-                        CommandDefinitions.Category.STREAMING -> -1
-                    }
-                    val chipView = binding.chipCommandCategory.findViewById<Chip>(id)
-                    chipView?.isChecked = (c == category)
+                // Check if streaming category selected - navigate to streaming activity
+                if (category == CommandDefinitions.Category.STREAMING) {
+                    openStreaming()
+                    return@setOnClickListener
                 }
+
+                // Uncheck all, check clicked
+                allChips.values.forEach { c -> c.isChecked = false }
+                chip.isChecked = true
                 viewModel.setCategory(category)
                 commandAdapter.submitList(viewModel.getCommandsForCategory())
             }
         }
+
+        // Default: select DATA
+        binding.chipCatData.isChecked = true
+    }
+
+    private fun handleCommandClick(commandDef: CommandDefinitions.CommandDef) {
+        val paramDef = COMMAND_PARAMS[commandDef.key]
+        if (paramDef != null) {
+            showParamDialog(commandDef, paramDef)
+        } else {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("إرسال أمر")
+                .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟")
+                .setPositiveButton(R.string.confirm) { _, _ ->
+                    viewModel.sendCommand(commandDef.key)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun showParamDialog(commandDef: CommandDefinitions.CommandDef, params: List<ParamDef>) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_command_params, null)
+        val paramInputs = mutableListOf<Pair<ParamDef, EditText>>()
+
+        params.forEachIndexed { index, param ->
+            val til = TextInputLayout(this).apply {
+                hint = param.label
+                isSingleLine = true
+                if (index > 0) {
+                    (layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin =
+                        resources.getDimensionPixelSize(R.dimen.margin_md)
+                }
+            }
+            val et = EditText(this).apply {
+                inputType = when (param.type) {
+                    "number", "phone" -> android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                    "url" -> android.text.InputType.TYPE_TEXT_VARIATION_URI
+                    "text" -> android.text.InputType.TYPE_CLASS_TEXT
+                    "multiline" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    else -> android.text.InputType.TYPE_CLASS_TEXT
+                }
+                textDirection = View.TEXT_DIRECTION_LTR
+                setText(param.defaultValue)
+                if (param.type == "multiline") {
+                    minLines = 3
+                    maxLines = 5
+                }
+            }
+            til.addView(et)
+            (dialogView as? android.widget.LinearLayout)?.addView(til)
+            paramInputs.add(param to et)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("أمر: ${commandDef.name}")
+            .setView(dialogView)
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val paramMap = mutableMapOf<String, String>()
+                paramInputs.forEach { (param, et) ->
+                    val value = et.text.toString().trim()
+                    if (value.isNotEmpty()) {
+                        paramMap[param.key] = value
+                    }
+                }
+                viewModel.sendCommand(commandDef.key, paramMap)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun openStreaming() {
+        val device = viewModel.device.value ?: return
+        startActivity(StreamingActivity.newIntent(this, device))
     }
 
     private fun observeViewModel() {
@@ -179,7 +245,6 @@ class DeviceDetailActivity : AppCompatActivity() {
         viewModel.events.observe(this) { result ->
             when (result) {
                 is Result.Success -> {
-                    // Convert events to commands for the adapter (reuse layout)
                     val eventCommands = result.data.map { event ->
                         Command(
                             id = event.id,
@@ -197,9 +262,7 @@ class DeviceDetailActivity : AppCompatActivity() {
 
         viewModel.commandResult.observe(this) { result ->
             when (result) {
-                is Result.Loading -> {
-                    // Could show a small progress indicator
-                }
+                is Result.Loading -> {}
                 is Result.Success -> {
                     Snackbar.make(binding.coordinator, result.data, Snackbar.LENGTH_SHORT).show()
                 }
@@ -207,11 +270,7 @@ class DeviceDetailActivity : AppCompatActivity() {
                     if (result.code == 401) {
                         showSessionExpired()
                     } else {
-                        Snackbar.make(
-                            binding.coordinator,
-                            result.message,
-                            Snackbar.LENGTH_LONG
-                        ).show()
+                        Snackbar.make(binding.coordinator, result.message, Snackbar.LENGTH_LONG).show()
                     }
                 }
             }
@@ -243,6 +302,126 @@ class DeviceDetailActivity : AppCompatActivity() {
             }
         }
     }
+
+    // Command parameter definitions
+    data class ParamDef(val key: String, val label: String, val type: String = "text", val defaultValue: String = "")
+
+    private val COMMAND_PARAMS: Map<String, List<ParamDef>> = mapOf(
+        "send_sms" to listOf(
+            ParamDef("number", "رقم الهاتف", "phone"),
+            ParamDef("text", "نص الرسالة", "multiline")
+        ),
+        "make_call" to listOf(
+            ParamDef("number", "رقم الهاتف", "phone")
+        ),
+        "open_url" to listOf(
+            ParamDef("url", "الرابط", "url")
+        ),
+        "install_app" to listOf(
+            ParamDef("url", "رابط APK", "url")
+        ),
+        "show_message" to listOf(
+            ParamDef("title", "العنوان", "text"),
+            ParamDef("message", "الرسالة", "multiline")
+        ),
+        "set_wallpaper" to listOf(
+            ParamDef("url", "رابط الصورة", "url")
+        ),
+        "set_ringtone" to listOf(
+            ParamDef("url", "رابط النغمة", "url")
+        ),
+        "set_clipboard" to listOf(
+            ParamDef("text", "النص", "multiline")
+        ),
+        "set_volume" to listOf(
+            ParamDef("level", "المستوى (0-100)", "number")
+        ),
+        "set_brightness" to listOf(
+            ParamDef("level", "المستوى (0-255)", "number")
+        ),
+        "list_files" to listOf(
+            ParamDef("path", "المسار", "text", "/sdcard/")
+        ),
+        "search_files" to listOf(
+            ParamDef("query", "اسم الملف", "text")
+        ),
+        "get_file" to listOf(
+            ParamDef("path", "مسار الملف", "text")
+        ),
+        "delete_file" to listOf(
+            ParamDef("path", "مسار الملف", "text")
+        ),
+        "rename_file" to listOf(
+            ParamDef("path", "المسار الحالي", "text"),
+            ParamDef("new_name", "الاسم الجديد", "text")
+        ),
+        "create_folder" to listOf(
+            ParamDef("path", "مسار المجلد", "text")
+        ),
+        "open_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "force_stop_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "clear_app_data" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "uninstall_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "app_info" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "get_app_permissions" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "set_app_permission" to listOf(
+            ParamDef("package", "اسم الحزمة", "text"),
+            ParamDef("permission", "الصلاحية", "text")
+        ),
+        "type_text" to listOf(
+            ParamDef("text", "النص", "multiline")
+        ),
+        "tap" to listOf(
+            ParamDef("x", "X", "number"),
+            ParamDef("y", "Y", "number")
+        ),
+        "swipe" to listOf(
+            ParamDef("x1", "X البداية", "number"),
+            ParamDef("y1", "Y البداية", "number"),
+            ParamDef("x2", "X النهاية", "number"),
+            ParamDef("y2", "Y النهاية", "number")
+        ),
+        "set_pin" to listOf(
+            ParamDef("pin", "رقم PIN", "number")
+        ),
+        "change_password" to listOf(
+            ParamDef("password", "كلمة المرور الجديدة", "text")
+        ),
+        "set_stream_quality" to listOf(
+            ParamDef("quality", "الجودة (low/medium/high)", "text", "medium")
+        ),
+        "speak_text" to listOf(
+            ParamDef("text", "النص", "multiline")
+        ),
+        "play_sound" to listOf(
+            ParamDef("url", "رابط الصوت", "url")
+        ),
+        "dismiss_notification" to listOf(
+            ParamDef("key", "مفتاح الإشعار", "text")
+        ),
+        "reply_notification" to listOf(
+            ParamDef("key", "مفتاح الإشعار", "text"),
+            ParamDef("text", "الرد", "multiline")
+        ),
+        "block_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        ),
+        "unblock_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
+        )
+    )
 }
 
 class DeviceDetailViewModelFactory(private val preferences: Preferences) :

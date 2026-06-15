@@ -16,11 +16,14 @@ import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.databinding.ActivityDashboardBinding
+import com.abuzahra.admin.ui.data.DataActivity
 import com.abuzahra.admin.ui.device.DeviceDetailActivity
 import com.abuzahra.admin.ui.files.FilesActivity
 import com.abuzahra.admin.ui.logs.LogsActivity
 import com.abuzahra.admin.ui.login.LoginActivity
+import com.abuzahra.admin.ui.monitor.MonitorActivity
 import com.abuzahra.admin.ui.settings.SettingsActivity
+import com.abuzahra.admin.ui.users.UsersActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -45,6 +48,8 @@ class DashboardActivity : AppCompatActivity() {
         setupSearch()
         setupFilters()
         setupBottomNav()
+        setupLinkCode()
+        setupQuickActions()
         observeViewModel()
         handleBackPressed()
     }
@@ -207,6 +212,30 @@ class DashboardActivity : AppCompatActivity() {
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun setupLinkCode() {
+        val prefs = Preferences.getInstance(this)
+        val code = prefs.permanentCode
+        if (!code.isNullOrEmpty()) {
+            binding.cardLinkCode.visibility = View.VISIBLE
+            binding.tvLinkCode.text = code
+            binding.btnCopyCode.setOnClickListener {
+                val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                val clip = android.content.ClipData.newPlainText("link_code", code)
+                clipboard.setPrimaryClip(clip)
+                Snackbar.make(binding.root, "تم نسخ الكود", Snackbar.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setupQuickActions() {
+        binding.btnData.setOnClickListener { startActivity(Intent(this, DataActivity::class.java)) }
+        binding.btnMonitor.setOnClickListener { startActivity(Intent(this, MonitorActivity::class.java)) }
+        binding.btnUsers.setOnClickListener { startActivity(Intent(this, UsersActivity::class.java)) }
+        binding.btnStreaming.setOnClickListener {
+            Snackbar.make(binding.root, "اختر جهازاً من القائمة لبدء البث", Snackbar.LENGTH_LONG).show()
+        }
     }
 
     private fun handleBackPressed() {

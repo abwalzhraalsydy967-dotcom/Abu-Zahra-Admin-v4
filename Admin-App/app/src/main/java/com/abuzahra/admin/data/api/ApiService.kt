@@ -41,6 +41,10 @@ interface ApiService {
     suspend fun startJpegStream(deviceId: String): CommandResponse
     suspend fun stopJpegStream(deviceId: String): CommandResponse
 
+    // ── Auth Extensions ─────────────────────────────────────────
+    suspend fun firebaseAuth(request: FirebaseAuthRequest): LoginResponse
+    suspend fun register(request: RegisterRequest): LoginResponse
+
     // ── User Management (admin only) ─────────────────────────────
     suspend fun getUsers(): List<User>
     suspend fun createUser(request: CreateUserRequest): UserResponse

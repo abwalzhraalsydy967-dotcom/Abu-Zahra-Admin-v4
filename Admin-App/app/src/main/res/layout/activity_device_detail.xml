@@ -344,6 +344,30 @@
                         android:layout_height="wrap_content"
                         android:text="@string/cat_monitor" />
 
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipCatSocial"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="التواصل الاجتماعي"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipCatApps"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="التطبيقات"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipCatStreaming"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="البث المباشر"
+                        android:textSize="12sp" />
+
                 </com.google.android.material.chip.ChipGroup>
 
                 <!-- Commands Grid -->

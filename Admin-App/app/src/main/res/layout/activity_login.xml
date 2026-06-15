@@ -11,7 +11,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:padding="@dimen/margin_lg">
+        android:padding="24dp">
 
         <!-- Logo Area -->
         <LinearLayout
@@ -19,13 +19,13 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center"
-            android:layout_marginBottom="40dp">
+            android:layout_marginBottom="32dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="أبو زهرا"
-                android:textSize="36sp"
+                android:textSize="38sp"
                 android:textColor="@color/on_primary"
                 android:fontFamily="sans-serif-medium"
                 android:layout_marginBottom="8dp" />
@@ -33,17 +33,16 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/login_subtitle"
-                android:textSize="16sp"
-                android:textColor="#A5D6A7"
-                android:fontFamily="sans-serif" />
+                android:text="لوحة إدارة الأجهزة"
+                android:textSize="14sp"
+                android:textColor="#A5D6A7" />
         </LinearLayout>
 
         <!-- Login Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="@dimen/radius_lg"
+            app:cardCornerRadius="16dp"
             app:cardElevation="8dp"
             app:cardBackgroundColor="@color/surface">
 
@@ -51,55 +50,35 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/padding_lg">
+                android:padding="24dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/login_title"
-                    android:textSize="@dimen/text_title"
+                    android:text="تسجيل الدخول"
+                    android:textSize="22sp"
                     android:textColor="@color/text_primary"
                     android:fontFamily="sans-serif-medium"
-                    android:layout_marginBottom="@dimen/margin_lg" />
+                    android:layout_marginBottom="24dp" />
 
-                <!-- Server URL -->
+                <!-- Email -->
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/tilServerUrl"
+                    android:id="@+id/tilEmail"
                     style="@style/Widget.AbuZahraAdmin.TextInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="@string/server_url"
-                    android:layout_marginBottom="@dimen/margin_md"
-                    app:startIconDrawable="@android:drawable/ic_menu_manage"
-                    app:startIconTint="@color/text_hint">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etServerUrl"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="textUri"
-                        android:textDirection="ltr"
-                        android:text="https://alsydyabwalzhra.online" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <!-- Username -->
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/tilUsername"
-                    style="@style/Widget.AbuZahraAdmin.TextInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/username"
-                    android:layout_marginBottom="@dimen/margin_md"
+                    android:hint="البريد الإلكتروني"
+                    android:layout_marginBottom="16dp"
                     app:startIconDrawable="@drawable/ic_person"
                     app:startIconTint="@color/text_hint">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etUsername"
+                        android:id="@+id/etEmail"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text"
-                        android:maxLines="1" />
+                        android:inputType="textEmailAddress"
+                        android:maxLines="1"
+                        android:textDirection="ltr" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -109,8 +88,8 @@
                     style="@style/Widget.AbuZahraAdmin.TextInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="@string/password"
-                    android:layout_marginBottom="@dimen/margin_lg"
+                    android:hint="كلمة المرور"
+                    android:layout_marginBottom="8dp"
                     app:startIconDrawable="@drawable/ic_lock"
                     app:startIconTint="@color/text_hint"
                     app:endIconMode="password_toggle">
@@ -130,9 +109,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="@color/error"
-                    android:textSize="@dimen/text_caption"
+                    android:textSize="12sp"
                     android:visibility="gone"
-                    android:layout_marginBottom="@dimen/margin_sm"
+                    android:layout_marginBottom="8dp"
                     android:gravity="center" />
 
                 <!-- Login Button -->
@@ -140,16 +119,73 @@
                     android:id="@+id/btnLogin"
                     style="@style/Widget.AbuZahraAdmin.Button.Primary"
                     android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:text="@string/login"
-                    android:textSize="16sp" />
+                    android:layout_height="52dp"
+                    android:text="تسجيل الدخول"
+                    android:textSize="16sp"
+                    android:layout_marginBottom="16dp" />
+
+                <!-- Or Divider -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginBottom="16dp">
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1"
+                        android:background="@color/border_color" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="أو"
+                        android:textColor="@color/text_hint"
+                        android:paddingHorizontal="16dp"
+                        android:textSize="14sp" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1"
+                        android:background="@color/border_color" />
+                </LinearLayout>
+
+                <!-- Google Sign-In Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGoogleSignIn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:text="تسجيل الدخول بحساب جوجل"
+                    android:textSize="15sp"
+                    android:textColor="#333333"
+                    app:icon="@android:drawable/ic_dialog_info"
+                    app:iconGravity="textStart"
+                    app:iconSize="20dp"
+                    app:cornerRadius="12dp"
+                    app:strokeColor="#DDDDDD"
+                    app:strokeWidth="1dp"
+                    android:layout_marginBottom="16dp" />
+
+                <!-- Create Account -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCreateAccount"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="إنشاء حساب جديد"
+                    android:textSize="14sp"
+                    android:textColor="@color/primary" />
 
                 <!-- Loading -->
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/progressBar"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/margin_md"
+                    android:layout_marginTop="12dp"
                     android:indeterminate="true"
                     android:visibility="gone"
                     app:trackColor="@android:color/transparent" />

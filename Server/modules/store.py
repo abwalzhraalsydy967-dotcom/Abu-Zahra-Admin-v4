@@ -143,6 +143,10 @@ class DataStore:
         # Initialize device online states
         for did, dev in self.devices.items():
             last = dev.get('last_seen', 0)
+            try:
+                last = float(last)
+            except (TypeError, ValueError):
+                last = 0
             online = (time.time() - last) < DEVICE_OFFLINE_TIMEOUT if last else False
             self._device_last_online[did] = online
 

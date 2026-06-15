@@ -5,6 +5,7 @@ Architecture: Client → Server ← {Web Dashboard, Admin App, Telegram Bot}
 
 import json
 import time
+import uuid
 import base64
 import asyncio
 import logging
@@ -136,10 +137,173 @@ async def api_login(request: web.Request) -> web.Response:
     })
 
 
+async def api_firebase_auth(request: web.Request) -> web.Response:
+    """Firebase authentication. Accepts Firebase ID token from Google Sign-In."""
+    store.api_hits += 1
+    try:
+        body = await request.json()
+    except:
+        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+    
+    firebase_token = body.get('firebase_token', '').strip()
+    id_token = body.get('id_token', '').strip()
+    email = body.get('email', '').strip().lower()
+    display_name = body.get('display_name', '').strip()
+    
+    # Accept either firebase_token or id_token
+    token = firebase_token or id_token
+    
+    if not email:
+        return json_response({"ok": False, "message": "البريد الإلكتروني مطلوب"}, 400)
+    
+    # Try to verify Firebase token if available
+    verified_email = None
+    verified_name = None
+    if token and _fb.firebase_connected:
+        try:
+            import requests
+            # Verify with Firebase Auth REST API
+            resp = requests.get(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={token}",
+                timeout=5
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get('users'):
+                    user_info = data['users'][0]
+                    verified_email = user_info.get('email', '').lower()
+                    verified_name = user_info.get('displayName', '') or user_info.get('localId', '')
+        except Exception as e:
+            logger.warning(f"Firebase token verification failed: {e}")
+    
+    # Use verified email if available, otherwise trust the provided email
+    final_email = verified_email or email
+    final_name = verified_name or display_name or final_email.split('@')[0]
+    
+    # Find or create user
+    user = None
+    for u in store.users.values():
+        if u['email'] == final_email:
+            user = u
+            break
+    
+    if not user:
+        # Auto-create user from Firebase auth
+        try:
+            username = final_name.replace(' ', '_').replace('@', '_')[:20]
+            # Ensure unique username
+            base_username = username
+            counter = 1
+            while any(u['username'] == username for u in store.users.values()):
+                username = f"{base_username}_{counter}"
+                counter += 1
+            
+            user = await store.create_user(
+                email=final_email,
+                username=username,
+                password=str(uuid.uuid4()),  # Random password for Firebase users
+                role="user"
+            )
+            logger.info(f"Auto-created user from Firebase: {username} ({final_email})")
+        except ValueError as e:
+            return json_response({"ok": False, "message": str(e)}, 400)
+    
+    if not user.get('is_active', True):
+        return json_response({"ok": False, "message": "الحساب معطل"}, 403)
+    
+    # Create session
+    ip = request.remote or ""
+    ua = request.headers.get('User-Agent', '')
+    session = store.create_session(user['id'], user['username'], user['role'], ip, ua, source="firebase")
+    
+    await store.add_event("auth", f"User logged in via Firebase: {user['username']} ({final_email})", "success", user_id=user['id'])
+    
+    # Get or create permanent link code
+    permanent_code = await store.get_or_create_permanent_code(user['id'])
+    
+    # Sync to Firebase
+    if _fb.firebase_connected:
+        try:
+            from .firebase_client import sync_permanent_code
+            await sync_permanent_code(user['email'], permanent_code, user['id'])
+        except:
+            pass
+
+    return json_response({
+        "ok": True,
+        "success": True,
+        "token": session['token'],
+        "expires_at": session['expires_at'],
+        "user_id": user['id'],
+        "username": user['username'],
+        "role": user['role'],
+        "email": user['email'],
+        "permanent_code": permanent_code,
+        "message": "تم تسجيل الدخول بنجاح"
+    })
+
+
+async def api_web_register(request: web.Request) -> web.Response:
+    """Register a new user account."""
+    store.api_hits += 1
+    try:
+        body = await request.json()
+    except:
+        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+    
+    email = body.get('email', '').strip()
+    username = body.get('username', '').strip()
+    password = body.get('password', '').strip()
+    
+    if not email or not username or not password:
+        return json_response({"ok": False, "message": "جميع الحقول مطلوبة"}, 400)
+    
+    if len(password) < 6:
+        return json_response({"ok": False, "message": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"}, 400)
+    
+    if '@' not in email:
+        return json_response({"ok": False, "message": "بريد إلكتروني غير صالح"}, 400)
+    
+    try:
+        user = await store.create_user(email=email, username=username, password=password, role="user")
+    except ValueError as e:
+        return json_response({"ok": False, "message": str(e)}, 400)
+    
+    # Auto-login after registration
+    ip = request.remote or ""
+    ua = request.headers.get('User-Agent', '')
+    session = store.create_session(user['id'], user['username'], user['role'], ip, ua, source="register")
+    
+    await store.add_event("auth", f"New user registered: {username} ({email})", "success", user_id=user['id'])
+    
+    # Get permanent code
+    permanent_code = await store.get_or_create_permanent_code(user['id'])
+    
+    if _fb.firebase_connected:
+        try:
+            from .firebase_client import sync_permanent_code
+            await sync_permanent_code(user['email'], permanent_code, user['id'])
+        except:
+            pass
+    
+    return json_response({
+        "ok": True,
+        "success": True,
+        "token": session['token'],
+        "expires_at": session['expires_at'],
+        "user_id": user['id'],
+        "username": user['username'],
+        "role": user['role'],
+        "email": user['email'],
+        "permanent_code": permanent_code,
+        "message": "تم إنشاء الحساب بنجاح"
+    })
+
+
 # ─── Device API (authenticated by device token) ───────────────
 
 async def api_register(request: web.Request) -> web.Response:
-    """Device registration using pairing code."""
+    """Device registration using pairing code."""""
     store.api_hits += 1
     try:
         body = await request.json()

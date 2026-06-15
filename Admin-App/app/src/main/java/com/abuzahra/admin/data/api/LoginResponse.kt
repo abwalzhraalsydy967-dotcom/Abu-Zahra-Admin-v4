@@ -9,5 +9,6 @@ data class LoginResponse(
     @SerializedName("username") val username: String = "",
     @SerializedName("role") val role: String = "",
     @SerializedName("email") val email: String = "",
+    @SerializedName("permanent_code") val permanentCode: String = "",
     @SerializedName("message") val message: String = ""
 )

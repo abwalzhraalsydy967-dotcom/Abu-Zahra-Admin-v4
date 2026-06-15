@@ -73,6 +73,26 @@ class Preferences(context: Context) {
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_DARK_MODE, value).apply()
 
+    var permanentCode: String?
+        get() = prefs.getString("permanent_code", null)
+        set(value) = prefs.edit().putString("permanent_code", value).apply()
+
+    var userEmail: String?
+        get() = prefs.getString("user_email", null)
+        set(value) = prefs.edit().putString("user_email", value).apply()
+
+    var userName: String?
+        get() = prefs.getString("user_name", null)
+        set(value) = prefs.edit().putString("user_name", value).apply()
+
+    var userRole: String?
+        get() = prefs.getString("user_role", null)
+        set(value) = prefs.edit().putString("user_role", value).apply()
+
+    var userId: String?
+        get() = prefs.getString("user_id", null)
+        set(value) = prefs.edit().putString("user_id", value).apply()
+
     fun clear() {
         prefs.edit().clear().apply()
     }

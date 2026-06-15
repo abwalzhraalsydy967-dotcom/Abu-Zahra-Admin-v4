@@ -125,5 +125,18 @@
 
     <!-- About -->
     <string name="about_description">تطبيق إدارة أجهزة أبو زهرا\nللمراقبة والتحكم عن بُعد</string>
-    <string name="about_version">الإصدار 1.0.0</string>
+    <string name="about_version">الإصدار 2.0.0</string>
+
+    <!-- Auth Extensions -->
+    <string name="create_account">إنشاء حساب جديد</string>
+    <string name="google_sign_in">تسجيل الدخول بحساب جوجل</string>
+    <string name="link_code">كود الربط</string>
+    <string name="permanent_link_code">كود الربط الدائم</string>
+    <string name="copy_code">نسخ الكود</string>
+    <string name="streaming">البث المباشر</string>
+    <string name="data">البيانات</string>
+    <string name="monitor">المراقبة</string>
+    <string name="users">المستخدمين</string>
+    <string name="confirm_password">تأكيد كلمة المرور</string>
+    <string name="register">إنشاء الحساب</string>
 </resources>
