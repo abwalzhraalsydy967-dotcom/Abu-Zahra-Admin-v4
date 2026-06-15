@@ -3,10 +3,15 @@ package com.abuzahra.admin.ui.device
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.abuzahra.admin.R
@@ -56,6 +61,14 @@ class DeviceDetailActivity : AppCompatActivity() {
         EventAdapter { _ -> }
     }
 
+    // Debug log views
+    private lateinit var debugLogContainer: LinearLayout
+    private lateinit var debugLogScroll: ScrollView
+    private lateinit var debugLogText: TextView
+    private lateinit var debugToggleBtn: com.google.android.material.button.MaterialButton
+
+    private var debugLogVisible = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDeviceDetailBinding.inflate(layoutInflater)
@@ -68,6 +81,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         }
 
         setupToolbar(device.name.ifEmpty { device.model })
+        setupDebugLogPanel()
         setupViews(device)
         observeViewModel()
         viewModel.setDevice(device)
@@ -78,6 +92,99 @@ class DeviceDetailActivity : AppCompatActivity() {
         supportActionBar?.title = title
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.setNavigationOnClickListener { finish() }
+    }
+
+    private fun setupDebugLogPanel() {
+        // Create debug log panel at the bottom of the CoordinatorLayout
+        debugLogContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(ContextCompat.getColor(this@DeviceDetailActivity, R.color.surface))
+            elevation = 8f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Toggle button row
+        val toggleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(12, 8, 12, 4)
+        }
+
+        val toggleLabel = TextView(this).apply {
+            text = "🔍 سجل الفحص"
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(this@DeviceDetailActivity, R.color.text_secondary))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        debugToggleBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "عرض"
+            textSize = 11f
+            isAllCaps = false
+            cornerRadius = 16
+            setTextColor(ContextCompat.getColor(this@DeviceDetailActivity, R.color.primary))
+            setOnClickListener { toggleDebugLog() }
+        }
+
+        toggleRow.addView(toggleLabel)
+        toggleRow.addView(debugToggleBtn)
+        debugLogContainer.addView(toggleRow)
+
+        // Log content in a scrollable text
+        debugLogScroll = ScrollView(this).apply {
+            visibility = View.GONE
+            isVerticalScrollBarEnabled = true
+            setPadding(12, 0, 12, 8)
+        }
+
+        debugLogText = TextView(this).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(ContextCompat.getColor(this@DeviceDetailActivity, R.color.text_primary))
+            setLineSpacing(2f, 1f)
+        }
+
+        debugLogScroll.addView(debugLogText)
+        debugLogContainer.addView(debugLogScroll)
+
+        // Add to the root CoordinatorLayout at the bottom
+        val coordinatorLayout = binding.coordinator as? android.widget.FrameLayout
+        if (coordinatorLayout != null) {
+            val lp = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.gravity = Gravity.BOTTOM
+            debugLogContainer.layoutParams = lp
+            coordinatorLayout.addView(debugLogContainer)
+        }
+    }
+
+    private fun toggleDebugLog() {
+        debugLogVisible = !debugLogVisible
+        debugLogScroll.visibility = if (debugLogVisible) View.VISIBLE else View.GONE
+        debugToggleBtn.text = if (debugLogVisible) "إخفاء" else "عرض"
+    }
+
+    private fun updateDebugLog(logs: List<String>) {
+        val sb = StringBuilder()
+        for (log in logs) {
+            sb.append(log).append("\n")
+        }
+        debugLogText.text = sb.toString()
+
+        // Auto-scroll to top (newest)
+        debugLogScroll.post {
+            debugLogScroll.scrollTo(0, 0)
+        }
+
+        // Show the toggle if there are logs
+        if (logs.isNotEmpty() && !debugLogVisible) {
+            debugToggleBtn.text = "عرض (${logs.size})"
+        }
     }
 
     private fun setupViews(device: Device) {
@@ -95,7 +202,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         val statusColor = if (device.isOnline) R.color.online_color else R.color.offline_color
         binding.statusDot.setBackgroundColor(getColor(statusColor))
 
-        // Quick actions
+        // Quick actions — use CORRECT server registry keys
         binding.btnScreenshot.setOnClickListener { viewModel.takeScreenshot() }
         binding.btnLocation.setOnClickListener { viewModel.getLocation() }
         binding.btnBatteryInfo.setOnClickListener { viewModel.getBatteryInfo() }
@@ -166,7 +273,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         } else {
             MaterialAlertDialogBuilder(this)
                 .setTitle("إرسال أمر")
-                .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟")
+                .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟\n\nمفتاح الأمر: ${commandDef.key}")
                 .setPositiveButton(R.string.confirm) { _, _ ->
                     viewModel.sendCommand(commandDef.key)
                 }
@@ -211,6 +318,7 @@ class DeviceDetailActivity : AppCompatActivity() {
 
         MaterialAlertDialogBuilder(this)
             .setTitle("أمر: ${commandDef.name}")
+            .setMessage("مفتاح الأمر: ${commandDef.key}")
             .setView(dialogView)
             .setPositiveButton(R.string.confirm) { _, _ ->
                 val paramMap = mutableMapOf<String, String>()
@@ -263,11 +371,15 @@ class DeviceDetailActivity : AppCompatActivity() {
 
         viewModel.commandResult.observe(this) { result ->
             when (result) {
-                is Result.Loading -> {}
+                is Result.Loading -> {
+                    binding.swipeRefresh.isRefreshing = true
+                }
                 is Result.Success -> {
+                    binding.swipeRefresh.isRefreshing = false
                     Snackbar.make(binding.coordinator, result.data, Snackbar.LENGTH_SHORT).show()
                 }
                 is Result.Error -> {
+                    binding.swipeRefresh.isRefreshing = false
                     if (result.code == 401) {
                         showSessionExpired()
                     } else {
@@ -275,7 +387,11 @@ class DeviceDetailActivity : AppCompatActivity() {
                     }
                 }
             }
-            binding.swipeRefresh.isRefreshing = false
+        }
+
+        // Debug log observer
+        viewModel.debugLogs.observe(this) { logs ->
+            updateDebugLog(logs)
         }
     }
 
@@ -304,7 +420,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         }
     }
 
-    // Command parameter definitions
+    // Command parameter definitions — keys match server COMMAND_REGISTRY
     data class ParamDef(val key: String, val label: String, val type: String = "text", val defaultValue: String = "")
 
     private val COMMAND_PARAMS: Map<String, List<ParamDef>> = mapOf(
@@ -321,18 +437,12 @@ class DeviceDetailActivity : AppCompatActivity() {
         "install_app" to listOf(
             ParamDef("url", "رابط APK", "url")
         ),
-        "show_message" to listOf(
+        "show_notification" to listOf(
             ParamDef("title", "العنوان", "text"),
             ParamDef("message", "الرسالة", "multiline")
         ),
-        "set_wallpaper" to listOf(
-            ParamDef("url", "رابط الصورة", "url")
-        ),
         "set_ringtone" to listOf(
             ParamDef("url", "رابط النغمة", "url")
-        ),
-        "set_clipboard" to listOf(
-            ParamDef("text", "النص", "multiline")
         ),
         "set_volume" to listOf(
             ParamDef("level", "المستوى (0-100)", "number")
@@ -352,13 +462,6 @@ class DeviceDetailActivity : AppCompatActivity() {
         "delete_file" to listOf(
             ParamDef("path", "مسار الملف", "text")
         ),
-        "rename_file" to listOf(
-            ParamDef("path", "المسار الحالي", "text"),
-            ParamDef("new_name", "الاسم الجديد", "text")
-        ),
-        "create_folder" to listOf(
-            ParamDef("path", "مسار المجلد", "text")
-        ),
         "open_app" to listOf(
             ParamDef("package", "اسم الحزمة", "text")
         ),
@@ -371,37 +474,14 @@ class DeviceDetailActivity : AppCompatActivity() {
         "uninstall_app" to listOf(
             ParamDef("package", "اسم الحزمة", "text")
         ),
-        "app_info" to listOf(
+        "block_app" to listOf(
             ParamDef("package", "اسم الحزمة", "text")
         ),
-        "get_app_permissions" to listOf(
+        "unblock_app" to listOf(
             ParamDef("package", "اسم الحزمة", "text")
         ),
-        "set_app_permission" to listOf(
-            ParamDef("package", "اسم الحزمة", "text"),
-            ParamDef("permission", "الصلاحية", "text")
-        ),
-        "type_text" to listOf(
-            ParamDef("text", "النص", "multiline")
-        ),
-        "tap" to listOf(
-            ParamDef("x", "X", "number"),
-            ParamDef("y", "Y", "number")
-        ),
-        "swipe" to listOf(
-            ParamDef("x1", "X البداية", "number"),
-            ParamDef("y1", "Y البداية", "number"),
-            ParamDef("x2", "X النهاية", "number"),
-            ParamDef("y2", "Y النهاية", "number")
-        ),
-        "set_pin" to listOf(
-            ParamDef("pin", "رقم PIN", "number")
-        ),
-        "change_password" to listOf(
-            ParamDef("password", "كلمة المرور الجديدة", "text")
-        ),
-        "set_stream_quality" to listOf(
-            ParamDef("quality", "الجودة (low/medium/high)", "text", "medium")
+        "close_app" to listOf(
+            ParamDef("package", "اسم الحزمة", "text")
         ),
         "speak_text" to listOf(
             ParamDef("text", "النص", "multiline")
@@ -409,18 +489,11 @@ class DeviceDetailActivity : AppCompatActivity() {
         "play_sound" to listOf(
             ParamDef("url", "رابط الصوت", "url")
         ),
-        "dismiss_notification" to listOf(
-            ParamDef("key", "مفتاح الإشعار", "text")
+        "set_stream_quality" to listOf(
+            ParamDef("quality", "الجودة (low/medium/high)", "text", "medium")
         ),
-        "reply_notification" to listOf(
-            ParamDef("key", "مفتاح الإشعار", "text"),
-            ParamDef("text", "الرد", "multiline")
-        ),
-        "block_app" to listOf(
-            ParamDef("package", "اسم الحزمة", "text")
-        ),
-        "unblock_app" to listOf(
-            ParamDef("package", "اسم الحزمة", "text")
+        "change_passcode" to listOf(
+            ParamDef("password", "كلمة المرور الجديدة", "text")
         )
     )
 }

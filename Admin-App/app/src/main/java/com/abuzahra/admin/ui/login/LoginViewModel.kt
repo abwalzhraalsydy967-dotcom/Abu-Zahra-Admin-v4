@@ -1,13 +1,21 @@
 package com.abuzahra.admin.ui.login
 
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.abuzahra.admin.data.api.*
 import com.abuzahra.admin.util.Preferences
 import kotlinx.coroutines.launch
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 
 class LoginViewModel(private val preferences: Preferences) : ViewModel() {
+
+    companion object {
+        private const val TAG = "LoginViewModel"
+    }
 
     private val _loginResult = MutableLiveData<Result<LoginResponse>>()
     val loginResult: MutableLiveData<Result<LoginResponse>> = _loginResult
@@ -22,29 +30,38 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
 
         viewModelScope.launch {
             try {
+                Log.d(TAG, "تسجيل دخول بالبريد: $email → ${preferences.serverUrl}")
                 val api = ApiClient.create(preferences.serverUrl)
                 val response = api.login(LoginRequest(email, password))
+
+                Log.d(TAG, "استجابة تسجيل الدخول: ok=${response.ok}, token=${response.token.take(16)}")
 
                 if (response.ok && response.token.isNotEmpty()) {
                     saveSession(response)
                     _loginResult.postValue(Result.Success(response))
                 } else {
+                    Log.e(TAG, "فشل تسجيل الدخول: ${response.message}")
                     _loginResult.postValue(Result.Error(response.message.ifEmpty { "فشل تسجيل الدخول" }))
                 }
             } catch (e: retrofit2.HttpException) {
+                Log.e(TAG, "خطأ HTTP ${e.code()}: ${e.message}")
                 when (e.code()) {
                     401 -> _loginResult.postValue(Result.Error("البريد الإلكتروني أو كلمة المرور غير صحيحة", 401))
                     403 -> _loginResult.postValue(Result.Error("تم رفض الوصول", 403))
                     else -> _loginResult.postValue(Result.Error("خطأ في الخادم: ${e.code()}", e.code()))
                 }
-            } catch (e: java.net.SocketTimeoutException) {
+            } catch (e: SocketTimeoutException) {
+                Log.e(TAG, "انتهت مهلة الاتصال", e)
                 _loginResult.postValue(Result.Error("انتهت مهلة الاتصال بالخادم"))
-            } catch (e: java.net.UnknownHostException) {
-                _loginResult.postValue(Result.Error("لا يمكن الوصول إلى الخادم"))
-            } catch (e: javax.net.ssl.SSLException) {
-                _loginResult.postValue(Result.Error("خطأ في شهادة الأمان"))
+            } catch (e: UnknownHostException) {
+                Log.e(TAG, "لا يمكن الوصول إلى الخادم: ${preferences.serverUrl}", e)
+                _loginResult.postValue(Result.Error("لا يمكن الوصول إلى الخادم: ${preferences.serverUrl}"))
+            } catch (e: SSLException) {
+                Log.e(TAG, "خطأ SSL", e)
+                _loginResult.postValue(Result.Error("خطأ في شهادة الأمان (SSL)"))
             } catch (e: Exception) {
-                _loginResult.postValue(Result.Error("خطأ في الاتصال: ${e.message}"))
+                Log.e(TAG, "خطأ غير متوقع", e)
+                _loginResult.postValue(Result.Error("خطأ: ${e.message}"))
             }
         }
     }
@@ -59,6 +76,9 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
 
         viewModelScope.launch {
             try {
+                Log.d(TAG, "Firebase Auth: email=$email, server=${preferences.serverUrl}")
+                Log.d(TAG, "   idToken length: ${idToken.length}")
+
                 val api = ApiClient.create(preferences.serverUrl)
                 val request = FirebaseAuthRequest(
                     email = email,
@@ -67,15 +87,26 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
                 )
                 val response = api.firebaseAuth(request)
 
+                Log.d(TAG, "استجابة Firebase Auth: ok=${response.ok}, token=${response.token.take(16)}")
+
                 if (response.ok && response.token.isNotEmpty()) {
                     saveSession(response)
                     _loginResult.postValue(Result.Success(response))
                 } else {
+                    Log.e(TAG, "فشل Firebase Auth: ${response.message}")
                     _loginResult.postValue(Result.Error(response.message.ifEmpty { "فشل تسجيل الدخول" }))
                 }
             } catch (e: retrofit2.HttpException) {
+                Log.e(TAG, "Firebase Auth HTTP ${e.code()}: ${e.message}", e)
                 _loginResult.postValue(Result.Error("خطأ في الخادم: ${e.code()}", e.code()))
+            } catch (e: SocketTimeoutException) {
+                Log.e(TAG, "Firebase Auth مهلة", e)
+                _loginResult.postValue(Result.Error("انتهت مهلة الاتصال بالخادم"))
+            } catch (e: UnknownHostException) {
+                Log.e(TAG, "Firebase Auth لا يمكن الوصول: ${preferences.serverUrl}", e)
+                _loginResult.postValue(Result.Error("لا يمكن الوصول إلى الخادم"))
             } catch (e: Exception) {
+                Log.e(TAG, "Firebase Auth خطأ", e)
                 _loginResult.postValue(Result.Error("خطأ: ${e.message}"))
             }
         }
@@ -88,6 +119,7 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
         preferences.userName = response.username
         preferences.userRole = response.role
         preferences.userId = response.userId
+        Log.d(TAG, "تم حفظ الجلسة: user=${response.username}, code=${response.permanentCode}")
     }
 
     val isLoggedIn: Boolean get() = preferences.isLoggedIn
