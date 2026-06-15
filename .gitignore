@@ -1,0 +1,82 @@
+# ─── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Android ──────────────────────────────────────────────
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+*.apk
+!Releases/*.apk
+*.aab
+*.apks
+*.dex
+*.class
+gen/
+bin/
+lint/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ─── IDE & Editor ─────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ─── OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ─── Build & Release Artifacts ────────────────────────────
+*.zip
+!Releases/
+download/
+
+# ─── Environment & Secrets ────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+serviceAccountKey.json
+google-services.json
+
+# ─── Upload & Runtime Data ────────────────────────────────
+upload/
+Server/data/
+
+# ─── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Database ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── Misc ─────────────────────────────────────────────────
+tool-results/
+node_modules/
+.next/
