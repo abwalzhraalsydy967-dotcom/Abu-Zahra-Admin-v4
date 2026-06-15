@@ -142,35 +142,33 @@ class StreamingActivity : AppCompatActivity() {
     }
 
     private fun startFramePolling() {
-        val runnable = object : Runnable {
-            override fun run() {
-                if (!isStreaming) return
+        val pollingRunnable = Runnable {
+            if (!isStreaming) return@Runnable
 
-                lifecycleScope.launch {
-                    try {
-                        val prefs = Preferences.getInstance(this@StreamingActivity)
-                        val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
-                        val response = api.getStreamFrame(device.id, streamType)
+            lifecycleScope.launch {
+                try {
+                    val prefs = Preferences.getInstance(this@StreamingActivity)
+                    val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
+                    val response = api.getStreamFrame(device.id, streamType)
 
-                        if (response.ok && response.image.isNotEmpty()) {
-                            val bytes = android.util.Base64.decode(response.image, android.util.Base64.DEFAULT)
-                            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            withContext(Dispatchers.Main) {
-                                binding.imageView.setImageBitmap(bitmap)
-                                binding.tvFrameInfo.text = "${bitmap.width}x${bitmap.height}"
-                                binding.tvFrameInfo.visibility = View.VISIBLE
-                            }
+                    if (response.ok && response.image.isNotEmpty()) {
+                        val bytes = android.util.Base64.decode(response.image, android.util.Base64.DEFAULT)
+                        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        withContext(Dispatchers.Main) {
+                            binding.imageView.setImageBitmap(bitmap)
+                            binding.tvFrameInfo.text = "${bitmap.width}x${bitmap.height}"
+                            binding.tvFrameInfo.visibility = View.VISIBLE
                         }
-                    } catch (_: Exception) {}
-
-                    if (isStreaming) {
-                        handler.postDelayed(this@runnable, intervalMs)
                     }
+                } catch (_: Exception) {}
+
+                if (isStreaming) {
+                    handler.postDelayed(pollingRunnable, intervalMs)
                 }
             }
         }
-        streamRunnable = runnable
-        handler.post(runnable)
+        streamRunnable = pollingRunnable
+        handler.post(pollingRunnable)
     }
 
     private fun stopStreaming() {
