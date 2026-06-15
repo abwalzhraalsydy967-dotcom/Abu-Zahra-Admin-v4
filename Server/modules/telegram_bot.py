@@ -20,7 +20,7 @@ from .config import (
 )
 from .store import store
 from .commands import COMMAND_REGISTRY, CMD_CATEGORIES, get_commands_by_category
-from .firebase_client import firebase_connected
+from . import firebase_client as _fb
 
 logger = logging.getLogger("telegram")
 
@@ -706,7 +706,7 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
     
     # Also push to Firebase for real-time delivery
     from .firebase_client import push_command
-    if firebase_connected:
+    if _fb.firebase_connected:
         await push_command(device_id, {
             "id": queued['id'],
             "command": actual_cmd,

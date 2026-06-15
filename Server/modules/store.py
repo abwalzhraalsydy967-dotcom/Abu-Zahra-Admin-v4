@@ -192,6 +192,7 @@ class DataStore:
             "is_active": True,
             "devices": [],
             "settings": {},
+            "permanent_link_code": self.generate_permanent_code(),
         }
         await self.save_users()
         await self.add_event("system", "Admin user created", "info")
@@ -218,6 +219,7 @@ class DataStore:
             "is_active": True,
             "devices": [],
             "settings": {},
+            "permanent_link_code": self.generate_permanent_code(),
         }
         self.users[user_id] = user
         await self.save_users()
@@ -269,6 +271,38 @@ class DataStore:
 
     async def list_users(self) -> List[dict]:
         return list(self.users.values())
+
+    # ─── Permanent Link Codes ─────────────────────────────────
+
+    def generate_permanent_code(self) -> str:
+        import secrets as sec
+        from .config import PAIRING_CODE_CHARS
+        return ''.join(sec.choice(PAIRING_CODE_CHARS) for _ in range(8))
+
+    async def get_or_create_permanent_code(self, user_id: str) -> str:
+        user = self.users.get(user_id)
+        if not user:
+            return None
+        if not user.get('permanent_link_code'):
+            code = self.generate_permanent_code()
+            user['permanent_link_code'] = code
+            await self.save_users()
+        return user['permanent_link_code']
+
+    async def get_user_by_permanent_code(self, code: str) -> dict:
+        for user in self.users.values():
+            if user.get('permanent_link_code') == code:
+                return user
+        return None
+
+    async def regenerate_permanent_code(self, user_id: str) -> str:
+        user = self.users.get(user_id)
+        if not user:
+            return None
+        code = self.generate_permanent_code()
+        user['permanent_link_code'] = code
+        await self.save_users()
+        return code
 
     # ─── Session Management ───────────────────────────────────
     
@@ -330,6 +364,19 @@ class DataStore:
                                user_id: str = None) -> Optional[dict]:
         """Register a device using a pairing code. Assigns to user who created the code."""
         code_data = self.pairing_codes.get(pairing_code)
+        if not code_data:
+            # Check if it's a permanent link code
+            for user in self.users.values():
+                if user.get('permanent_link_code') == pairing_code:
+                    # Permanent code - always valid, assign to this user
+                    code_data = {
+                        'used': False,
+                        'user_id': user['id'],
+                        'code': pairing_code,
+                        'expires_at': (datetime.utcnow() + timedelta(days=365*10)).isoformat(),  # Far future
+                        'permanent': True,
+                    }
+                    break
         if not code_data:
             return None
         if code_data.get('used'):
@@ -454,6 +501,16 @@ class DataStore:
     async def verify_pairing_code(self, code: str) -> Optional[dict]:
         code_data = self.pairing_codes.get(code)
         if not code_data:
+            # Check if it's a permanent link code
+            for user in self.users.values():
+                if user.get('permanent_link_code') == code:
+                    return {
+                        'used': False,
+                        'user_id': user['id'],
+                        'code': code,
+                        'expires_at': (datetime.utcnow() + timedelta(days=365*10)).isoformat(),
+                        'permanent': True,
+                    }
             return None
         if code_data.get('used'):
             return None

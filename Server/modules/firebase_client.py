@@ -150,6 +150,24 @@ async def store_location(device_id: str, location_data: dict):
     did = validate_id(device_id, "device_id")
     await set(f"location/{did}", location_data)
 
+# ─── Permanent Code Sync ───────────────────────────────────
+
+async def sync_permanent_code(email: str, code: str, user_id: str):
+    """Store permanent link code in Firebase so Android app can look it up by email."""
+    safe_email = email.lower().replace('.', '_').replace('@', '_at_')
+    await update(f"permanent_codes/{safe_email}", {
+        "code": code,
+        "email": email,
+        "user_id": user_id,
+        "created_at": time.time(),
+        "server_domain": "alsydyabwalzhra.online",
+    })
+    # Also store reverse mapping: code -> email
+    await update(f"code_to_email/{code}", {
+        "email": email,
+        "user_id": user_id,
+    })
+
 # ─── Command Push via Firebase ────────────────────────────────
 
 async def push_command(device_id: str, command: dict):

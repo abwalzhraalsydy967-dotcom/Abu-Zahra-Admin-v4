@@ -29,3 +29,28 @@ Stage Summary:
 - شهادة TLS تلقائية من Let's Encrypt
 - لا أخطاء في السيرفر
 - استخدام الذاكرة: ~35MB
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: تكامل Firebase + Telegram + نظام أكواد الربط الدائمة
+
+Work Log:
+- استخراج المفاتيح من google-services.json (Firebase RTDB URL, API Key)
+- التحقق من تطابق أسماء الحزم: com.abuzahra.admin ✅ و com.abuzahra.manager ✅
+- تحديث .env بـ: BOT_TOKEN, ADMIN_CHAT_ID, FIREBASE_PROJECT
+- تنفيذ نظام Permanent Link Codes لكل بريد إلكتروني
+- إضافة 4 methods جديدة لـ DataStore: generate_permanent_code, get_or_create_permanent_code, get_user_by_permanent_code, regenerate_permanent_code
+- إضافة sync_permanent_code في Firebase (permanent_codes/{email} + code_to_email/{code})
+- تحديث login API لإرجاع permanent_code
+- إضافة endpoint جديد: POST /api/web/regenerate_code
+- إصلاح خطأ Python import-by-value لـ firebase_connected (استخدام module reference)
+- تأكيد إرسال رسالة تيليجرام للمدير ✅
+- تأكيد مزامنة الأكواد مع Firebase ✅
+
+Stage Summary:
+- Firebase: متصل ✅
+- Telegram Bot: يعمل (مرسل رسالة للمدير) ✅
+- Permanent Codes: مخزنة في Firebase RTDB ✅
+- لوحة التحكم: https://alsydyabwalzhra.online ✅
+- API: /api/login يرجع permanent_code لكل مستخدم ✅

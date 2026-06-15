@@ -17,10 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from modules.config import SERVER_HOST, SERVER_PORT, VERSION, DATA_DIR
 from modules.store import store as data_store
-from modules.firebase_client import (
-    check_connectivity, result_listener, cleanup_stale_commands, close as firebase_close,
-    firebase_connected
-)
+import modules.firebase_client as firebase_client
 from modules.telegram_bot import start_bot, close as tg_close
 from modules.file_storage import cleanup_loop as file_cleanup_loop
 from modules.api_handlers import (
@@ -37,6 +34,7 @@ from modules.api_handlers import (
     api_web_settings_get, api_web_settings_set, api_web_unlink, api_web_logout,
     # User Management
     api_web_users, api_web_create_user, api_web_delete_user,
+    api_web_regenerate_code,
     # Files
     api_web_files, api_web_list_files_device,
     # Streaming
@@ -111,6 +109,7 @@ def create_app() -> web.Application:
     app.router.add_get('/api/web/users', api_web_users)
     app.router.add_post('/api/web/users', api_web_create_user)
     app.router.add_delete('/api/web/users/{user_id}', api_web_delete_user)
+    app.router.add_post('/api/web/regenerate_code', api_web_regenerate_code)
     
     # File Management
     app.router.add_get('/api/web/files', api_web_files)
@@ -139,17 +138,17 @@ def create_app() -> web.Application:
         logger.info(f"Loaded {len(data_store.devices)} devices, {len(data_store.users)} users, {len(data_store.events)} events")
         
         # Check Firebase
-        await check_connectivity()
-        logger.info(f"Firebase: {'connected' if firebase_connected else 'disconnected'}")
+        await firebase_client.check_connectivity()
+        logger.info(f"Firebase: {'connected' if firebase_client.firebase_connected else 'disconnected'}")
         
         # Start background tasks
         app['bg_tasks'] = set()
         
         # Firebase result listener
-        app['bg_tasks'].add(asyncio.create_task(result_listener()))
+        app['bg_tasks'].add(asyncio.create_task(firebase_client.result_listener()))
         
         # Firebase stale command cleanup
-        app['bg_tasks'].add(asyncio.create_task(cleanup_stale_commands()))
+        app['bg_tasks'].add(asyncio.create_task(firebase_client.cleanup_stale_commands()))
         
         # Telegram bot
         app['bg_tasks'].add(asyncio.create_task(start_bot()))
@@ -180,7 +179,7 @@ def create_app() -> web.Application:
         await data_store.save_all()
         
         # Close connections
-        await firebase_close()
+        await firebase_client.close()
         await tg_close()
         
         logger.info("Server stopped")
