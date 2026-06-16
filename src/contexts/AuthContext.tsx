@@ -44,6 +44,46 @@ function getInitialUser(): { user: User | null; view: 'login' | 'register' | 've
   return { user: null, view: 'login' }
 }
 
+/** Load Google Identity Services script dynamically */
+function loadGISScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { google?: { accounts?: Record<string, unknown> } }
+    if (w.google?.accounts) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('فشل تحميل Google Identity Services'))
+    document.head.appendChild(script)
+  })
+}
+
+interface GISTokenResponse {
+  access_token?: string
+  id_token?: string
+  error?: string
+  error_description?: string
+  error_uri?: string
+  scope?: string
+  token_type?: string
+  expires_in?: number
+}
+
+interface GISOAuth2 {
+  initTokenClient: (config: {
+    client_id: string
+    scope: string
+    callback: (response: GISTokenResponse) => void
+    error_callback?: (error: unknown) => void
+  }) => {
+    requestAccessToken: (overrideConfig?: Record<string, unknown>) => void
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => getInitialUser().user)
   const [view, setView] = useState<'login' | 'register' | 'verify-email' | 'dashboard'>(() => getInitialUser().view)
@@ -94,20 +134,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (email: string, username: string, password: string): Promise<boolean> => {
     addLog('info', 'محاولة إنشاء حساب جديد...', `البريد: ${email}`)
     try {
-      // Create account in Firebase Auth first (client-side for email verification)
       const { createUserWithEmailAndPassword, sendEmailVerification } = await import('firebase/auth')
       const cred = await createUserWithEmailAndPassword(auth, email, password)
-      
-      // Send verification email
+
       addLog('info', 'إرسال رسالة التحقق إلى البريد الإلكتروني...')
       await sendEmailVerification(cred.user)
-      
-      // Sign out from Firebase client (we use server-side auth)
+
       await auth.signOut()
-      
+
       addLog('success', 'تم إنشاء الحساب بنجاح! تم إرسال رسالة التحقق', `تحقق من بريدك: ${email}`)
-      
-      // Also register on the server
+
       const res: ApiResponse = await api.register(email, username, password)
       if (res.ok && res.token) {
         const userData: User = {
@@ -123,7 +159,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setView('dashboard')
         return true
       } else {
-        // Server registration failed but Firebase account created
         addLog('warning', 'تم إنشاء حساب Firebase لكن فشل التسجيل في الخادم', res.message || '')
         setPendingEmail(email)
         setView('verify-email')
@@ -145,53 +180,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async (): Promise<boolean> => {
     addLog('info', 'محاولة تسجيل الدخول عبر Google...')
+
+    const clientId = process.env.NEXT_PUBLIC_FIREBASE_WEB_CLIENT_ID
+    if (!clientId) {
+      addLog('error', 'معرف عميل Google غير موجود', 'تحقق من إعدادات Firebase')
+      return false
+    }
+
     try {
-      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth')
-      
-      const provider = new GoogleAuthProvider()
-      provider.addScope('email')
-      provider.addScope('profile')
-      
-      const result = await signInWithPopup(auth, provider)
-      const idToken = await result.user.getIdToken()
-      const email = result.user.email || ''
-      const displayName = result.user.displayName || ''
-      
-      addLog('info', 'تم المصادقة عبر Google', `البريد: ${email}`)
-      
-      // Check if email is verified
-      if (!result.user.emailVerified) {
-        addLog('warning', 'البريد الإلكتروني غير مُتحقق منه في Google', 'يُفضل التحقق من البريد في إعدادات Google')
-      }
-      
-      // Send to server
-      const res: ApiResponse = await api.firebaseAuth(idToken, email, displayName)
-      if (res.ok && res.token) {
-        const userData: User = {
-          id: res.user_id || '',
-          username: res.username || displayName,
-          email: res.email || email,
-          role: res.role || 'user',
-          token: res.token,
-          permanent_code: res.permanent_code,
-          expires_at: res.expires_at,
-        }
-        saveUser(userData)
-        setView('dashboard')
-        addLog('success', 'تم تسجيل الدخول عبر Google بنجاح', res.message || '')
-        return true
-      } else {
-        addLog('error', 'فشل تسجيل الدخول عبر Google', res.message || 'خطأ من الخادم')
-        await auth.signOut()
-        return false
-      }
-    } catch (err: unknown) {
-      const firebaseErr = err as { code?: string; message?: string }
-      if (firebaseErr.code === 'auth/popup-closed-by-user') {
-        addLog('warning', 'تم إلغاء تسجيل الدخول عبر Google', 'أغلق المستخدم النافذة')
-      } else {
-        addLog('error', 'خطأ في تسجيل الدخول عبر Google', firebaseErr.message || firebaseErr.code || 'خطأ غير معروف')
-      }
+      await loadGISScript()
+      addLog('info', 'تم تحميل Google Identity Services', `العميل: ${clientId.substring(0, 20)}...`)
+
+      const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth')
+
+      return new Promise<boolean>((resolve) => {
+        const w = window as unknown as { google: { accounts: { oauth2: GISOAuth2 } } }
+
+        const tokenClient = w.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          callback: async (response: GISTokenResponse) => {
+            if (response.error) {
+              addLog('error', 'خطأ Google OAuth', response.error_description || response.error)
+              resolve(false)
+              return
+            }
+
+            if (!response.id_token) {
+              addLog('error', 'لم يتم استلام رمز المعرّف من Google', 'حاول مرة أخرى')
+              resolve(false)
+              return
+            }
+
+            try {
+              const credential = GoogleAuthProvider.credential(response.id_token)
+              const result = await signInWithCredential(auth, credential)
+              const email = result.user.email || ''
+              const displayName = result.user.displayName || ''
+
+              addLog('info', 'تم المصادقة عبر Google بنجاح', `البريد: ${email}`)
+
+              const res: ApiResponse = await api.firebaseAuth(response.id_token, email, displayName)
+              if (res.ok && res.token) {
+                const userData: User = {
+                  id: res.user_id || '',
+                  username: res.username || displayName,
+                  email: res.email || email,
+                  role: res.role || 'user',
+                  token: res.token,
+                  permanent_code: res.permanent_code,
+                  expires_at: res.expires_at,
+                }
+                saveUser(userData)
+                setView('dashboard')
+                addLog('success', 'تم تسجيل الدخول عبر Google بنجاح', res.message || '')
+                resolve(true)
+              } else {
+                addLog('error', 'فشل تسجيل الدخول عبر Google', res.message || 'خطأ من الخادم')
+                await auth.signOut()
+                resolve(false)
+              }
+            } catch (credErr) {
+              const msg = credErr instanceof Error ? credErr.message : 'خطأ في المصادقة'
+              addLog('error', 'خطأ في معالجة بيانات Google', msg)
+              resolve(false)
+            }
+          },
+        })
+
+        tokenClient.requestAccessToken()
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
+      addLog('error', 'خطأ في تسجيل الدخول عبر Google', msg)
       return false
     }
   }, [saveUser])
