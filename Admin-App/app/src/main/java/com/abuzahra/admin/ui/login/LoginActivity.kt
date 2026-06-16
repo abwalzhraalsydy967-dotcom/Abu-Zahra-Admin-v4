@@ -1,17 +1,18 @@
 package com.abuzahra.admin.ui.login
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
@@ -34,6 +35,7 @@ class LoginActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "LoginActivity"
+        private const val SHA1_FINGERPRINT = "0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4"
     }
 
     private lateinit var binding: ActivityLoginBinding
@@ -44,7 +46,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var auth: FirebaseAuth
 
-    // Debug log
+    // Debug log - now always visible in the layout
     private lateinit var debugLogText: TextView
     private lateinit var debugLogScroll: ScrollView
 
@@ -56,11 +58,11 @@ class LoginActivity : AppCompatActivity() {
         val entry = "[$timestamp] $msg"
         Log.d(TAG, entry)
         debugLogs.add(0, entry)
-        if (debugLogs.size > 30) {
-            val excess = debugLogs.subList(30, debugLogs.size)
+        if (debugLogs.size > 50) {
+            val excess = debugLogs.subList(50, debugLogs.size)
             excess.clear()
         }
-        if (debugPanelReady && ::debugLogText.isInitialized && ::debugLogScroll.isInitialized) {
+        if (::debugLogText.isInitialized) {
             val sb = StringBuilder()
             for (log in debugLogs) sb.append(log).append("\n")
             debugLogText.text = sb.toString()
@@ -83,9 +85,19 @@ class LoginActivity : AppCompatActivity() {
             addLog("   PhotoUrl: ${account.photoUrl}")
             firebaseAuthWithGoogle(account)
         } catch (e: ApiException) {
-            val errorMsg = translateGoogleError(e.statusCode)
-            addLog("❌ فشل تسجيل جوجل: $errorMsg (code=${e.statusCode})")
-            showError(errorMsg)
+            val statusCode = e.statusCode
+            addLog("❌ فشل تسجيل جوجل: code=${statusCode}")
+            addLog("   Status message: ${e.status?.statusMessage ?: "N/A"}")
+            addLog("   Stack: ${e.stackTraceToString().take(200)}")
+
+            // For error codes 10 and 12500, show enhanced SHA1 dialog
+            if (statusCode == 10 || statusCode == 12500) {
+                showSHA1HelpDialog(statusCode)
+            } else {
+                val errorMsg = translateGoogleError(statusCode)
+                showError(errorMsg)
+            }
+
             binding.progressBar.visibility = View.GONE
             binding.btnLogin.isEnabled = true
             binding.btnGoogleSignIn.isEnabled = true
@@ -98,9 +110,11 @@ class LoginActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         auth = Firebase.auth
+
+        // Setup the debug log panel from the layout XML
         setupDebugLogPanel()
 
-        addLog("تطبيق أبو ظهرا - الإدارة v2.0")
+        addLog("تطبيق أبو زهرة - الإدارة v2.0")
         addLog("الخادم: ${Preferences.getInstance(this).serverUrl}")
 
         if (viewModel.isLoggedIn) {
@@ -116,41 +130,12 @@ class LoginActivity : AppCompatActivity() {
         observeViewModel()
     }
 
-    private var debugPanelReady = false
-
     private fun setupDebugLogPanel() {
-        // The root is CoordinatorLayout — find the inner LinearLayout or add directly
-        val rootLayout = binding.root as? androidx.coordinatorlayout.widget.CoordinatorLayout
-        if (rootLayout == null) {
-            debugPanelReady = false
-            return
-        }
+        // The debug panel is now in the XML layout, find views by ID
+        debugLogText = binding.root.findViewById(R.id.debugLogText)
+        debugLogScroll = binding.root.findViewById(R.id.debugLogScroll)
 
-        debugLogScroll = ScrollView(this).apply {
-            visibility = View.GONE
-            isVerticalScrollBarEnabled = true
-            setBackgroundColor(ContextCompat.getColor(this@LoginActivity, R.color.surface))
-            setPadding(16, 8, 16, 8)
-            val lp = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.gravity = android.view.Gravity.BOTTOM
-            layoutParams = lp
-        }
-
-        debugLogText = TextView(this).apply {
-            textSize = 11f
-            typeface = android.graphics.Typeface.MONOSPACE
-            setTextColor(ContextCompat.getColor(this@LoginActivity, R.color.text_primary))
-            setLineSpacing(2f, 1f)
-        }
-
-        debugLogScroll.addView(debugLogText)
-        rootLayout.addView(debugLogScroll)
-        debugPanelReady = true
-
-        // Show any logs that were accumulated before the panel was ready
+        // Populate any logs that were accumulated before views were ready
         if (debugLogs.isNotEmpty()) {
             val sb = StringBuilder()
             for (log in debugLogs) sb.append(log).append("\n")
@@ -229,12 +214,6 @@ class LoginActivity : AppCompatActivity() {
         binding.etPassword.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) binding.tilPassword.error = null
         }
-
-        // Long-press on error text to show debug log
-        binding.tvError.setOnLongClickListener {
-            debugLogScroll.visibility = if (debugLogScroll.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            true
-        }
     }
 
     private fun attemptLogin() {
@@ -292,7 +271,7 @@ class LoginActivity : AppCompatActivity() {
             addLog("   1. مفتاح SHA1 غير مطابق في Firebase Console")
             addLog("   2. google-services.json غير صحيح")
             addLog("   3. OAuth Client ID غير مُعرّف")
-            showError("فشل الحصول على رمز المصادقة - تأكد من إضافة SHA1 الصحيح في Firebase Console")
+            showSHA1HelpDialog(10)
             showLoading(false)
             return
         }
@@ -318,7 +297,6 @@ class LoginActivity : AppCompatActivity() {
                     if (exception != null) {
                         addLog("   النوع: ${exception.javaClass.simpleName}")
                         addLog("   الرسالة: ${exception.message}")
-                        // Parse common Firebase Auth errors
                         val errorMsg = translateFirebaseError(exception)
                         addLog("   التفسير: $errorMsg")
                         showError(errorMsg)
@@ -334,7 +312,7 @@ class LoginActivity : AppCompatActivity() {
         return when (statusCode) {
             7 -> "الشبكة غير متاحة - تحقق من الاتصال بالإنترنت"
             8 -> "خطأ داخلي في خدمات Google"
-            10 -> "تم إلغاء العملية من قبل المستخدم"
+            10 -> "خطأ في التحقق من هوية التطبيق"
             12 -> "تم إلغاء تسجيل الدخول"
             13 -> "خطأ في الاتصال - حاول مرة أخرى"
             16 -> "خطأ داخلي"
@@ -343,10 +321,8 @@ class LoginActivity : AppCompatActivity() {
             20 -> "حساب جوجل غير متاح"
             21 -> "الجهاز غير مدعوم"
             22 -> "حدث خطأ في الشبكة"
-            12500 -> "حدث خطأ أثناء تسجيل الدخول - قد يكون SHA1 غير مطابق"
-            12501 -> "تم الإلغاء من المستخدم"
-            12502 -> "خطأ في الاتصال بالشبكة"
-            else -> "خطأ غير معروف ($statusCode) - قد تحتاج لإضافة SHA1 الصحيح في Firebase Console"
+            12500 -> "حدث خطأ أثناء تسجيل الدخول"
+            else -> "خطأ غير معروف ($statusCode)"
         }
     }
 
@@ -367,6 +343,95 @@ class LoginActivity : AppCompatActivity() {
                 "خطأ في الشبكة"
             else -> "فشل المصادقة: ${msg.take(100)}"
         }
+    }
+
+    /**
+     * Shows a detailed, helpful dialog for SHA1-related Google Sign-In errors (codes 10, 12500).
+     * Includes the exact SHA1 fingerprint the user needs to add to Firebase Console.
+     */
+    private fun showSHA1HelpDialog(errorCode: Int) {
+        addLog("📋 عرض مساعدة SHA1 للخطأ $errorCode")
+
+        val errorTitle = when (errorCode) {
+            10 -> "خطأ في التحقق من التطبيق (ERROR 10)"
+            12500 -> "خطأ تسجيل الدخول (ERROR 12500)"
+            else -> "خطأ في تسجيل الدخول"
+        }
+
+        val errorMsg = when (errorCode) {
+            10 -> "يعني هذا الخطأ أن مفتاح SHA1 الخاص بالتطبيق غير مضاف في Firebase Console."
+            12500 -> "يعني هذا الخطأ عادةً أن مفتاح SHA1 غير مطابق أو OAuth Client ID غير صحيح."
+            else -> "حدث خطأ في تسجيل الدخول بجوجل."
+        }
+
+        val finalInstructions = """
+            $errorMsg
+            
+            ──────────────────────────────────
+            
+            🔑 خطوات الحل:
+            
+            1️⃣ اذهب إلى Firebase Console:
+               https://console.firebase.google.com
+            
+            2️⃣ اختر المشروع ثم اذهب إلى:
+               إعدادات المشروع ← عادة ← تطبيقات Android
+            
+            3️⃣ اضغط على "إضافة بصمة SHA"
+            
+            4️⃣ انسخ هذا المفتاح وألصقه:
+            
+            $SHA1_FINGERPRINT
+            
+            5️⃣ أعد تحميل ملف google-services.json
+               وضعه في مجلد app/
+            
+            6️⃣ أعد بناء التطبيق
+            
+            ──────────────────────────────────
+            
+            💡 نصيحة: تأكد من إضافة نفس المفتاح
+            في كل من:
+            • إعدادات المشروع ← عادة ← SHA1
+            • المصادقة ← إعدادات تسجيل الدخول ← 
+              معرّف عميل OAuth للويب
+        """.trimIndent()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("⚠️ $errorTitle")
+            .setMessage(finalInstructions)
+            .setPositiveButton("نسخ المفتاح SHA1") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("SHA1", SHA1_FINGERPRINT)
+                clipboard.setPrimaryClip(clip)
+                addLog("✅ تم نسخ مفتاح SHA1 للحافظة")
+            }
+            .setNegativeButton("حسناً", null)
+            .setNeutralButton("سجل التشخيص") { _, _ ->
+                showDebugLogDialog()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Shows the full debug log in a dialog for easy copying.
+     */
+    private fun showDebugLogDialog() {
+        val sb = StringBuilder()
+        for (log in debugLogs) sb.append(log).append("\n")
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("📋 سجل التشخيص الكامل")
+            .setMessage(sb.toString())
+            .setPositiveButton("نسخ الكل") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("debug_log", sb.toString())
+                clipboard.setPrimaryClip(clip)
+                addLog("✅ تم نسخ السجل الكامل")
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
     }
 
     private fun showLoading(loading: Boolean) {
@@ -422,11 +487,11 @@ class LoginActivity : AppCompatActivity() {
     private fun showLinkCodeDialog(code: String) {
         addLog("📋 عرض كود الربط: $code")
         MaterialAlertDialogBuilder(this)
-            .setTitle("كود الربط الخاص بك")
+            .setTitle("🔗 كود الربط الخاص بك")
             .setMessage("كود الربط الدائم لحسابك:\n\n$code\n\nاحفظ هذا الكود لربط الأجهزة المستهدفة. هذا الكود صالح مدى الحياة.")
             .setPositiveButton("نسخ الكود") { _, _ ->
-                val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-                val clip = android.content.ClipData.newPlainText("link_code", code)
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("link_code", code)
                 clipboard.setPrimaryClip(clip)
                 addLog("✅ تم نسخ الكود")
                 navigateToDashboard()

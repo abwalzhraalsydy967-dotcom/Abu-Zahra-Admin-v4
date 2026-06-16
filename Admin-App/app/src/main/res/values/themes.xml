@@ -18,13 +18,24 @@
         <item name="android:windowLightNavigationBar">true</item>
     </style>
 
-    <style name="Theme.AbuZahraAdmin.Login" parent="Theme.AbuZahraAdmin">
-        <item name="android:windowBackground">@color/primary</item>
-        <item name="android:statusBarColor">@color/primary_dark</item>
+    <style name="Theme.AbuZahraAdmin.Login" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/login_emerald</item>
+        <item name="colorPrimaryDark">@color/login_gradient_end</item>
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorSecondary">@color/login_emerald</item>
+        <item name="colorOnSecondary">@color/on_secondary</item>
+        <item name="colorError">@color/error</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_variant</item>
+        <item name="android:windowBackground">@drawable/bg_login_gradient</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
-    <style name="Theme.AbuZahraAdmin.Splash" parent="Theme.AbuZahraAdmin">
-        <item name="android:windowBackground">@color/primary</item>
+    <style name="Theme.AbuZahraAdmin.Splash" parent="Theme.AbuZahraAdmin.Login">
+        <item name="android:windowBackground">@drawable/bg_login_gradient</item>
     </style>
 
     <style name="Widget.AbuZahraAdmin.CardView" parent="">

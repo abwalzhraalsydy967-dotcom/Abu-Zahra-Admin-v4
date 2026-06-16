@@ -35,6 +35,18 @@ jobs:
           key: gradle-admin-${{ hashFiles('Admin-App/**/build.gradle', 'Admin-App/**/gradle-wrapper.properties') }}
           restore-keys: gradle-admin-
 
+      - name: Print SHA1 Fingerprint
+        run: |
+          echo "========================================="
+          echo "🔑 Admin-App SHA1 Fingerprint:"
+          echo "========================================="
+          keytool -list -v -keystore Admin-App/release.keystore -storepass abuzahra2024 -alias abuzahra 2>&1 | grep SHA1
+          echo "========================================="
+          echo "⚠️  If Google Sign-In fails with error 10 or 12500,"
+          echo "    add this SHA1 to Firebase Console:"
+          echo "    Firebase Console → Project Settings → Your Apps → Admin-App → Add SHA1"
+          echo "========================================="
+
       - name: Grant execute permission for gradlew
         run: chmod +x Admin-App/gradlew
 
