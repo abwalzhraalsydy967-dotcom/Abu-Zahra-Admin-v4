@@ -2,18 +2,18 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Mail, CheckCircle2, ArrowRight, RefreshCw, Loader2, ShieldCheck } from 'lucide-react'
+import { Mail, CheckCircle2, ArrowRight, RefreshCw, Loader2, ShieldCheck, ExternalLink, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { addLog } from '@/lib/utils'
 
 const COOLDOWN_SECONDS = 60
 
 export default function VerifyEmailForm() {
-  const { pendingEmail, setView } = useAuth()
+  const { pendingEmail, verificationLink, setView } = useAuth()
   const [cooldown, setCooldown] = useState(0)
   const [isResending, setIsResending] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -36,13 +36,21 @@ export default function VerifyEmailForm() {
     addLog('info', 'إعادة إرسال رسالة التحقق', `البريد: ${pendingEmail}`)
 
     try {
-      await import('firebase/auth')
-      
-      // We need to re-authenticate to send verification email
-      // Since we signed out after registration, we can't resend from client
-      // In a real scenario, this would call a server endpoint
-      addLog('warning', 'تم طلب إعادة الإرسال', 'قد تحتاج لتسجيل الدخول أولاً')
-      
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: pendingEmail,
+          password: '__resend__',
+          displayName: '',
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        addLog('success', 'تم إعادة إرسال رسالة التحقق')
+      } else {
+        addLog('warning', 'لم يتم إعادة الإرسال', data.message || '')
+      }
       setCooldown(COOLDOWN_SECONDS)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : ''
@@ -52,6 +60,17 @@ export default function VerifyEmailForm() {
     }
   }, [cooldown, pendingEmail])
 
+  const handleCopyLink = useCallback(() => {
+    if (!verificationLink) return
+    navigator.clipboard.writeText(verificationLink).then(() => {
+      setCopied(true)
+      addLog('info', 'تم نسخ رابط التحقق')
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {
+      addLog('warning', 'فشل نسخ الرابط')
+    })
+  }, [verificationLink])
+
   const formatCooldown = (seconds: number): string => {
     const m = Math.floor(seconds / 60)
     const s = seconds % 60
@@ -59,7 +78,7 @@ export default function VerifyEmailForm() {
   }
 
   const maskedEmail = pendingEmail
-    ? pendingEmail.replace(/(.{2})(.*)(@.*)/, (_, a, b, c) => a + '*'.repeat(b.length) + c)
+    ? pendingEmail.replace(/(.{2})(.*)(@.*)/, (_, a: string, b: string, c: string) => a + '*'.repeat(b.length) + c)
     : ''
 
   return (
@@ -148,26 +167,62 @@ export default function VerifyEmailForm() {
             )}
           </motion.div>
 
+          {/* Verification Link Section */}
+          {verificationLink && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.75, duration: 0.4 }}
+              className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+            >
+              <p className="text-emerald-300 text-xs mb-2 font-medium">
+                أو انسخ رابط التحقق وافتحه في المتصفح:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={verificationLink}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white/70 text-xs font-mono truncate"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  title="نسخ الرابط"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-white/60" />
+                  )}
+                </button>
+                <a
+                  href={verificationLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 transition-colors"
+                  title="فتح الرابط"
+                >
+                  <ExternalLink className="w-4 h-4 text-emerald-400" />
+                </a>
+              </div>
+            </motion.div>
+          )}
+
           {/* Resend Button */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8, duration: 0.4 }}
-            className="mt-8"
+            className="mt-6"
           >
             <Button
               type="button"
               onClick={handleResend}
               disabled={cooldown > 0 || isResending}
-              className={cn(
-                'w-full h-11 text-base font-semibold rounded-xl',
-                'bg-gradient-to-r from-emerald-600 to-emerald-500',
-                'hover:from-emerald-500 hover:to-emerald-400',
-                'shadow-lg shadow-emerald-500/25',
-                'transition-all duration-200',
-                'text-white border-0',
-                (cooldown > 0 || isResending) && 'opacity-60 cursor-not-allowed'
-              )}
+              className="w-full h-11 text-base font-semibold rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/25 transition-all duration-200 text-white border-0 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isResending ? (
                 <span className="flex items-center gap-2">

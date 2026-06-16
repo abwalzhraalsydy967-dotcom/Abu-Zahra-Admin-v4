@@ -1,7 +1,6 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { auth } from '@/lib/firebase'
 import { api, type ApiResponse } from '@/lib/api'
 import { addLog } from '@/lib/utils'
 
@@ -20,6 +19,7 @@ interface AuthContextType {
   loading: boolean
   view: 'login' | 'register' | 'verify-email' | 'dashboard'
   pendingEmail: string | null
+  verificationLink: string | null
   login: (username: string, password: string) => Promise<boolean>
   register: (email: string, username: string, password: string) => Promise<boolean>
   loginWithGoogle: () => Promise<boolean>
@@ -88,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => getInitialUser().user)
   const [view, setView] = useState<'login' | 'register' | 'verify-email' | 'dashboard'>(() => getInitialUser().view)
   const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [verificationLink, setVerificationLink] = useState<string | null>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('auth_user')
@@ -134,46 +135,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (email: string, username: string, password: string): Promise<boolean> => {
     addLog('info', 'محاولة إنشاء حساب جديد...', `البريد: ${email}`)
     try {
-      const { createUserWithEmailAndPassword, sendEmailVerification } = await import('firebase/auth')
-      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      // Use our API route which uses Firebase Admin SDK
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, displayName: username }),
+      })
 
-      addLog('info', 'إرسال رسالة التحقق إلى البريد الإلكتروني...')
-      await sendEmailVerification(cred.user)
+      const data = await res.json() as Record<string, unknown>
 
-      await auth.signOut()
+      if (data.ok) {
+        addLog('success', 'تم إنشاء الحساب! تم إرسال رسالة التحقق', `تحقق من بريدك: ${email}`)
 
-      addLog('success', 'تم إنشاء الحساب بنجاح! تم إرسال رسالة التحقق', `تحقق من بريدك: ${email}`)
-
-      const res: ApiResponse = await api.register(email, username, password)
-      if (res.ok && res.token) {
-        const userData: User = {
-          id: res.user_id || '',
-          username: res.username || username,
-          email: res.email || email,
-          role: res.role || 'user',
-          token: res.token,
-          permanent_code: res.permanent_code,
-          expires_at: res.expires_at,
+        // Store verification link for display
+        if (data.verification_link) {
+          setVerificationLink(data.verification_link as string)
         }
-        saveUser(userData)
-        setView('dashboard')
-        return true
-      } else {
-        addLog('warning', 'تم إنشاء حساب Firebase لكن فشل التسجيل في الخادم', res.message || '')
+
+        // If server also registered successfully
+        if (data.server_ok && data.token) {
+          const userData: User = {
+            id: (data.user_id as string) || '',
+            username: (data.username as string) || username,
+            email: email,
+            role: (data.role as string) || 'user',
+            token: data.token as string,
+          }
+          saveUser(userData)
+          setView('dashboard')
+          return true
+        }
+
+        // Account created, waiting for email verification
         setPendingEmail(email)
         setView('verify-email')
+        return true
+      } else {
+        addLog('error', 'فشل إنشاء الحساب', (data.message as string) || 'خطأ غير معروف')
         return false
       }
     } catch (err: unknown) {
-      const firebaseErr = err as { code?: string; message?: string }
-      const msg = firebaseErr.code === 'auth/email-already-in-use'
-        ? 'البريد الإلكتروني مستخدم بالفعل'
-        : firebaseErr.code === 'auth/weak-password'
-        ? 'كلمة المرور ضعيفة (6 أحرف على الأقل)'
-        : firebaseErr.code === 'auth/invalid-email'
-        ? 'بريد إلكتروني غير صالح'
-        : firebaseErr.message || 'خطأ غير معروف'
-      addLog('error', 'فشل إنشاء الحساب', msg)
+      const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
+      addLog('error', 'خطأ في إنشاء الحساب', msg)
       return false
     }
   }, [saveUser])
@@ -189,9 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       await loadGISScript()
-      addLog('info', 'تم تحميل Google Identity Services', `العميل: ${clientId.substring(0, 20)}...`)
-
-      const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth')
+      addLog('info', 'تم تحميل Google Identity Services')
 
       return new Promise<boolean>((resolve) => {
         const w = window as unknown as { google: { accounts: { oauth2: GISOAuth2 } } }
@@ -213,31 +214,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             try {
-              const credential = GoogleAuthProvider.credential(response.id_token)
-              const result = await signInWithCredential(auth, credential)
-              const email = result.user.email || ''
-              const displayName = result.user.displayName || ''
+              // Send to our API route which verifies with Admin SDK
+              addLog('info', 'تم الحصول على رمز Google، جارٍ التحقق...')
+              const apiRes = await fetch('/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken: response.id_token }),
+              })
 
-              addLog('info', 'تم المصادقة عبر Google بنجاح', `البريد: ${email}`)
+              const apiData = await apiRes.json() as Record<string, unknown>
 
-              const res: ApiResponse = await api.firebaseAuth(response.id_token, email, displayName)
-              if (res.ok && res.token) {
+              if (apiData.ok && apiData.token) {
+                const email = (apiData.email as string) || ''
+                const displayName = (apiData.username as string) || ''
+
+                addLog('success', 'تم تسجيل الدخول عبر Google بنجاح', `البريد: ${email}`)
+
                 const userData: User = {
-                  id: res.user_id || '',
-                  username: res.username || displayName,
-                  email: res.email || email,
-                  role: res.role || 'user',
-                  token: res.token,
-                  permanent_code: res.permanent_code,
-                  expires_at: res.expires_at,
+                  id: (apiData.user_id as string) || '',
+                  username: displayName,
+                  email,
+                  role: (apiData.role as string) || 'user',
+                  token: apiData.token as string,
+                  permanent_code: apiData.permanent_code as string | undefined,
+                  expires_at: apiData.expires_at as string | undefined,
                 }
                 saveUser(userData)
                 setView('dashboard')
-                addLog('success', 'تم تسجيل الدخول عبر Google بنجاح', res.message || '')
                 resolve(true)
               } else {
-                addLog('error', 'فشل تسجيل الدخول عبر Google', res.message || 'خطأ من الخادم')
-                await auth.signOut()
+                addLog('error', 'فشل تسجيل الدخول عبر Google', (apiData.message as string) || 'خطأ من الخادم')
                 resolve(false)
               }
             } catch (credErr) {
@@ -262,12 +268,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     api.setToken(null)
     localStorage.removeItem('auth_user')
-    auth.signOut().catch(() => {})
     setView('login')
   }, [user])
 
   return (
-    <AuthContext.Provider value={{ user, loading: false, view, pendingEmail, login, register, loginWithGoogle, setView, logout }}>
+    <AuthContext.Provider value={{ user, loading: false, view, pendingEmail, verificationLink, login, register, loginWithGoogle, setView, logout }}>
       {children}
     </AuthContext.Provider>
   )
