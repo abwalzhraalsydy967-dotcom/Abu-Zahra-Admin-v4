@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Forward to the Python server for session creation
     const serverRes = await fetch(
-      'https://alsydyabwalzhra.online/api/web/auth/firebase',
+      'https://alsydyabwalzhra.online/api/web/firebase_auth',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
