@@ -4,28 +4,33 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.browser.customtabs.CustomTabsIntent
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
 import com.abuzahra.admin.ui.dashboard.DashboardActivity
 import com.abuzahra.admin.util.Preferences
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.json.JSONObject
 
 class LoginActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "LoginActivity"
-        private const val MOBILE_AUTH_URL = "https://alsydyabwalzhra.online/mobile-auth"
     }
 
     private lateinit var binding: ActivityLoginBinding
@@ -36,6 +41,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var debugLogText: TextView
     private lateinit var debugLogScroll: ScrollView
     private val debugLogs = mutableListOf<String>()
+    private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
 
     private fun addLog(msg: String) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
@@ -61,8 +67,9 @@ class LoginActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupDebugLogPanel()
+        setupGoogleSignInLauncher()
 
-        addLog("تطبيق أبو زهرة - الإدارة v3.0 (Chrome Custom Tab)")
+        addLog("تطبيق أبو زهرة - الإدارة v4.0 (Native Google Sign-In)")
         addLog("الخادم: ${Preferences.getInstance(this).serverUrl}")
 
         if (viewModel.isLoggedIn) {
@@ -86,6 +93,72 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    private fun getWebClientId(): String? {
+        return try {
+            val json = applicationContext.assets.open("google-services.json")
+                .bufferedReader().use { it.readText() }
+            val obj = JSONObject(json)
+            val clients = obj.getJSONArray("client")
+            for (i in 0 until clients.length()) {
+                val client = clients.getJSONObject(i)
+                val oauthClients = client.optJSONArray("oauth_client")
+                if (oauthClients != null) {
+                    for (j in 0 until oauthClients.length()) {
+                        val oauth = oauthClients.getJSONObject(j)
+                        if (oauth.optInt("client_type") == 3) {
+                            return oauth.getString("client_id")
+                        }
+                    }
+                }
+                val services = client.optJSONObject("services")
+                if (services != null) {
+                    val invite = services.optJSONObject("appinvite_service")
+                    if (invite != null) {
+                        val others = invite.optJSONArray("other_platform_oauth_client")
+                        if (others != null) {
+                            for (j in 0 until others.length()) {
+                                val other = others.getJSONObject(j)
+                                if (other.optInt("client_type") == 3) {
+                                    return other.getString("client_id")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading google-services.json", e)
+            null
+        }
+    }
+
+    private fun setupGoogleSignInLauncher() {
+        googleSignInLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                try {
+                    val account = task.getResult(ApiException::class.java)
+                    handleGoogleSignInResult(account)
+                } catch (e: ApiException) {
+                    addLog("❌ فشل تسجيل الدخول بجوجل: ${e.statusCode} - ${e.message}")
+                    when (e.statusCode) {
+                        12501 -> showError("تم إلغاء تسجيل الدخول")
+                        12500 -> showError("خطأ في اتصال جوجل - تأكد من تثبيت خدمات جوجل")
+                        10 -> showError("خطأ في التحقق - تأكد من إضافة SHA-1 إلى Firebase Console")
+                        else -> showError("خطأ في تسجيل الدخول بجوجل: ${e.message}")
+                    }
+                    showLoading(false)
+                }
+            } else {
+                addLog("⚠️ تم إلغاء اختيار الحساب")
+                showLoading(false)
+            }
+        }
+    }
+
     private fun setupViews() {
         binding.etPassword.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO) {
@@ -101,10 +174,9 @@ class LoginActivity : AppCompatActivity() {
             attemptLogin()
         }
 
-        // Google Sign-In via Chrome Custom Tab (bypasses SHA1 issue)
         binding.btnGoogleSignIn.setOnClickListener {
-            addLog("تم الضغط على: تسجيل الدخول بجوجل (Chrome Custom Tab)")
-            startGoogleSignInViaChromeTab()
+            addLog("تم الضغط على: تسجيل الدخول بجوجل (Native)")
+            startNativeGoogleSignIn()
         }
 
         binding.btnCreateAccount.setOnClickListener {
@@ -120,38 +192,61 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Opens Google Sign-In via Chrome Custom Tab.
-     * This bypasses Google Play Services SHA1 verification entirely.
-     * The web page handles Google Sign-In via GIS and redirects back
-     * to the app via deep link (abuzahra://auth-callback).
-     */
-    private fun startGoogleSignInViaChromeTab() {
+    private fun startNativeGoogleSignIn() {
+        val webClientId = getWebClientId()
+        if (webClientId.isNullOrEmpty()) {
+            addLog("❌ Web Client ID غير متوفر!")
+            showError("لم يتم إعداد Firebase Auth بعد. يرجى تفعيل المصادقة في Firebase Console.")
+            return
+        }
+
+        addLog("Web Client ID: ${webClientId.take(30)}...")
         showLoading(true)
-        addLog("جاري فتح Chrome Custom Tab لتسجيل الدخول بجوجل...")
-        addLog("   URL: $MOBILE_AUTH_URL")
 
         try {
-            val customTabsIntent = CustomTabsIntent.Builder()
-                .setColorScheme(CustomTabsIntent.COLOR_SCHEME_DARK)
-                .setShowTitle(true)
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(webClientId)
+                .requestEmail()
+                .requestProfile()
                 .build()
 
-            customTabsIntent.launchUrl(this, Uri.parse(MOBILE_AUTH_URL))
-            addLog("✅ تم فتح Chrome Custom Tab")
-        } catch (e: Exception) {
-            addLog("❌ فشل فتح Chrome Custom Tab: ${e.javaClass.simpleName}: ${e.message}")
-            // Fallback: open in regular browser
-            try {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(MOBILE_AUTH_URL))
-                startActivity(browserIntent)
-                addLog("✅ تم فتح في المتصفح الافتراضي")
-            } catch (e2: Exception) {
-                addLog("❌ فشل فتح المتصفح أيضاً: ${e2.message}")
-                showError("فشل فتح المتصفح: ${e2.message}")
-                showLoading(false)
+            val googleSignInClient: GoogleSignInClient = GoogleSignIn.getClient(this, gso)
+            addLog("جاري فتح قائمة الحسابات...")
+
+            googleSignInClient.signOut().addOnCompleteListener {
+                val signInIntent = googleSignInClient.signInIntent
+                googleSignInLauncher.launch(signInIntent)
             }
+        } catch (e: Exception) {
+            addLog("❌ فشل تهيئة Google Sign-In: ${e.javaClass.simpleName}: ${e.message}")
+            showError("خطأ في تهيئة جوجل: ${e.message}")
+            showLoading(false)
         }
+    }
+
+    private fun handleGoogleSignInResult(account: GoogleSignInAccount) {
+        val email = account.email ?: ""
+        val displayName = account.displayName ?: ""
+        val idToken = account.idToken ?: ""
+
+        addLog("✅ تم اختيار الحساب بنجاح!")
+        addLog("   البريد: $email")
+        addLog("   الاسم: $displayName")
+        addLog("   ID Token: ${idToken.take(20)}... (${idToken.length} chars)")
+
+        if (idToken.isEmpty()) {
+            showError("لم يتم الحصول على رمز المصادقة من جوجل")
+            showLoading(false)
+            return
+        }
+
+        if (email.isEmpty()) {
+            showError("لم يتم الحصول على البريد الإلكتروني")
+            showLoading(false)
+            return
+        }
+
+        viewModel.loginWithFirebase(email, displayName, idToken)
     }
 
     private fun attemptLogin() {
