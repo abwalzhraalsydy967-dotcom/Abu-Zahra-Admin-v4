@@ -1,90 +1,73 @@
-name: Android CI Build
+name: Build Admin-App
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+    paths:
+      - 'Admin-App/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Admin-App/**'
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build Admin-App APK
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-admin-${{ hashFiles('Admin-App/**/build.gradle', 'Admin-App/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-admin-
 
-    - name: Accept SDK Licenses
-      run: |
-        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+      - name: Print SHA1 Fingerprint
+        run: |
+          echo "============================================================"
+          echo "               FIREBASE SHA-1 KEY (Admin-App)"
+          echo "============================================================"
+          # تم التحديث لاستخدام بيانات التوقيع الجديدة:
+          # المسار: abuzahra-child-key.jks
+          # كلمة المرور: abuzahra123
+          # الاسم المستعار: abuzahra
+          keytool -list -v -keystore abuzahra-child-key.jks -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
+          echo "============================================================"
+          echo "⚠️  If Google Sign-In fails, add this SHA1 to Firebase Console."
+          echo "============================================================"
 
-    - name: Install SDK Platform 35
-      run: |
-        sdkmanager "platforms;android-35"
-        sdkmanager "build-tools;35.0.0"
+      - name: Grant execute permission for gradlew
+        run: chmod +x Admin-App/gradlew
 
-    # === 1. إنشاء المفتاح الدائم ===
-    - name: Create Permanent Keystore
-      run: |
-        KEYSTORE_FILE=abuzahra-child-key.jks
-        if [ ! -f "$KEYSTORE_FILE" ]; then
-           echo "Generating NEW permanent keystore..."
-           keytool -genkey -v -keystore $KEYSTORE_FILE -alias abuzahra -keyalg RSA -keysize 2048 -validity 10000 -storepass abuzahra123 -keypass abuzahra123 -dname "CN=AbuZahraChild, OU=Dev, O=AbuZahra, L=Riyadh, ST=SA, C=SA"
-        else
-           echo "Using EXISTING permanent keystore."
-        fi
+      - name: Build Debug APK
+        working-directory: Admin-App
+        run: ./gradlew assembleDebug --stacktrace 2>&1
 
-    # === 2. الإعداد والبناء ===
-    - name: Validate Configs
-      run: |
-        if [ ! -f settings.gradle ]; then
-          echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
-          echo "include ':app'" >> settings.gradle
-        fi
-        if [ ! -f gradle.properties ]; then
-          echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
-          echo "android.useAndroidX=true" >> gradle.properties
-        fi
+      - name: Build Release APK
+        working-directory: Admin-App
+        run: ./gradlew assembleRelease --stacktrace 2>&1
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Admin-App-Debug
+          path: Admin-App/app/build/outputs/apk/debug/*.apk
 
-    - name: Build Debug APK
-      run: ./gradlew :app:assembleDebug --no-daemon
-
-    # === 3. التوقيع باستخدام الأداة الحديثة (apksigner) ===
-    - name: Sign APK with apksigner (Modern Method)
-      run: |
-        # البحث عن أداة apksigner
-        APK_SIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)
-        UNSIGNED_APK=app/build/outputs/apk/debug/app-debug.apk
-        SIGNED_APK=app/build/outputs/apk/debug/app-signed.apk
-
-        echo "Using apksigner at: $APK_SIGNER"
-
-        # التوقيع (apksigner يقوم بـ v2 signing المطلوب للأندرويد الحديث)
-        $APK_SIGNER sign --ks abuzahra-child-key.jks --ks-key-alias abuzahra --ks-pass pass:abuzahra123 --key-pass pass:abuzahra123 --out $SIGNED_APK $UNSIGNED_APK
-
-        # استبدال الملف الأصلي بالموقع للرفع
-        mv $SIGNED_APK $UNSIGNED_APK
-
-    # === 4. طباعة المفتاح ===
-    - name: Extract SHA-1 Key
-      run: |
-        echo "============================================================"
-        echo "               FIREBASE SHA-1 KEY (CHILD)"
-        echo "============================================================"
-        keytool -list -v -keystore abuzahra-child-key.jks -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
-        echo "============================================================"
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AbuAlZahra-Child-App
-        path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Admin-App-Release
+          path: Admin-App/app/build/outputs/apk/release/*.apk
