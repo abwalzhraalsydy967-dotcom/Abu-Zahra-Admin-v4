@@ -22,17 +22,62 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK Licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Install SDK Platform 34
+        run: |
+          sdkmanager "platforms;android-34"
+          sdkmanager "build-tools;34.0.0"
+
+      # === إنشاء المفتاح الدائم ===
+      - name: Create Permanent Keystore
+        run: |
+          KEYSTORE_FILE=abuzahra-admin-key.jks
+          if [ ! -f "$KEYSTORE_FILE" ]; then
+             echo "Generating NEW permanent keystore..."
+             keytool -genkey -v -keystore $KEYSTORE_FILE -alias abuzahra -keyalg RSA -keysize 2048 -validity 10000 -storepass abuzahra123 -keypass abuzahra123 -dname "CN=AbuZahraAdmin, OU=Dev, O=AbuZahra, L=Riyadh, ST=SA, C=SA"
+          else
+             echo "Using EXISTING permanent keystore."
+          fi
+
       - name: Build Admin App (Debug)
         working-directory: Admin-App
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew :app:assembleDebug --no-daemon
+
+      # === التوقيع باستخدام apksigner ===
+      - name: Sign Admin APK with apksigner
+        run: |
+          APK_SIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)
+          UNSIGNED_APK=Admin-App/app/build/outputs/apk/debug/app-debug.apk
+          SIGNED_APK=Admin-App/app/build/outputs/apk/debug/app-signed.apk
+
+          echo "Using apksigner at: $APK_SIGNER"
+
+          $APK_SIGNER sign --ks abuzahra-admin-key.jks --ks-key-alias abuzahra --ks-pass pass:abuzahra123 --key-pass pass:abuzahra123 --out $SIGNED_APK $UNSIGNED_APK
+
+          mv $SIGNED_APK $UNSIGNED_APK
+
+      # === طباعة SHA-1 ===
+      - name: Extract Admin SHA-1 Key
+        run: |
+          echo "============================================================"
+          echo "               FIREBASE SHA-1 KEY (ADMIN)"
+          echo "============================================================"
+          keytool -list -v -keystore abuzahra-admin-key.jks -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
+          echo "============================================================"
 
       - name: Upload Admin APK
         uses: actions/upload-artifact@v4
         with:
           name: Admin-App-APK
-          path: Admin-App/app/build/outputs/apk/debug/*.apk
+          path: Admin-App/app/build/outputs/apk/debug/app-debug.apk
 
   build-manager:
     name: Build Manager App
@@ -97,7 +142,8 @@ jobs:
             - Updated Firebase configuration
           
             ### SHA1 Fingerprint (Admin App):
-            `0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4`
+            Check the build-admin job logs for the SHA-1 key.
+            Add it to Firebase Console → Project Settings → Your Apps → Admin-App → Add SHA1
           files: |
             AbuZahra-Admin-v2.0.0.apk
             AbuZahra-Manager-v3.5.0.apk
