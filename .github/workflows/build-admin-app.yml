@@ -40,13 +40,11 @@ jobs:
           echo "============================================================"
           echo "               FIREBASE SHA-1 KEY (Admin-App)"
           echo "============================================================"
-          # تم التحديث لاستخدام بيانات التوقيع الجديدة:
-          # المسار: abuzahra-child-key.jks
-          # كلمة المرور: abuzahra123
-          # الاسم المستعار: abuzahra
-          keytool -list -v -keystore abuzahra-child-key.jks -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
+          keytool -list -v -keystore Admin-App/release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
           echo "============================================================"
-          echo "⚠️  If Google Sign-In fails, add this SHA1 to Firebase Console."
+          echo "⚠️  If Google Sign-In fails with error 10 or 12500,"
+          echo "    add this SHA1 to Firebase Console:"
+          echo "    Firebase Console → Project Settings → Your Apps → Admin-App → Add SHA1"
           echo "============================================================"
 
       - name: Grant execute permission for gradlew
