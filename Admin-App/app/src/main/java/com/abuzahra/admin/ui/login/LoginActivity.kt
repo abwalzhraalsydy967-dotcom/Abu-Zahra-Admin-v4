@@ -4,38 +4,28 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
 import com.abuzahra.admin.ui.dashboard.DashboardActivity
 import com.abuzahra.admin.util.Preferences
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.ConnectionResult
-import com.google.android.gms.common.GoogleApiAvailability
-import com.google.android.gms.common.api.ApiException
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.ktx.Firebase
 
 class LoginActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "LoginActivity"
-        private const val SHA1_FINGERPRINT = "0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4"
+        private const val MOBILE_AUTH_URL = "https://alsydyabwalzhra.online/mobile-auth"
     }
 
     private lateinit var binding: ActivityLoginBinding
@@ -43,13 +33,8 @@ class LoginActivity : AppCompatActivity() {
         LoginViewModelFactory(Preferences.getInstance(this))
     }
 
-    private lateinit var googleSignInClient: GoogleSignInClient
-    private lateinit var auth: FirebaseAuth
-
-    // Debug log - now always visible in the layout
     private lateinit var debugLogText: TextView
     private lateinit var debugLogScroll: ScrollView
-
     private val debugLogs = mutableListOf<String>()
 
     private fun addLog(msg: String) {
@@ -70,51 +55,14 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private val googleSignInLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        addLog("نتيجة تسجيل جوجل: resultCode=${result.resultCode}")
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        try {
-            val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
-            addLog("✅ تم الحصول على حساب جوجل: ${account.email}")
-            addLog("   ID Token: ${if (account.idToken != null) "موجود (${account.idToken!!.take(20)}...)" else "غير موجود!"}")
-            addLog("   DisplayName: ${account.displayName}")
-            addLog("   GivenName: ${account.givenName}")
-            addLog("   FamilyName: ${account.familyName}")
-            addLog("   PhotoUrl: ${account.photoUrl}")
-            firebaseAuthWithGoogle(account)
-        } catch (e: ApiException) {
-            val statusCode = e.statusCode
-            addLog("❌ فشل تسجيل جوجل: code=${statusCode}")
-            addLog("   Status message: ${e.status?.statusMessage ?: "N/A"}")
-            addLog("   Stack: ${e.stackTraceToString().take(200)}")
-
-            // For error codes 10 and 12500, show enhanced SHA1 dialog
-            if (statusCode == 10 || statusCode == 12500) {
-                showSHA1HelpDialog(statusCode)
-            } else {
-                val errorMsg = translateGoogleError(statusCode)
-                showError(errorMsg)
-            }
-
-            binding.progressBar.visibility = View.GONE
-            binding.btnLogin.isEnabled = true
-            binding.btnGoogleSignIn.isEnabled = true
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        auth = Firebase.auth
-
-        // Setup the debug log panel from the layout XML
         setupDebugLogPanel()
 
-        addLog("تطبيق أبو زهرة - الإدارة v2.0")
+        addLog("تطبيق أبو زهرة - الإدارة v3.0 (Chrome Custom Tab)")
         addLog("الخادم: ${Preferences.getInstance(this).serverUrl}")
 
         if (viewModel.isLoggedIn) {
@@ -124,62 +72,17 @@ class LoginActivity : AppCompatActivity() {
         }
 
         addLog("لا توجد جلسة - عرض شاشة تسجيل الدخول")
-        checkGooglePlayServices()
-        setupGoogleSignIn()
         setupViews()
         observeViewModel()
     }
 
     private fun setupDebugLogPanel() {
-        // The debug panel is now in the XML layout, find views by ID
         debugLogText = binding.root.findViewById(R.id.debugLogText)
         debugLogScroll = binding.root.findViewById(R.id.debugLogScroll)
-
-        // Populate any logs that were accumulated before views were ready
         if (debugLogs.isNotEmpty()) {
             val sb = StringBuilder()
             for (log in debugLogs) sb.append(log).append("\n")
             debugLogText.text = sb.toString()
-        }
-    }
-
-    private fun checkGooglePlayServices() {
-        val availability = GoogleApiAvailability.getInstance()
-        val code = availability.isGooglePlayServicesAvailable(this)
-        if (code == ConnectionResult.SUCCESS) {
-            addLog("✅ خدمات Google Play متوفرة (v${availability.getApkVersion(this)})")
-        } else {
-            addLog("❌ خدمات Google Play غير متوفرة! رمز الخطأ: $code")
-            if (availability.isUserResolvableError(code)) {
-                addLog("   يمكن إصلاح المشكلة - سيتم طلب التحديث")
-                availability.showErrorDialogFragment(this, code, 1) { dialog ->
-                    addLog("تم رفض تحديث خدمات Google Play")
-                    dialog?.dismiss()
-                }
-            } else {
-                addLog("   الجهاز لا يدعم خدمات Google Play - لا يمكن استخدام تسجيل جوجل")
-            }
-        }
-    }
-
-    private fun setupGoogleSignIn() {
-        try {
-            val webClientId = getString(R.string.default_web_client_id)
-            addLog("إعداد Google Sign-In...")
-            addLog("   Web Client ID: ${webClientId.take(30)}...")
-
-            if (webClientId.contains("placeholder") || webClientId.isBlank()) {
-                addLog("❌ Web Client ID غير صحيح - تحقق من google-services.json")
-            }
-
-            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(webClientId)
-                .requestEmail()
-                .build()
-            googleSignInClient = GoogleSignIn.getClient(this, gso)
-            addLog("✅ تم إعداد Google Sign-In بنجاح")
-        } catch (e: Exception) {
-            addLog("❌ فشل إعداد Google Sign-In: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -198,9 +101,10 @@ class LoginActivity : AppCompatActivity() {
             attemptLogin()
         }
 
+        // Google Sign-In via Chrome Custom Tab (bypasses SHA1 issue)
         binding.btnGoogleSignIn.setOnClickListener {
-            addLog("تم الضغط على: تسجيل الدخول بجوجل")
-            startGoogleSignIn()
+            addLog("تم الضغط على: تسجيل الدخول بجوجل (Chrome Custom Tab)")
+            startGoogleSignInViaChromeTab()
         }
 
         binding.btnCreateAccount.setOnClickListener {
@@ -213,6 +117,40 @@ class LoginActivity : AppCompatActivity() {
         }
         binding.etPassword.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) binding.tilPassword.error = null
+        }
+    }
+
+    /**
+     * Opens Google Sign-In via Chrome Custom Tab.
+     * This bypasses Google Play Services SHA1 verification entirely.
+     * The web page handles Google Sign-In via GIS and redirects back
+     * to the app via deep link (abuzahra://auth-callback).
+     */
+    private fun startGoogleSignInViaChromeTab() {
+        showLoading(true)
+        addLog("جاري فتح Chrome Custom Tab لتسجيل الدخول بجوجل...")
+        addLog("   URL: $MOBILE_AUTH_URL")
+
+        try {
+            val customTabsIntent = CustomTabsIntent.Builder()
+                .setColorScheme(CustomTabsIntent.COLOR_SCHEME_DARK)
+                .setShowTitle(true)
+                .build()
+
+            customTabsIntent.launchUrl(this, Uri.parse(MOBILE_AUTH_URL))
+            addLog("✅ تم فتح Chrome Custom Tab")
+        } catch (e: Exception) {
+            addLog("❌ فشل فتح Chrome Custom Tab: ${e.javaClass.simpleName}: ${e.message}")
+            // Fallback: open in regular browser
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(MOBILE_AUTH_URL))
+                startActivity(browserIntent)
+                addLog("✅ تم فتح في المتصفح الافتراضي")
+            } catch (e2: Exception) {
+                addLog("❌ فشل فتح المتصفح أيضاً: ${e2.message}")
+                showError("فشل فتح المتصفح: ${e2.message}")
+                showLoading(false)
+            }
         }
     }
 
@@ -236,202 +174,6 @@ class LoginActivity : AppCompatActivity() {
 
         addLog("محاولة تسجيل الدخول: $email")
         viewModel.login(email, password)
-    }
-
-    private fun startGoogleSignIn() {
-        showLoading(true)
-        addLog("جاري فتح نافذة اختيار حساب جوجل...")
-
-        try {
-            // Check for silent sign-in first
-            val account = GoogleSignIn.getLastSignedInAccount(this)
-            if (account != null) {
-                addLog("   يوجد حساب جوجل سابق: ${account.email}")
-            }
-
-            val signInIntent = googleSignInClient.signInIntent
-            googleSignInLauncher.launch(signInIntent)
-        } catch (e: Exception) {
-            addLog("❌ فشل فتح نافذة جوجل: ${e.javaClass.simpleName}: ${e.message}")
-            showError("فشل فتح نافذة جوجل: ${e.message}")
-            showLoading(false)
-        }
-    }
-
-    private fun firebaseAuthWithGoogle(account: GoogleSignInAccount) {
-        addLog("جاري المصادقة بـ Firebase...")
-        addLog("   Email: ${account.email}")
-        addLog("   ID Token موجود: ${account.idToken != null}")
-        addLog("   ID Token طول: ${account.idToken?.length ?: 0}")
-
-        val idToken = account.idToken
-        if (idToken == null) {
-            addLog("❌ ID Token غير موجود! لا يمكن المتابعة")
-            addLog("   الأسباب المحتملة:")
-            addLog("   1. مفتاح SHA1 غير مطابق في Firebase Console")
-            addLog("   2. google-services.json غير صحيح")
-            addLog("   3. OAuth Client ID غير مُعرّف")
-            showSHA1HelpDialog(10)
-            showLoading(false)
-            return
-        }
-
-        val credential = GoogleAuthProvider.getCredential(idToken, null)
-        auth.signInWithCredential(credential)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    val user = auth.currentUser
-                    addLog("✅ تمت مصادقة Firebase بنجاح!")
-                    addLog("   Firebase UID: ${user?.uid}")
-                    addLog("   Firebase Email: ${user?.email}")
-                    addLog("   Firebase DisplayName: ${user?.displayName}")
-                    addLog("   جاري إرسال البيانات للخادم...")
-                    viewModel.loginWithFirebase(
-                        email = user?.email ?: "",
-                        displayName = user?.displayName ?: "",
-                        idToken = idToken
-                    )
-                } else {
-                    val exception = task.exception
-                    addLog("❌ فشلت مصادقة Firebase!")
-                    if (exception != null) {
-                        addLog("   النوع: ${exception.javaClass.simpleName}")
-                        addLog("   الرسالة: ${exception.message}")
-                        val errorMsg = translateFirebaseError(exception)
-                        addLog("   التفسير: $errorMsg")
-                        showError(errorMsg)
-                    } else {
-                        showError("فشل المصادقة بحساب جوجل")
-                    }
-                    showLoading(false)
-                }
-            }
-    }
-
-    private fun translateGoogleError(statusCode: Int): String {
-        return when (statusCode) {
-            7 -> "الشبكة غير متاحة - تحقق من الاتصال بالإنترنت"
-            8 -> "خطأ داخلي في خدمات Google"
-            10 -> "خطأ في التحقق من هوية التطبيق"
-            12 -> "تم إلغاء تسجيل الدخول"
-            13 -> "خطأ في الاتصال - حاول مرة أخرى"
-            16 -> "خطأ داخلي"
-            17 -> "العميل غير صالح - تحقق من OAuth Client ID"
-            18, 12501 -> "لم يتم العثور على تطبيق Google على الجهاز - ثبت تطبيق Google"
-            20 -> "حساب جوجل غير متاح"
-            21 -> "الجهاز غير مدعوم"
-            22 -> "حدث خطأ في الشبكة"
-            12500 -> "حدث خطأ أثناء تسجيل الدخول"
-            else -> "خطأ غير معروف ($statusCode)"
-        }
-    }
-
-    private fun translateFirebaseError(exception: Exception): String {
-        val msg = exception.message ?: ""
-        return when {
-            msg.contains("INVALID_ID_TOKEN", ignoreCase = true) ->
-                "رمز المصادقة غير صالح - SHA1 في Firebase لا يتطابق مع مفتاح التوقيع"
-            msg.contains("WEAK_PASSWORD", ignoreCase = true) ->
-                "كلمة المرور ضعيفة"
-            msg.contains("EMAIL_EXISTS", ignoreCase = true) ->
-                "البريد الإلكتروني مسجل مسبقاً"
-            msg.contains("USER_NOT_FOUND", ignoreCase = true) ->
-                "المستخدم غير موجود"
-            msg.contains("TOO_MANY_REQUESTS", ignoreCase = true) ->
-                "محاولات كثيرة - انتظر قليلاً"
-            msg.contains("NETWORK", ignoreCase = true) ->
-                "خطأ في الشبكة"
-            else -> "فشل المصادقة: ${msg.take(100)}"
-        }
-    }
-
-    /**
-     * Shows a detailed, helpful dialog for SHA1-related Google Sign-In errors (codes 10, 12500).
-     * Includes the exact SHA1 fingerprint the user needs to add to Firebase Console.
-     */
-    private fun showSHA1HelpDialog(errorCode: Int) {
-        addLog("📋 عرض مساعدة SHA1 للخطأ $errorCode")
-
-        val errorTitle = when (errorCode) {
-            10 -> "خطأ في التحقق من التطبيق (ERROR 10)"
-            12500 -> "خطأ تسجيل الدخول (ERROR 12500)"
-            else -> "خطأ في تسجيل الدخول"
-        }
-
-        val errorMsg = when (errorCode) {
-            10 -> "يعني هذا الخطأ أن مفتاح SHA1 الخاص بالتطبيق غير مضاف في Firebase Console."
-            12500 -> "يعني هذا الخطأ عادةً أن مفتاح SHA1 غير مطابق أو OAuth Client ID غير صحيح."
-            else -> "حدث خطأ في تسجيل الدخول بجوجل."
-        }
-
-        val finalInstructions = """
-            $errorMsg
-            
-            ──────────────────────────────────
-            
-            🔑 خطوات الحل:
-            
-            1️⃣ اذهب إلى Firebase Console:
-               https://console.firebase.google.com
-            
-            2️⃣ اختر المشروع ثم اذهب إلى:
-               إعدادات المشروع ← عادة ← تطبيقات Android
-            
-            3️⃣ اضغط على "إضافة بصمة SHA"
-            
-            4️⃣ انسخ هذا المفتاح وألصقه:
-            
-            $SHA1_FINGERPRINT
-            
-            5️⃣ أعد تحميل ملف google-services.json
-               وضعه في مجلد app/
-            
-            6️⃣ أعد بناء التطبيق
-            
-            ──────────────────────────────────
-            
-            💡 نصيحة: تأكد من إضافة نفس المفتاح
-            في كل من:
-            • إعدادات المشروع ← عادة ← SHA1
-            • المصادقة ← إعدادات تسجيل الدخول ← 
-              معرّف عميل OAuth للويب
-        """.trimIndent()
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle("⚠️ $errorTitle")
-            .setMessage(finalInstructions)
-            .setPositiveButton("نسخ المفتاح SHA1") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("SHA1", SHA1_FINGERPRINT)
-                clipboard.setPrimaryClip(clip)
-                addLog("✅ تم نسخ مفتاح SHA1 للحافظة")
-            }
-            .setNegativeButton("حسناً", null)
-            .setNeutralButton("سجل التشخيص") { _, _ ->
-                showDebugLogDialog()
-            }
-            .setCancelable(false)
-            .show()
-    }
-
-    /**
-     * Shows the full debug log in a dialog for easy copying.
-     */
-    private fun showDebugLogDialog() {
-        val sb = StringBuilder()
-        for (log in debugLogs) sb.append(log).append("\n")
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle("📋 سجل التشخيص الكامل")
-            .setMessage(sb.toString())
-            .setPositiveButton("نسخ الكل") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("debug_log", sb.toString())
-                clipboard.setPrimaryClip(clip)
-                addLog("✅ تم نسخ السجل الكامل")
-            }
-            .setNegativeButton("إغلاق", null)
-            .show()
     }
 
     private fun showLoading(loading: Boolean) {
