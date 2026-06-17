@@ -29,7 +29,7 @@ function getAdminApp(): App {
       const serviceAccount = JSON.parse(raw) as ServiceAccount
       adminApp = initializeApp({
         credential: cert(serviceAccount),
-        projectId: 'studio-7073076148-6afe0',
+        projectId: 'abwalzhraalsydy-62ccf',
       })
     }
   }
