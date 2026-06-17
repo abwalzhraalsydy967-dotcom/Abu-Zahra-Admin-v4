@@ -184,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = useCallback(async (): Promise<boolean> => {
     addLog('info', 'محاولة تسجيل الدخول عبر Google...')
 
-    const clientId = process.env.NEXT_PUBLIC_FIREBASE_WEB_CLIENT_ID
+    const clientId = process.env.NEXT_PUBLIC_FIREBASE_WEB_CLIENT_ID || '159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com'
     if (!clientId) {
       addLog('error', 'معرف عميل Google غير موجود', 'تحقق من إعدادات Firebase')
       return false
