@@ -15,9 +15,6 @@ jobs:
   build:
     name: Build Admin-App APK
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Admin-App
 
     steps:
       - name: Checkout code
@@ -29,40 +26,47 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-admin-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
-          restore-keys: gradle-admin-
-
       - name: Print SHA1 Fingerprint
         run: |
           echo "============================================================"
           echo "               FIREBASE SHA-1 KEY (Admin-App)"
           echo "============================================================"
-          keytool -list -v -keystore release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
+          # التحقق من وجود الملف قبل الطباعة
+          if [ -f "Admin-App/release.keystore" ]; then
+            keytool -list -v -keystore Admin-App/release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
+          else
+            echo "خطأ: ملف release.keystore غير موجود في مسار Admin-App/"
+          fi
           echo "============================================================"
 
+      - name: List files to find gradlew
+        run: ls -R Admin-App/  # هذا الأمر سيطبع لنا مكان الملف الحقيقي في الـ Log
+
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: |
+          if [ -f "Admin-App/gradlew" ]; then
+            chmod +x Admin-App/gradlew
+          else
+            echo "خطأ: لم يتم العثور على ملف gradlew في Admin-App/"
+            exit 1
+          fi
 
       - name: Build Debug APK
+        working-directory: Admin-App
         run: ./gradlew assembleDebug --stacktrace 2>&1
 
       - name: Build Release APK
+        working-directory: Admin-App
         run: ./gradlew assembleRelease --stacktrace 2>&1
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Admin-App-Debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: Admin-App/app/build/outputs/apk/debug/*.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: Admin-App-Release
-          path: app/build/outputs/apk/release/*.apk
+          path: Admin-App/app/build/outputs/apk/release/*.apk
