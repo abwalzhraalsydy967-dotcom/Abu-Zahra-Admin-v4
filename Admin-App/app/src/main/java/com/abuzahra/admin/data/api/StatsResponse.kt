@@ -15,3 +15,26 @@ data class StatsResponse(
     @SerializedName("total_events") val totalEvents: Int = 0,
     @SerializedName("total_files") val totalFiles: Int = 0
 )
+
+/**
+ * Wrapper for the server's /api/web/stats endpoint.
+ * Server returns: {"ok": true, "stats": {"total_devices": N, ...}}
+ * We need this wrapper because the server nests stats under a "stats" key.
+ */
+data class StatsEnvelope(
+    @SerializedName("ok") val ok: Boolean = true,
+    @SerializedName("stats") val stats: StatsData = StatsData()
+)
+
+/**
+ * Inner stats data as returned by the server inside the "stats" key.
+ */
+data class StatsData(
+    @SerializedName("total_devices") val totalDevices: Int = 0,
+    @SerializedName("online_devices") val onlineDevices: Int = 0,
+    @SerializedName("offline_devices") val offlineDevices: Int = 0,
+    @SerializedName("total_commands") val totalCommands: Int = 0,
+    @SerializedName("total_events") val totalEvents: Int = 0,
+    @SerializedName("total_files") val totalFiles: Int = 0,
+    @SerializedName("storage") val storage: Map<String, Any>? = null
+)

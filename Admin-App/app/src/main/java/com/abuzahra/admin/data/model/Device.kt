@@ -21,34 +21,47 @@ data class Device(
     @SerializedName("owner_id") val ownerId: String = "",
     @SerializedName("online") val online: Boolean = false,
     @SerializedName("ip") val ip: String? = null,
-    @SerializedName("settings") val settings: Map<String, Any>? = null,
+    @SerializedName("settings") val settings: Map<String, Any?>? = null,
     @SerializedName("imei") val imei: String = "",
-    @SerializedName("phone_number") val phoneNumber: String = ""
+    @SerializedName("phone_number") val phoneNumber: String = "",
+
+    // Server transforms some fields for web dashboard - accept both names
+    @SerializedName("is_online") val isOnlineFromServer: Boolean? = null,
+    @SerializedName("battery_level") val batteryLevelFromServer: Int? = null,
+    @SerializedName("android_version") val androidVersionFromServer: String? = null,
+    @SerializedName("linked_at") val linkedAtFromServer: String? = null
 ) : Serializable {
 
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    val isOnline: Boolean get() = online
+    val isOnline: Boolean get() = online || (isOnlineFromServer ?: false)
 
-    val batteryLevel: Int get() = battery.coerceIn(0, 100)
+    val batteryLevel: Int get() {
+        val level = if (battery >= 0) battery else (batteryLevelFromServer ?: -1)
+        return level.coerceIn(0, 100)
+    }
 
     val displayBattery: String
-        get() = if (battery < 0) "N/A" else "$battery%"
+        get() {
+            val level = batteryLevel
+        return if (level < 0) "N/A" else "$level%"
+    }
 
-    val osVersion: String get() = os
+    val osVersion: String get() = androidVersionFromServer.ifEmpty { os }
 
-    val androidVersion: String get() = os
+    val androidVersion: String get() = osVersion
 
     val ipAddress: String get() = ip ?: ""
 
     val displayLastSeen: String
         get() {
-            if (lastSeen.isNullOrEmpty()) return "أبداً"
+            val time = lastSeen ?: linkedAtFromServer
+            if (time.isNullOrEmpty()) return "أبداً"
             return try {
                 val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-                val date = sdf.parse(lastSeen) ?: return lastSeen
+                val date = sdf.parse(time) ?: return time
                 val now = System.currentTimeMillis()
                 val diff = now - date.time
                 when {
@@ -59,7 +72,7 @@ data class Device(
                     else -> SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(date)
                 }
             } catch (e: Exception) {
-                lastSeen
+                time
             }
         }
 }

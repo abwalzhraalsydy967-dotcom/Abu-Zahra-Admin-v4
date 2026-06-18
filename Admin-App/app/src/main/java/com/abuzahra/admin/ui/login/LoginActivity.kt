@@ -29,10 +29,6 @@ import org.json.JSONObject
 
 class LoginActivity : AppCompatActivity() {
 
-    companion object {
-        private const val TAG = "LoginActivity"
-    }
-
     private lateinit var binding: ActivityLoginBinding
     private val viewModel: LoginViewModel by viewModels {
         LoginViewModelFactory(Preferences.getInstance(this))
@@ -93,8 +89,13 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Web Client ID for Google Sign-In.
+     * Fetched from google-services.json at runtime, with hardcoded fallback.
+     */
     private fun getWebClientId(): String? {
-        return try {
+        // Try reading from google-services.json first
+        try {
             val json = applicationContext.assets.open("google-services.json")
                 .bufferedReader().use { it.readText() }
             val obj = JSONObject(json)
@@ -126,11 +127,22 @@ class LoginActivity : AppCompatActivity() {
                     }
                 }
             }
-            null
         } catch (e: Exception) {
             Log.e(TAG, "Error reading google-services.json", e)
-            null
         }
+
+        // Fallback: hardcoded Web Client ID for project abwalzhraalsydy-62ccf
+        return FALLBACK_WEB_CLIENT_ID
+    }
+
+    companion object {
+        private const val TAG = "LoginActivity"
+        /**
+         * Fallback Web Client ID extracted from Firebase Console.
+         * Project: abwalzhraalsydy-62ccf (159319780620)
+         */
+        private const val FALLBACK_WEB_CLIENT_ID =
+            "159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com"
     }
 
     private fun setupGoogleSignInLauncher() {

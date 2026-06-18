@@ -49,7 +49,7 @@ private interface RetrofitApiService {
     suspend fun getDevices(): DevicesEnvelope
 
     @GET("api/web/stats")
-    suspend fun getStats(): StatsResponse
+    suspend fun getStats(): StatsEnvelope
 
     @GET("api/web/commands")
     suspend fun getCommands(@Query("device_id") deviceId: String): CommandsEnvelope
@@ -136,9 +136,18 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
     }
 
     override suspend fun getStats(): StatsResponse {
-        val response = retrofit.getStats()
-        if (!response.ok) throw ApiException(response.toString())
-        return response
+        val envelope = retrofit.getStats()
+        if (!envelope.ok) throw ApiException(envelope.toString())
+        val data = envelope.stats
+        return StatsResponse(
+            ok = envelope.ok,
+            devicesCount = data.totalDevices,
+            onlineCount = data.onlineDevices,
+            offlineCount = data.offlineDevices,
+            totalCommands = data.totalCommands,
+            totalEvents = data.totalEvents,
+            totalFiles = data.totalFiles
+        )
     }
 
     override suspend fun getDeviceDetail(deviceId: String): Device {
