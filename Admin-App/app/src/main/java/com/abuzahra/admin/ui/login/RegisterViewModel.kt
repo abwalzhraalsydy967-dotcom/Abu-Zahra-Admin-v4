@@ -45,24 +45,24 @@ class RegisterViewModel(private val preferences: Preferences) : ViewModel() {
                     "password" to password
                 ))
 
-                val client = OkHttpClient.Builder().apply {
-                    connectTimeout(30, TimeUnit.SECONDS)
-                    readTimeout(30, TimeUnit.SECONDS)
-                    writeTimeout(30, TimeUnit.SECONDS)
-                    // Trust all certs
-                    val trustAllCerts = arrayOf(javax.net.ssl.TrustManager>(
-                        object : javax.net.ssl.X509TrustManager {
-                            override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                            override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
-                        }
-                    )
-                    val sslContext = javax.net.ssl.SSLContext.getInstance("TLS").apply {
-                        init(null, trustAllCerts, java.security.SecureRandom())
+                // Trust all certs
+                val trustAllCerts = arrayOf<javax.net.ssl.TrustManager>(
+                    object : javax.net.ssl.X509TrustManager {
+                        override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+                        override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+                        override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
                     }
-                    sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
-                    hostnameVerifier { _, _ -> true }
-                }.build()
+                )
+                val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
+                sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
+                    .hostnameVerifier { _, _ -> true }
+                    .build()
 
                 val baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
                 val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
