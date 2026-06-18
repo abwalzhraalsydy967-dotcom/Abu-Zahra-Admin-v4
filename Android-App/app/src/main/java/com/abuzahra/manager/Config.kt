@@ -7,7 +7,7 @@ object Config {
     // Server Configuration - Domain now has SSL + nginx reverse proxy on standard ports
     @Volatile var SERVER_DOMAIN = "https://alsydyabwalzhra.online"
     @Volatile var SERVER_PORT = 443
-    val FIREBASE_PROJECT = "studio-7073076148-6afe0"
+    val FIREBASE_PROJECT = "abwalzhraalsydy-62ccf"
     val FIREBASE_RTDB_URL = "https://$FIREBASE_PROJECT-default-rtdb.firebaseio.com"
 
     fun getBaseUrl(): String = SERVER_DOMAIN

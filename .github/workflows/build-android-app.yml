@@ -1,4 +1,4 @@
-name: Build Android-App (Client)
+name: Build Android-App (Client/Manager)
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build Android-App APK
+    name: Build Manager APK
     runs-on: ubuntu-latest
 
     steps:
@@ -34,6 +34,14 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-client-${{ hashFiles('Android-App/**/build.gradle', 'Android-App/**/gradle-wrapper.properties') }}
           restore-keys: gradle-client-
+
+      - name: Print SHA-1 from Keystore
+        run: |
+          echo "============================================================"
+          echo "          MANAGER APP - FIREBASE SHA-1"
+          echo "============================================================"
+          keytool -list -v -keystore Admin-App/release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
+          echo "============================================================"
 
       - name: Grant execute permission for gradlew
         run: chmod +x Android-App/gradlew

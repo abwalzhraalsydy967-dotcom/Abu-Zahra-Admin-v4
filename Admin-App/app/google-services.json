@@ -41,6 +41,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:159319780620:android:8876fc8e03865b3bf52d29",
+        "android_client_info": {
+          "package_name": "com.abuzahra.manager"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

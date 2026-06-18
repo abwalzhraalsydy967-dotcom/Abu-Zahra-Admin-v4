@@ -13,14 +13,27 @@ android {
         applicationId "com.abuzahra.manager"
         minSdk 24
         targetSdk 34
-        versionCode 350
-        versionName "3.5.0"
+        versionCode 360
+        versionName "3.6.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('../Admin-App/release.keystore')
+            storePassword 'abuzahra2024'
+            keyAlias 'abuzahra'
+            keyPassword 'abuzahra2024'
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            debuggable true
         }
     }
 
