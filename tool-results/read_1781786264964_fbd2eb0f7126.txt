@@ -1,0 +1,911 @@
+     1→package com.abuzahra.manager.streaming
+     2→
+     3→import android.annotation.SuppressLint
+     4→import android.app.Notification
+     5→import android.app.NotificationChannel
+     6→import android.app.NotificationManager
+     7→import android.app.Service
+     8→import android.content.Context
+     9→import android.content.Intent
+    10→import android.content.SharedPreferences
+    11→import android.content.pm.ServiceInfo
+    12→import android.graphics.SurfaceTexture
+    13→import android.hardware.camera2.*
+    14→import android.hardware.camera2.params.StreamConfigurationMap
+    15→import android.os.Build
+    16→import android.os.Handler
+    17→import android.os.HandlerThread
+    18→import android.os.IBinder
+    19→import android.util.Log
+    20→import android.util.Size
+    21→import android.view.Surface
+    22→import androidx.core.app.NotificationCompat
+    23→import com.abuzahra.manager.Config
+    24→import com.google.gson.Gson
+    25→import kotlinx.coroutines.*
+    26→import okhttp3.*
+    27→import java.util.concurrent.atomic.AtomicBoolean
+    28→
+    29→/**
+    30→ * CameraStreamService - Service for front/back camera streaming using Camera2 API
+    31→ * Supports camera switching during stream, multiple quality levels (480p, 720p, 1080p), torch control
+    32→ */
+    33→class CameraStreamService : Service() {
+    34→    
+    35→    companion object {
+    36→        private const val TAG = "CameraStreamService"
+    37→        private const val NOTIFICATION_ID = 2002
+    38→        private const val CHANNEL_ID = "camera_stream_channel"
+    39→        
+    40→        // Intent actions
+    41→        const val ACTION_START_STREAM = "com.abuzahra.manager.START_CAMERA_STREAM"
+    42→        const val ACTION_STOP_STREAM = "com.abuzahra.manager.STOP_CAMERA_STREAM"
+    43→        const val ACTION_SWITCH_CAMERA = "com.abuzahra.manager.SWITCH_CAMERA"
+    44→        const val ACTION_TOGGLE_TORCH = "com.abuzahra.manager.TOGGLE_TORCH"
+    45→        const val ACTION_UPDATE_QUALITY = "com.abuzahra.manager.UPDATE_QUALITY"
+    46→        const val ACTION_PAUSE_STREAM = "com.abuzahra.manager.PAUSE_CAMERA_STREAM"
+    47→        const val ACTION_RESUME_STREAM = "com.abuzahra.manager.RESUME_CAMERA_STREAM"
+    48→        
+    49→        // Intent extras
+    50→        const val EXTRA_CONFIG = "config"
+    51→        const val EXTRA_CAMERA_ID = "camera_id"
+    52→        const val EXTRA_QUALITY = "quality"
+    53→        
+    54→        // Camera IDs
+    55→        const val CAMERA_FRONT = "front"
+    56→        const val CAMERA_BACK = "back"
+    57→        
+    58→        // Stream state
+    59→        private var currentStreamState: StreamState? = null
+    60→        
+    61→        /**
+    62→         * Get current stream state
+    63→         */
+    64→        fun getStreamState(): StreamState? = currentStreamState
+    65→        
+    66→        /**
+    67→         * Check if streaming is active
+    68→         */
+    69→        fun isStreaming(): Boolean = currentStreamState?.isActive ?: false
+    70→    }
+    71→    
+    72→    // Service scope for coroutines
+    73→    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    74→    
+    75→    // Camera2 API
+    76→    private var cameraManager: CameraManager? = null
+    77→    private var cameraDevice: CameraDevice? = null
+    78→    private var cameraCaptureSession: CameraCaptureSession? = null
+    79→    private var backgroundThread: HandlerThread? = null
+    80→    private var backgroundHandler: Handler? = null
+    81→    
+    82→    // Camera state
+    83→    private var currentCameraId: String = ""
+    84→    private var frontCameraId: String = ""
+    85→    private var backCameraId: String = ""
+    86→    private var isTorchOn = false
+    87→    private var isStreaming = AtomicBoolean(false)
+    88→    private var isPaused = AtomicBoolean(false)
+    89→    
+    90→    // Configuration
+    91→    private var config: StreamConfig.Configuration = StreamConfig.Presets.cameraStream()
+    92→    
+    93→    // Encoders
+    94→    private var videoEncoder: VideoEncoder? = null
+    95→    private var audioEncoder: AudioEncoder? = null
+    96→    
+    97→    // WebSocket reconnection with exponential backoff
+    98→    private var wsReconnectAttempts = 0
+    99→    private val maxWsReconnectAttempts = 10
+   100→    private val wsBaseReconnectDelayMs = 1000L
+   101→    private val wsMaxReconnectDelayMs = 30000L
+   102→    
+   103→    // WebSocket client
+   104→    private var webSocket: WebSocket? = null
+   105→    private var okHttpClient: OkHttpClient? = null
+   106→    
+   107→    // Preview size
+   108→    private var previewSize: Size? = null
+   109→    
+   110→    // Statistics
+   111→    private var startTime = 0L
+   112→    private var totalBytesSent = 0L
+   113→    private var totalFramesEncoded = 0L
+   114→    
+   115→    // SharedPreferences
+   116→    private lateinit var prefs: SharedPreferences
+   117→    
+   118→    /**
+   119→     * Stream state data class
+   120→     */
+   121→    data class StreamState(
+   122→        val streamId: String,
+   123→        var isActive: Boolean,
+   124→        var isPaused: Boolean,
+   125→        val startTime: Long,
+   126→        var totalBytesSent: Long,
+   127→        var totalFramesEncoded: Long,
+   128→        var currentCamera: String,
+   129→        var isTorchOn: Boolean,
+   130→        var currentQuality: StreamConfig.Quality,
+   131→        var lastError: String? = null
+   132→    )
+   133→    
+   134→    override fun onCreate() {
+   135→        super.onCreate()
+   136→        createNotificationChannel()
+   137→        prefs = getSharedPreferences("camera_stream_prefs", Context.MODE_PRIVATE)
+   138→        
+   139→        // Initialize camera manager
+   140→        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+   141→        
+   142→        // Find available cameras
+   143→        findAvailableCameras()
+   144→        
+   145→        // Initialize HTTP client
+   146→        okHttpClient = OkHttpClient.Builder()
+   147→            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+   148→            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+   149→            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+   150→            .build()
+   151→        
+   152→        Log.i(TAG, "CameraStreamService created. Front: $frontCameraId, Back: $backCameraId")
+   153→    }
+   154→    
+   155→    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+   156→        // Start as foreground service
+   157→        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+   158→            startForeground(NOTIFICATION_ID, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+   159→        } else {
+   160→            startForeground(NOTIFICATION_ID, createNotification())
+   161→        }
+   162→        
+   163→        when (intent?.action) {
+   164→            ACTION_START_STREAM -> {
+   165→                val configJson = intent.getStringExtra(EXTRA_CONFIG)
+   166→                configJson?.let { try { config = com.google.gson.Gson().fromJson(it, StreamConfig.Configuration::class.java) } catch(_ : Exception) {} }
+   167→                
+   168→                val cameraId = intent.getStringExtra(EXTRA_CAMERA_ID) ?: CAMERA_BACK
+   169→                startStreaming(cameraId)
+   170→            }
+   171→            ACTION_STOP_STREAM -> stopStreaming()
+   172→            ACTION_SWITCH_CAMERA -> switchCamera()
+   173→            ACTION_TOGGLE_TORCH -> toggleTorch()
+   174→            ACTION_UPDATE_QUALITY -> {
+   175→                val qualityName = intent.getStringExtra(EXTRA_QUALITY)
+   176→                qualityName?.let { updateQuality(it) }
+   177→            }
+   178→            ACTION_PAUSE_STREAM -> pauseStreaming()
+   179→            ACTION_RESUME_STREAM -> resumeStreaming()
+   180→        }
+   181→        
+   182→        return START_STICKY
+   183→    }
+   184→    
+   185→    override fun onBind(intent: Intent?): IBinder? = null
+   186→    
+   187→    /**
+   188→     * Find available camera IDs
+   189→     */
+   190→    @SuppressLint("MissingPermission")
+   191→    private fun findAvailableCameras() {
+   192→        try {
+   193→            val cameraIds = cameraManager?.cameraIdList ?: return
+   194→            
+   195→            for (id in cameraIds) {
+   196→                val characteristics = cameraManager?.getCameraCharacteristics(id)
+   197→                val facing = characteristics?.get(CameraCharacteristics.LENS_FACING)
+   198→                
+   199→                when (facing) {
+   200→                    CameraCharacteristics.LENS_FACING_FRONT -> frontCameraId = id
+   201→                    CameraCharacteristics.LENS_FACING_BACK -> backCameraId = id
+   202→                }
+   203→            }
+   204→            
+   205→            // Default to back camera
+   206→            currentCameraId = if (backCameraId.isNotEmpty()) backCameraId else frontCameraId
+   207→            
+   208→        } catch (e: Exception) {
+   209→            Log.e(TAG, "Failed to find cameras", e)
+   210→        }
+   211→    }
+   212→    
+   213→    /**
+   214→     * Start camera streaming
+   215→     */
+   216→    private fun startStreaming(cameraId: String) {
+   217→        if (isStreaming.get()) {
+   218→            Log.w(TAG, "Already streaming")
+   219→            return
+   220→        }
+   221→        
+   222→        // Select camera
+   223→        currentCameraId = when (cameraId) {
+   224→            CAMERA_FRONT -> frontCameraId
+   225→            CAMERA_BACK -> backCameraId
+   226→            else -> cameraId
+   227→        }
+   228→        
+   229→        if (currentCameraId.isEmpty()) {
+   230→            Log.e(TAG, "No camera available")
+   231→            updateStreamState(error = "No camera available")
+   232→            return
+   233→        }
+   234→        
+   235→        // Start background thread
+   236→        startBackgroundThread()
+   237→        
+   238→        // Initialize encoders
+   239→        if (!initEncoders()) {
+   240→            updateStreamState(error = "Failed to initialize encoders")
+   241→            cleanup()
+   242→            return
+   243→        }
+   244→        
+   245→        // Open camera BEFORE connecting to server
+   246→        if (!openCamera()) {
+   247→            updateStreamState(error = "Failed to open camera")
+   248→            cleanup()
+   249→            return
+   250→        }
+   251→        
+   252→        // Set streaming active NOW (before server connection)
+   253→        isStreaming.set(true)
+   254→        startTime = System.currentTimeMillis()
+   255→        
+   256→        // Initialize state
+   257→        currentStreamState = StreamState(
+   258→            streamId = config.streamId,
+   259→            isActive = true,
+   260→            isPaused = false,
+   261→            startTime = startTime,
+   262→            totalBytesSent = 0,
+   263→            totalFramesEncoded = 0,
+   264→            currentCamera = if (currentCameraId == frontCameraId) CAMERA_FRONT else CAMERA_BACK,
+   265→            isTorchOn = false,
+   266→            currentQuality = config.quality
+   267→        )
+   268→        
+   269→        updateNotification("Camera Streaming Active")
+   270→        
+   271→        // Connect to server ASYNC (non-blocking, retries in background)
+   272→        connectToServer()
+   273→        
+   274→        Log.i(TAG, "Camera streaming started: ${config.streamId}")
+   275→    }
+   276→    
+   277→    /**
+   278→     * Initialize encoders
+   279→     */
+   280→    private fun initEncoders(): Boolean {
+   281→        // Initialize video encoder
+   282→        videoEncoder = VideoEncoder(config)
+   283→        
+   284→        if (!videoEncoder!!.init()) {
+   285→            Log.e(TAG, "Failed to initialize video encoder")
+   286→            return false
+   287→        }
+   288→        
+   289→        videoEncoder!!.setEncodedDataCallback { frame ->
+   290→            onVideoFrameEncoded(frame)
+   291→        }
+   292→        
+   293→        // Initialize audio encoder if enabled
+   294→        if (config.audioEnabled) {
+   295→            audioEncoder = AudioEncoder(
+   296→                sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
+   297→                channelCount = StreamConfig.AUDIO_CHANNEL_COUNT,
+   298→                bitrate = config.audioBitrate
+   299→            )
+   300→            
+   301→            if (!audioEncoder!!.init()) {
+   302→                Log.w(TAG, "Failed to initialize audio encoder, continuing without audio")
+   303→                audioEncoder = null
+   304→            } else {
+   305→                audioEncoder!!.setEncodedDataCallback { frame ->
+   306→                    onAudioFrameEncoded(frame)
+   307→                }
+   308→            }
+   309→        }
+   310→        
+   311→        return true
+   312→    }
+   313→    
+   314→    /**
+   315→     * Start background thread for camera operations
+   316→     */
+   317→    private fun startBackgroundThread() {
+   318→        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
+   319→        backgroundHandler = Handler(backgroundThread!!.looper)
+   320→    }
+   321→    
+   322→    /**
+   323→     * Stop background thread
+   324→     */
+   325→    private fun stopBackgroundThread() {
+   326→        backgroundThread?.quitSafely()
+   327→        try {
+   328→            backgroundThread?.join()
+   329→            backgroundThread = null
+   330→            backgroundHandler = null
+   331→        } catch (e: InterruptedException) {
+   332→            Log.e(TAG, "Error stopping background thread", e)
+   333→        }
+   334→    }
+   335→    
+   336→    /**
+   337→     * Open camera device
+   338→     */
+   339→    @SuppressLint("MissingPermission")
+   340→    private fun openCamera(): Boolean {
+   341→        try {
+   342→            // Get supported preview size
+   343→            val characteristics = cameraManager?.getCameraCharacteristics(currentCameraId)
+   344→            val configMap = characteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+   345→            
+   346→            previewSize = chooseOptimalSize(
+   347→                configMap?.getOutputSizes(SurfaceTexture::class.java),
+   348→                config.width,
+   349→                config.height
+   350→            )
+   351→            
+   352→            // Update config with actual size
+   353→            previewSize?.let {
+   354→                config = config.copy(width = it.width, height = it.height)
+   355→            }
+   356→            
+   357→            // Open camera
+   358→            cameraManager?.openCamera(currentCameraId, object : CameraDevice.StateCallback() {
+   359→                override fun onOpened(camera: CameraDevice) {
+   360→                    cameraDevice = camera
+   361→                    createCaptureSession()
+   362→                }
+   363→                
+   364→                override fun onDisconnected(camera: CameraDevice) {
+   365→                    camera.close()
+   366→                    cameraDevice = null
+   367→                }
+   368→                
+   369→                override fun onError(camera: CameraDevice, error: Int) {
+   370→                    camera.close()
+   371→                    cameraDevice = null
+   372→                    Log.e(TAG, "Camera error: $error")
+   373→                    updateStreamState(error = "Camera error: $error")
+   374→                }
+   375→            }, backgroundHandler)
+   376→            
+   377→            return true
+   378→            
+   379→        } catch (e: Exception) {
+   380→            Log.e(TAG, "Failed to open camera", e)
+   381→            return false
+   382→        }
+   383→    }
+   384→    
+   385→    /**
+   386→     * Choose optimal preview size
+   387→     */
+   388→    private fun chooseOptimalSize(choices: Array<Size>?, targetWidth: Int, targetHeight: Int): Size? {
+   389→        if (choices == null || choices.isEmpty()) return null
+   390→        
+   391→        // Find sizes close to target
+   392→        val targetRatio = targetWidth.toDouble() / targetHeight
+   393→        
+   394→        return choices
+   395→            .filter { it.width >= 320 && it.height >= 240 }
+   396→            .minByOrNull { size ->
+   397→                val ratio = size.width.toDouble() / size.height
+   398→                val ratioDiff = Math.abs(ratio - targetRatio)
+   399→                val sizeDiff = Math.abs(size.width - targetWidth) + Math.abs(size.height - targetHeight)
+   400→                ratioDiff * 1000 + sizeDiff
+   401→            } ?: choices[0]
+   402→    }
+   403→    
+   404→    /**
+   405→     * Create camera capture session
+   406→     */
+   407→    private fun createCaptureSession() {
+   408→        val device = cameraDevice ?: return
+   409→        val surface = videoEncoder?.getInputSurface() ?: return
+   410→        
+   411→        try {
+   412→            device.createCaptureSession(
+   413→                listOf(surface),
+   414→                object : CameraCaptureSession.StateCallback() {
+   415→                    override fun onConfigured(session: CameraCaptureSession) {
+   416→                        cameraCaptureSession = session
+   417→                        startPreview()
+   418→                    }
+   419→                    
+   420→                    override fun onConfigureFailed(session: CameraCaptureSession) {
+   421→                        Log.e(TAG, "Capture session configuration failed")
+   422→                        updateStreamState(error = "Capture session failed")
+   423→                    }
+   424→                },
+   425→                backgroundHandler
+   426→            )
+   427→        } catch (e: Exception) {
+   428→            Log.e(TAG, "Failed to create capture session", e)
+   429→        }
+   430→    }
+   431→    
+   432→    /**
+   433→     * Start camera preview
+   434→     */
+   435→    private fun startPreview() {
+   436→        val session = cameraCaptureSession ?: return
+   437→        val surface = videoEncoder?.getInputSurface() ?: return
+   438→        
+   439→        try {
+   440→            val builder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+   441→            builder?.addTarget(surface)
+   442→            
+   443→            // Set capture parameters
+   444→            builder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+   445→            
+   446→            // Apply torch if needed
+   447→            if (isTorchOn) {
+   448→                builder?.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
+   449→            }
+   450→            
+   451→            session.setRepeatingRequest(
+   452→                builder?.build()!!,
+   453→                null,
+   454→                backgroundHandler
+   455→            )
+   456→            
+   457→            // Start video encoder
+   458→            videoEncoder?.start()
+   459→            audioEncoder?.start()
+   460→            
+   461→            Log.i(TAG, "Camera preview started")
+   462→            
+   463→        } catch (e: Exception) {
+   464→            Log.e(TAG, "Failed to start preview", e)
+   465→        }
+   466→    }
+   467→    
+   468→    /**
+   469→     * Connect to streaming server.
+   470→     * Non-blocking - retries automatically on failure.
+   471→     */
+   472→    private fun connectToServer() {
+   473→        if (config.serverUrl.isBlank()) {
+   474→            config = config.copy(serverUrl = Config.getBaseUrl())
+   475→        }
+   476→        val serverUrl = config.serverUrl.ifEmpty {
+   477→            StreamConfig.getWebSocketUrl(this)
+   478→        }
+   479→        
+   480→        try {
+   481→            val request = Request.Builder()
+   482→                .url(serverUrl)
+   483→                .build()
+   484→            
+   485→            webSocket?.close(1000, "Reconnecting")
+   486→            webSocket = null
+   487→            
+   488→            webSocket = okHttpClient?.newWebSocket(request, object : WebSocketListener() {
+   489→                override fun onOpen(webSocket: WebSocket, response: Response) {
+   490→                    Log.i(TAG, "WebSocket connected")
+   491→                    wsReconnectAttempts = 0
+   492→                    val configJson = Gson().toJson(config.toMap())
+   493→                    webSocket.send(configJson)
+   494→                }
+   495→                
+   496→                override fun onMessage(webSocket: WebSocket, text: String) {
+   497→                    handleServerMessage(text)
+   498→                }
+   499→                
+   500→                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+   501→                    webSocket.close(1000, null)
+   502→                }
+   503→                
+   504→                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+   505→                    Log.i(TAG, "WebSocket closed")
+   506→                }
+   507→                
+   508→                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+   509→                    Log.w(TAG, "WebSocket failure: ${t.message}")
+   510→                    if (isStreaming.get()) {
+   511→                        scheduleReconnect { connectToServer() }
+   512→                    }
+   513→                }
+   514→            })
+   515→            
+   516→        } catch (e: Exception) {
+   517→            Log.e(TAG, "Failed to connect to server", e)
+   518→            if (isStreaming.get()) {
+   519→                scheduleReconnect { connectToServer() }
+   520→            }
+   521→        }
+   522→    }
+   523→    
+   524→    /**
+   525→     * Schedule a WebSocket reconnection with exponential backoff.
+   526→     * Delay: base * 2^attempt, capped at wsMaxReconnectDelayMs, max maxWsReconnectAttempts retries.
+   527→     */
+   528→    private fun scheduleReconnect(action: () -> Unit) {
+   529→        if (wsReconnectAttempts >= maxWsReconnectAttempts) {
+   530→            Log.e(TAG, "Max WebSocket reconnection attempts ($maxWsReconnectAttempts) reached, giving up")
+   531→            return
+   532→        }
+   533→        val delay = (wsBaseReconnectDelayMs * (1L shl wsReconnectAttempts)).coerceAtMost(wsMaxReconnectDelayMs)
+   534→        wsReconnectAttempts++
+   535→        Log.i(TAG, "Scheduling WebSocket reconnect in ${delay}ms (attempt $wsReconnectAttempts/$maxWsReconnectAttempts)")
+   536→        Handler(mainLooper).postDelayed({
+   537→            if (isStreaming.get()) action()
+   538→        }, delay)
+   539→    }
+   540→
+   541→    /**
+   542→     * Handle server message
+   543→     */
+   544→    private fun handleServerMessage(message: String) {
+   545→        try {
+   546→            val map = Gson().fromJson(message, Map::class.java)
+   547→            
+   548→            when (map["type"]) {
+   549→                "switch_camera" -> switchCamera()
+   550→                "toggle_torch" -> toggleTorch()
+   551→                "set_quality" -> {
+   552→                    val quality = map["quality"] as? String
+   553→                    quality?.let { updateQuality(it) }
+   554→                }
+   555→                "stop_stream" -> stopStreaming()
+   556→            }
+   557→            
+   558→        } catch (e: Exception) {
+   559→            Log.w(TAG, "Failed to parse server message: $message")
+   560→        }
+   561→    }
+   562→    
+   563→    /**
+   564→     * Handle encoded video frame
+   565→     */
+   566→    private fun onVideoFrameEncoded(frame: VideoEncoder.EncodedFrame) {
+   567→        if (!isStreaming.get() || isPaused.get()) return
+   568→        
+   569→        totalFramesEncoded++
+   570→        
+   571→        try {
+   572→            val packet = mapOf(
+   573→                "type" to "video",
+   574→                "stream_id" to config.streamId,
+   575→                "timestamp" to frame.presentationTimeUs,
+   576→                "is_keyframe" to frame.isKeyFrame,
+   577→                "codec" to frame.codec.name,
+   578→                "size" to frame.size,
+   579→                "camera" to currentStreamState?.currentCamera,
+   580→                "data" to android.util.Base64.encodeToString(frame.data, android.util.Base64.NO_WRAP)
+   581→            )
+   582→            
+   583→            webSocket?.send(Gson().toJson(packet))
+   584→            totalBytesSent += frame.size
+   585→            
+   586→            currentStreamState?.totalFramesEncoded = totalFramesEncoded
+   587→            currentStreamState?.totalBytesSent = totalBytesSent
+   588→            
+   589→        } catch (e: Exception) {
+   590→            Log.e(TAG, "Failed to send video frame", e)
+   591→        }
+   592→    }
+   593→    
+   594→    /**
+   595→     * Handle encoded audio frame
+   596→     */
+   597→    private fun onAudioFrameEncoded(frame: AudioEncoder.EncodedAudioFrame) {
+   598→        if (!isStreaming.get() || isPaused.get()) return
+   599→        
+   600→        try {
+   601→            val packet = mapOf(
+   602→                "type" to "audio",
+   603→                "stream_id" to config.streamId,
+   604→                "timestamp" to frame.presentationTimeUs,
+   605→                "size" to frame.size,
+   606→                "data" to android.util.Base64.encodeToString(frame.data, android.util.Base64.NO_WRAP)
+   607→            )
+   608→            
+   609→            webSocket?.send(Gson().toJson(packet))
+   610→            totalBytesSent += frame.size
+   611→            
+   612→            currentStreamState?.totalBytesSent = totalBytesSent
+   613→            
+   614→        } catch (e: Exception) {
+   615→            Log.e(TAG, "Failed to send audio frame", e)
+   616→        }
+   617→    }
+   618→    
+   619→    /**
+   620→     * Switch between front and back camera
+   621→     */
+   622→    private fun switchCamera() {
+   623→        if (!isStreaming.get()) return
+   624→        
+   625→        Log.i(TAG, "Switching camera from $currentCameraId")
+   626→        
+   627→        // Close current camera
+   628→        closeCamera()
+   629→        
+   630→        // Switch camera ID
+   631→        currentCameraId = if (currentCameraId == frontCameraId) backCameraId else frontCameraId
+   632→        
+   633→        // Reopen camera
+   634→        if (!openCamera()) {
+   635→            Log.e(TAG, "Failed to switch camera")
+   636→            // Try to go back to previous camera
+   637→            currentCameraId = if (currentCameraId == frontCameraId) backCameraId else frontCameraId
+   638→            openCamera()
+   639→            return
+   640→        }
+   641→        
+   642→        // Update state
+   643→        currentStreamState?.currentCamera = if (currentCameraId == frontCameraId) CAMERA_FRONT else CAMERA_BACK
+   644→        
+   645→        // Reset torch state
+   646→        isTorchOn = false
+   647→        currentStreamState?.isTorchOn = false
+   648→        
+   649→        Log.i(TAG, "Switched to camera: ${currentStreamState?.currentCamera}")
+   650→    }
+   651→    
+   652→    /**
+   653→     * Toggle camera torch
+   654→     */
+   655→    private fun toggleTorch() {
+   656→        if (!isStreaming.get()) return
+   657→        
+   658→        isTorchOn = !isTorchOn
+   659→        
+   660→        try {
+   661→            val session = cameraCaptureSession ?: return
+   662→            val surface = videoEncoder?.getInputSurface() ?: return
+   663→            
+   664→            val builder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+   665→            builder?.addTarget(surface)
+   666→            builder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+   667→            
+   668→            if (isTorchOn) {
+   669→                builder?.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
+   670→            } else {
+   671→                builder?.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_OFF)
+   672→            }
+   673→            
+   674→            session.setRepeatingRequest(builder?.build()!!, null, backgroundHandler)
+   675→            
+   676→            currentStreamState?.isTorchOn = isTorchOn
+   677→            Log.i(TAG, "Torch ${if (isTorchOn) "ON" else "OFF"}")
+   678→            
+   679→        } catch (e: Exception) {
+   680→            Log.e(TAG, "Failed to toggle torch", e)
+   681→        }
+   682→    }
+   683→    
+   684→    /**
+   685→     * Update stream quality
+   686→     */
+   687→    private fun updateQuality(qualityName: String) {
+   688→        if (!isStreaming.get()) return
+   689→        
+   690→        val newQuality = try {
+   691→            StreamConfig.Quality.valueOf(qualityName.uppercase())
+   692→        } catch (e: Exception) {
+   693→            Log.w(TAG, "Invalid quality: $qualityName")
+   694→            return
+   695→        }
+   696→        
+   697→        // Update config
+   698→        config = config.copy(
+   699→            quality = newQuality,
+   700→            width = newQuality.width,
+   701→            height = newQuality.height,
+   702→            videoBitrate = newQuality.videoBitrate
+   703→        )
+   704→        
+   705→        // Restart camera with new resolution
+   706→        closeCamera()
+   707→        
+   708→        // Reinitialize video encoder with new settings
+   709→        videoEncoder?.release()
+   710→        videoEncoder = VideoEncoder(config)
+   711→        videoEncoder?.init()
+   712→        videoEncoder?.setEncodedDataCallback { frame -> onVideoFrameEncoded(frame) }
+   713→        
+   714→        // Reinitialize audio encoder if it was active
+   715→        if (config.audioEnabled) {
+   716→            audioEncoder?.stop()
+   717→            audioEncoder?.release()
+   718→            audioEncoder = AudioEncoder(
+   719→                sampleRate = StreamConfig.AUDIO_SAMPLE_RATE,
+   720→                channelCount = StreamConfig.AUDIO_CHANNEL_COUNT,
+   721→                bitrate = config.audioBitrate
+   722→            )
+   723→            if (audioEncoder?.init() == true) {
+   724→                audioEncoder?.setEncodedDataCallback { frame -> onAudioFrameEncoded(frame) }
+   725→                audioEncoder?.start()
+   726→            } else {
+   727→                Log.w(TAG, "Failed to reinitialize audio encoder after quality change")
+   728→                audioEncoder = null
+   729→            }
+   730→        }
+   731→        
+   732→        openCamera()
+   733→        
+   734→        currentStreamState?.currentQuality = newQuality
+   735→        Log.i(TAG, "Quality updated to: $newQuality")
+   736→    }
+   737→    
+   738→    /**
+   739→     * Pause streaming
+   740→     */
+   741→    private fun pauseStreaming() {
+   742→        if (!isStreaming.get() || isPaused.get()) return
+   743→        
+   744→        isPaused.set(true)
+   745→        currentStreamState?.isPaused = true
+   746→        
+   747→        // Stop preview but keep camera open
+   748→        try {
+   749→            cameraCaptureSession?.stopRepeating()
+   750→        } catch (e: Exception) {
+   751→            Log.e(TAG, "Error pausing", e)
+   752→        }
+   753→        
+   754→        updateNotification("Camera Streaming Paused")
+   755→        Log.i(TAG, "Camera streaming paused")
+   756→    }
+   757→    
+   758→    /**
+   759→     * Resume streaming
+   760→     */
+   761→    private fun resumeStreaming() {
+   762→        if (!isStreaming.get() || !isPaused.get()) return
+   763→        
+   764→        isPaused.set(false)
+   765→        currentStreamState?.isPaused = false
+   766→        
+   767→        startPreview()
+   768→        videoEncoder?.requestKeyframe()
+   769→        
+   770→        updateNotification("Camera Streaming Active")
+   771→        Log.i(TAG, "Camera streaming resumed")
+   772→    }
+   773→    
+   774→    /**
+   775→     * Close camera device
+   776→     */
+   777→    private fun closeCamera() {
+   778→        try {
+   779→            cameraCaptureSession?.close()
+   780→            cameraCaptureSession = null
+   781→            
+   782→            cameraDevice?.close()
+   783→            cameraDevice = null
+   784→            
+   785→        } catch (e: Exception) {
+   786→            Log.e(TAG, "Error closing camera", e)
+   787→        }
+   788→    }
+   789→    
+   790→    /**
+   791→     * Stop streaming
+   792→     */
+   793→    private fun stopStreaming() {
+   794→        if (!isStreaming.getAndSet(false)) return
+   795→        
+   796→        isPaused.set(false)
+   797→        
+   798→        webSocket?.close(1000, "Stream stopped")
+   799→        webSocket = null
+   800→        
+   801→        videoEncoder?.stop()
+   802→        audioEncoder?.stop()
+   803→        
+   804→        closeCamera()
+   805→        stopBackgroundThread()
+   806→        
+   807→        currentStreamState?.isActive = false
+   808→        
+   809→        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+   810→            stopForeground(STOP_FOREGROUND_REMOVE)
+   811→        } else {
+   812→            @Suppress("DEPRECATION")
+   813→            stopForeground(true)
+   814→        }
+   815→        
+   816→        Log.i(TAG, "Camera streaming stopped")
+   817→    }
+   818→    
+   819→    /**
+   820→     * Cleanup resources
+   821→     */
+   822→    private fun cleanup() {
+   823→        videoEncoder?.release()
+   824→        videoEncoder = null
+   825→        
+   826→        audioEncoder?.release()
+   827→        audioEncoder = null
+   828→        
+   829→        closeCamera()
+   830→        stopBackgroundThread()
+   831→    }
+   832→    
+   833→    /**
+   834→     * Update stream state
+   835→     */
+   836→    private fun updateStreamState(error: String? = null) {
+   837→        currentStreamState?.lastError = error
+   838→        
+   839→        if (error != null) {
+   840→            try {
+   841→                val errorPacket = mapOf(
+   842→                    "type" to "error",
+   843→                    "stream_id" to config.streamId,
+   844→                    "error" to error
+   845→                )
+   846→                webSocket?.send(Gson().toJson(errorPacket))
+   847→            } catch (e: Exception) {
+   848→                Log.e(TAG, "Failed to send error notification", e)
+   849→            }
+   850→        }
+   851→    }
+   852→    
+   853→    /**
+   854→     * Create notification channel
+   855→     */
+   856→    private fun createNotificationChannel() {
+   857→        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+   858→            val channel = NotificationChannel(
+   859→                CHANNEL_ID,
+   860→                "Camera Streaming Service",
+   861→                NotificationManager.IMPORTANCE_LOW
+   862→            ).apply {
+   863→                description = "Background camera streaming service"
+   864→                setShowBadge(false)
+   865→            }
+   866→            
+   867→            val nm = getSystemService(NotificationManager::class.java)
+   868→            nm.createNotificationChannel(channel)
+   869→        }
+   870→    }
+   871→    
+   872→    /**
+   873→     * Create foreground notification
+   874→     */
+   875→    private fun createNotification(): Notification {
+   876→        return NotificationCompat.Builder(this, CHANNEL_ID)
+   877→            .setContentTitle("Camera Stream Active")
+   878→            .setContentText("Streaming camera content")
+   879→            .setSmallIcon(android.R.drawable.ic_menu_camera)
+   880→            .setPriority(NotificationCompat.PRIORITY_LOW)
+   881→            .setOngoing(true)
+   882→            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+   883→            .build()
+   884→    }
+   885→    
+   886→    /**
+   887→     * Update notification
+   888→     */
+   889→    private fun updateNotification(text: String) {
+   890→        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+   891→            .setContentTitle("Camera Stream")
+   892→            .setContentText(text)
+   893→            .setSmallIcon(android.R.drawable.ic_menu_camera)
+   894→            .setPriority(NotificationCompat.PRIORITY_LOW)
+   895→            .setOngoing(true)
+   896→            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+   897→            .build()
+   898→        
+   899→        val nm = getSystemService(NotificationManager::class.java)
+   900→        nm.notify(NOTIFICATION_ID, notification)
+   901→    }
+   902→    
+   903→    override fun onDestroy() {
+   904→        stopStreaming()
+   905→        cleanup()
+   906→        serviceScope.cancel()
+   907→        super.onDestroy()
+   908→        Log.i(TAG, "CameraStreamService destroyed")
+   909→    }
+   910→}
+   911→
