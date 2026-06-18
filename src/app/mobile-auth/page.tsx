@@ -25,7 +25,8 @@ interface GISOAuth2 {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GOOGLE_CLIENT_ID =
-  '787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com'
+  process.env.NEXT_PUBLIC_FIREBASE_WEB_CLIENT_ID ||
+  '159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com'
 const REDIRECT_SCHEME = 'abuzahra'
 
 // ─── Page Component ───────────────────────────────────────────────────────────

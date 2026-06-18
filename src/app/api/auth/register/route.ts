@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     // Forward registration to Python server
     const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'https://alsydyabwalzhra.online'
-    const serverRes = await fetch(`${serverUrl}/api/auth/register`, {
+    const serverRes = await fetch(`${serverUrl}/api/web/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

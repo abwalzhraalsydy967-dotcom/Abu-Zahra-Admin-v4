@@ -151,7 +151,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         debugLogContainer.addView(debugLogScroll)
 
         // Add to the root CoordinatorLayout at the bottom
-        val coordinatorLayout = binding.coordinator as? android.widget.FrameLayout
+        val coordinatorLayout = binding.coordinator as? androidx.coordinatorlayout.widget.CoordinatorLayout
         if (coordinatorLayout != null) {
             val lp = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
                 androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,

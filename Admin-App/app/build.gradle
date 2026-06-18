@@ -85,25 +85,14 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
     // Security (EncryptedSharedPreferences)
-    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'androidx.security:security-crypto:1.0.0'
 
     // Firebase
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-auth-ktx'
-    implementation 'com.google.firebase:firebase-firestore-ktx'
 
     // Google Sign-In
     implementation 'com.google.android.gms:play-services-auth:20.7.0'
-
-    // Chrome Custom Tabs (for Google Sign-In bypass)
-    implementation 'androidx.browser:browser:1.7.0'
-
-    // Image loading
-    implementation 'com.github.bumptech.glide:glide:4.16.0'
-    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
-
-    // QR Code
-    implementation 'com.google.zxing:core:3.5.2'
 
     // GridLayout (for Data activity)
     implementation 'androidx.gridlayout:gridlayout:1.0.0'

@@ -47,16 +47,8 @@ android {
         freeCompilerArgs += ['-Xskip-metadata-version-check', '-opt-in=kotlin.RequiresOptIn']
     }
 
-    sourceSets {
-        main {
-            java {
-                exclude '**/streaming/RtmpStreamer.kt'
-            }
-        }
-    }
-
     buildFeatures {
-        viewBinding true
+        viewBinding false
     }
 
     packagingOptions {
@@ -86,14 +78,11 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
     // Firebase
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-database-ktx'
-    implementation 'com.google.firebase:firebase-messaging-ktx'
     implementation 'com.google.firebase:firebase-analytics-ktx'
 
     // Networking
@@ -107,9 +96,6 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-process:2.7.0'
-
-    // Image compression
-    implementation 'id.zelory:compressor:3.0.1'
 
     // Room Database
     implementation 'androidx.room:room-runtime:2.6.1'

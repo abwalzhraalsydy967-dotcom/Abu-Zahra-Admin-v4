@@ -40,7 +40,7 @@
                 android:layout_marginBottom="16dp"
                 android:drawablePadding="8dp" />
 
-            <androidx.recyclerview.widget.GridLayout
+            <androidx.gridlayout.widget.GridLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:columnCount="3"
@@ -167,7 +167,7 @@
                     app:layout_columnWeight="1"
                     app:cornerRadius="12dp" />
 
-            </androidx.recyclerview.widget.GridLayout>
+            </androidx.gridlayout.widget.GridLayout>
 
         </LinearLayout>
 

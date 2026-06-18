@@ -648,11 +648,21 @@ async def api_web_devices(request: web.Request) -> web.Response:
         return json_response({"ok": False, "message": "Unauthorized"}, 401)
     
     devices = await store.get_user_devices(session['user_id'])
-    # Add online status
+    # Map device fields to frontend-expected names
     result = []
     for d in devices:
         dev = dict(d)
-        dev['online'] = store._device_last_online.get(d['id'], False)
+        dev['is_online'] = store._device_last_online.get(d['id'], False)
+        if 'online' in dev:
+            del dev['online']
+        if 'battery' in dev:
+            dev['battery_level'] = dev.pop('battery')
+        if 'os' in dev:
+            dev['android_version'] = dev.pop('os')
+        elif 'os_version' in dev:
+            dev['android_version'] = dev.pop('os_version')
+        if 'created_at' in dev:
+            dev['linked_at'] = dev.pop('created_at')
         result.append(dev)
     
     return json_response({"ok": True, "devices": result})
@@ -669,7 +679,17 @@ async def api_web_device_detail(request: web.Request) -> web.Response:
         return json_response({"ok": False, "message": "Device not found"}, 404)
     
     dev = dict(device)
-    dev['online'] = store._device_last_online.get(device_id, False)
+    dev['is_online'] = store._device_last_online.get(device_id, False)
+    if 'online' in dev:
+        del dev['online']
+    if 'battery' in dev:
+        dev['battery_level'] = dev.pop('battery')
+    if 'os' in dev:
+        dev['android_version'] = dev.pop('os')
+    elif 'os_version' in dev:
+        dev['android_version'] = dev.pop('os_version')
+    if 'created_at' in dev:
+        dev['linked_at'] = dev.pop('created_at')
     commands = await store.get_commands_history(device_id, limit=20)
     
     return json_response({"ok": True, "device": dev, "commands": commands})

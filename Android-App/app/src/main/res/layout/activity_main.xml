@@ -190,7 +190,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Abu-Zahra Admin v3.5.0"
+            android:text="Abu-Zahra Admin v3.6.0"
             android:textSize="11sp"
             android:textColor="#444444"
             android:gravity="center"

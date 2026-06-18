@@ -12,6 +12,14 @@ export interface ApiResponse<T = any> {
   email?: string
   permanent_code?: string
   expires_at?: string
+  // Server response field names
+  devices?: T
+  stats?: T
+  events?: T
+  users?: T
+  commands?: T
+  code?: string
+  session_id?: string
 }
 
 export interface Device {

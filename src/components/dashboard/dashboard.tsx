@@ -157,9 +157,9 @@ export default function Dashboard() {
       try {
         const res = await api.getDevices()
         if (cancelled) return
-        if (res.ok && res.data) {
-          setDevices(res.data as Device[])
-          addLog('success', `تم تحميل ${(res.data as Device[]).length} جهاز`)
+        if (res.ok && res.devices) {
+          setDevices(res.devices as Device[])
+          addLog('success', `تم تحميل ${(res.devices as Device[]).length} جهاز`)
         } else {
           addLog('error', 'فشل تحميل الأجهزة', res.message)
         }
@@ -175,8 +175,8 @@ export default function Dashboard() {
       try {
         const res = await api.getStats()
         if (cancelled) return
-        if (res.ok && res.data) {
-          setStats(res.data as Stats)
+        if (res.ok && res.stats) {
+          setStats(res.stats as Stats)
           addLog('info', 'تم تحميل الإحصائيات')
         } else {
           addLog('error', 'فشل تحميل الإحصائيات', res.message)
@@ -193,9 +193,9 @@ export default function Dashboard() {
       try {
         const res = await api.getEvents(100)
         if (cancelled) return
-        if (res.ok && res.data) {
-          setEvents(res.data as Event[])
-          addLog('info', `تم تحميل ${(res.data as Event[]).length} حدث`)
+        if (res.ok && res.events) {
+          setEvents(res.events as Event[])
+          addLog('info', `تم تحميل ${(res.events as Event[]).length} حدث`)
         } else {
           addLog('error', 'فشل تحميل الأحداث', res.message)
         }
@@ -217,8 +217,8 @@ export default function Dashboard() {
     refreshTimerRef.current = setInterval(async () => {
       try {
         const res = await api.getDevices()
-        if (res.ok && res.data) {
-          setDevices(res.data as Device[])
+        if (res.ok && res.devices) {
+          setDevices(res.devices as Device[])
         }
       } catch {
         // silent refresh
@@ -239,9 +239,9 @@ export default function Dashboard() {
       try {
         const res = await api.getUsers()
         if (cancelled) return
-        if (res.ok && res.data) {
-          setUsers(res.data as UserData[])
-          addLog('info', `تم تحميل ${(res.data as UserData[]).length} مستخدم`)
+        if (res.ok && res.users) {
+          setUsers(res.users as UserData[])
+          addLog('info', `تم تحميل ${(res.users as UserData[]).length} مستخدم`)
         } else {
           addLog('error', 'فشل تحميل المستخدمين', res.message)
         }
@@ -269,8 +269,8 @@ export default function Dashboard() {
     addLog('info', 'جارِ توليد كود ربط جديد...')
     try {
       const res = await api.generateLinkCode()
-      if (res.ok && res.data) {
-        const code = (res.data as { code: string }).code
+      if (res.ok && res.code) {
+        const code = res.code
         setPermanentCode(code)
         setShowPermanentCode(true)
         addLog('success', 'تم توليد كود ربط جديد', `الكود: ${code}`)
@@ -651,7 +651,7 @@ export default function Dashboard() {
               addLog('info', 'تحديث قائمة الأجهزة يدوياً')
               setLoadingDevices(true)
               api.getDevices().then(res => {
-                if (res.ok && res.data) setDevices(res.data as Device[])
+                if (res.ok && res.devices) setDevices(res.devices as Device[])
                 setLoadingDevices(false)
               }).catch(() => setLoadingDevices(false))
             }}
@@ -868,7 +868,7 @@ export default function Dashboard() {
             onClick={() => {
               setLoadingEvents(true)
               api.getEvents(100).then(res => {
-                if (res.ok && res.data) setEvents(res.data as Event[])
+                if (res.ok && res.events) setEvents(res.events as Event[])
                 setLoadingEvents(false)
               }).catch(() => setLoadingEvents(false))
             }}
@@ -956,7 +956,7 @@ export default function Dashboard() {
             onClick={() => {
               setLoadingUsers(true)
               api.getUsers().then(res => {
-                if (res.ok && res.data) setUsers(res.data as UserData[])
+                if (res.ok && res.users) setUsers(res.users as UserData[])
                 setLoadingUsers(false)
               }).catch(() => setLoadingUsers(false))
             }}

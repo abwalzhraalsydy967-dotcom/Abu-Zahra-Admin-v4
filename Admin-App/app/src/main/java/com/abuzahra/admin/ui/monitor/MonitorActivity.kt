@@ -2,7 +2,7 @@ package com.abuzahra.admin.ui.monitor
 
 import android.os.Bundle
 import android.util.Log
-import android.widget.LinearLayout
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -58,13 +58,13 @@ class MonitorActivity : AppCompatActivity() {
     }
 
     private fun setupDebugLog() {
-        val rootLayout = binding.root as? LinearLayout ?: return
+        val rootLayout = binding.root as? CoordinatorLayout ?: return
         debugLogScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = true
             setBackgroundColor(ContextCompat.getColor(this@MonitorActivity, R.color.surface))
             setPadding(16, 8, 16, 8)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+            layoutParams = CoordinatorLayout.LayoutParams(
+                CoordinatorLayout.LayoutParams.MATCH_PARENT,
                 200
             )
         }

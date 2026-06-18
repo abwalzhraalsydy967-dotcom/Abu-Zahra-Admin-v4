@@ -108,7 +108,7 @@ class App : Application() {
     companion object {
         lateinit var instance: App
             private set
-        const val APP_VERSION = "3.5.0"
+        const val APP_VERSION = "3.6.0"
         const val ADGUARD_DNS_SERVER = "https://dns.adguard.com/dns-query"
     }
 }
