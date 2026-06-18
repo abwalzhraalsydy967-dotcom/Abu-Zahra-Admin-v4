@@ -81,3 +81,44 @@ Stage Summary:
 - Release: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/tag/v2.0.0-21
 - APKs: AbuZahra-Admin-v2.0.0.apk (3MB), AbuZahra-Manager-v3.6.0.apk (7MB)
 - All old Firebase references (studio-7073076148-6afe0) removed from app code
+---
+Task ID: 8
+Agent: Main Agent
+Task: Comprehensive audit, fix all issues, rebuild both apps
+
+Work Log:
+- Launched 3 parallel audit agents for Admin-App, Manager-App, and Server/Dashboard
+- Found 49 total issues across all components (4 critical, 13 medium, 5+ low)
+
+Admin-App fixes:
+- CRITICAL: Fixed GridLayout crash (recyclerview → gridlayout package)
+- Fixed debug panel casting (3 activities: Data, Monitor, DeviceDetail)
+- Removed 5 unused dependencies (firestore, glide, zxing, browser)
+- Reverted security-crypto to 1.1.0-alpha06 (MasterKey class needed)
+
+Manager-App fixes:
+- Fixed version mismatch (3.5.0 → 3.6.0)
+- Wired zip_files command to ZipManager (async background execution)
+- Added NFC permission to manifest
+- Removed 4 unused dependencies (compressor, constraintlayout, cardview, messaging)
+- Removed stale RtmpStreamer exclusion, disabled unused viewBinding
+
+Dashboard/Server fixes:
+- CRITICAL: Fixed res.data undefined (11 instances → correct field names)
+- Fixed register route endpoint (/api/auth/register → /api/web/register)
+- Fixed google auth route endpoint (/api/auth/firebase → /api/web/firebase_auth)
+- Fixed device field mapping (online→is_online, battery→battery_level, etc.)
+- Fixed mobile-auth old Google client ID → new project
+- Fixed firebase.ts stale fallback API key
+
+Build results: Both APKs built successfully
+- AbuZahra-Admin-v2.0.0.apk (3MB)
+- AbuZahra-Manager-v3.6.0.apk (7MB)
+- Release: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/tag/v2.0.0-23
+
+Stage Summary:
+- All critical and high-priority issues resolved
+- Both Android apps build and release successfully
+- Dashboard data binding fixed (was completely broken)
+- Server API field mapping aligned with dashboard
+- All Firebase references point to new project (abwalzhraalsydy-62ccf)
