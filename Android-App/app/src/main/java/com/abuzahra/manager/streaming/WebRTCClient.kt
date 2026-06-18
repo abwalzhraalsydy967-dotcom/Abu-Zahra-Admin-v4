@@ -210,14 +210,17 @@ class WebRTCClient(
     
     /**
      * Build signaling URL
+     * Format: wss://alsydyabwalzhra.online/ws/webrtc?device_id={deviceId}&device_token={token}&type={streamType}&target={targetDevice}
      */
     private fun buildSignalingUrl(): String {
         val baseUrl = Config.getBaseUrl()
         val wsProtocol = if (baseUrl.startsWith("https://")) "wss://" else "ws://"
         val host = baseUrl.removePrefix("https://").removePrefix("http://")
         val deviceId = DeviceUtils.getDeviceId(context)
+        val deviceToken = DeviceUtils.getDeviceToken(context)
+        val streamType = config.streamType.name
         
-        return "$wsProtocol$host/ws/webrtc?device_id=$deviceId&stream_id=${config.streamId}"
+        return "$wsProtocol$host/ws/webrtc?device_id=$deviceId&device_token=$deviceToken&type=$streamType"
     }
     
     /**

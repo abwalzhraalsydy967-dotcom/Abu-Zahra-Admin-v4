@@ -181,6 +181,15 @@ async def push_command(device_id: str, command: dict):
     else:
         await push(f"commands/{did}", command)
 
+async def delete_command(device_id: str, command_id: str):
+    """Delete a specific command from Firebase RTDB."""
+    safe_device = validate_id(device_id, "device_id")
+    safe_cmd = validate_id(command_id, "command_id")
+    url = f"{FIREBASE_RTDB_URL}/commands/{safe_device}/{safe_cmd}.json?auth={FIREBASE_DB_SECRET}"
+    await init_session()
+    async with _firebase_session.post(url, data="null") as resp:
+        pass
+
 async def push_pairing_code(code: str, code_data: dict):
     """Store pairing code in Firebase."""
     safe_code = validate_id(code, "pairing_code")

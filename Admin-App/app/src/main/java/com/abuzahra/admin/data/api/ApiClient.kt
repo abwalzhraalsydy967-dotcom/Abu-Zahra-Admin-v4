@@ -31,7 +31,8 @@ private data class DeviceDetailEnvelope(
 )
 
 private data class JpegStreamRequest(
-    val device_id: String
+    val device_id: String,
+    val type: String = "video"
 )
 
 private interface RetrofitApiService {
@@ -66,17 +67,13 @@ private interface RetrofitApiService {
     @GET("api/web/link_code")
     suspend fun getLinkCode(): LinkCodeResponse
 
-    @GET("api/web/files")
+    @GET("api/web/device/files")
     suspend fun getFiles(
         @Query("device_id") deviceId: String,
         @Query("path") path: String = "/"
-    ): FilesEnvelope
+    ): DeviceFilesResponse
 
-    @GET("api/web/device/files")
-    suspend fun listDeviceFiles(
-        @Query("device_id") deviceId: String,
-        @Query("path") path: String
-    ): CommandResponse
+    // listDeviceFiles removed - using getFiles with new sync endpoint
 
     @GET
     suspend fun downloadFile(@Url url: String): ResponseBody
@@ -187,8 +184,10 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
         return envelope.files
     }
 
-    override suspend fun listDeviceFiles(deviceId: String, path: String): CommandResponse {
-        return retrofit.listDeviceFiles(deviceId, path)
+    override suspend fun listDeviceFiles(deviceId: String, path: String): List<RemoteFile> {
+        val response = retrofit.getFiles(deviceId, path)
+        if (!response.ok) throw ApiException(response.toString())
+        return response.files
     }
 
     override suspend fun downloadFile(url: String): ResponseBody {
@@ -199,8 +198,8 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
         return retrofit.getStreamFrame(deviceId, type)
     }
 
-    override suspend fun startJpegStream(deviceId: String): CommandResponse {
-        return retrofit.startJpegStream(JpegStreamRequest(deviceId))
+    override suspend fun startJpegStream(deviceId: String, type: String): CommandResponse {
+        return retrofit.startJpegStream(JpegStreamRequest(deviceId, type))
     }
 
     override suspend fun stopJpegStream(deviceId: String): CommandResponse {

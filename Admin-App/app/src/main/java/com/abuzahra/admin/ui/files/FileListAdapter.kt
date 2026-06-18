@@ -94,17 +94,21 @@ class FileListAdapter(
             }
             binding.ivFileIcon.setImageResource(icon)
 
-            binding.tvFileDetails.text = if (file.isDirectory) {
-                "مجلد"
-            } else {
-                file.displaySize
-            }
+            binding.tvFileDetails.text = buildFileDetails(file)
 
             binding.ivDownload.visibility = if (file.isDirectory) {
                 android.view.View.GONE
             } else {
                 android.view.View.VISIBLE
             }
+        }
+
+        private fun buildFileDetails(file: RemoteFile): String {
+            if (file.isDirectory) return "مجلد"
+            val parts = mutableListOf<String>()
+            if (file.size > 0) parts.add(file.displaySize)
+            if (!file.modified.isNullOrEmpty()) parts.add(file.modified)
+            return parts.joinToString(" • ")
         }
 
         fun bindParent() {

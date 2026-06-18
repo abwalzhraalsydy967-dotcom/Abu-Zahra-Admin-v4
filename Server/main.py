@@ -41,7 +41,7 @@ from modules.api_handlers import (
     api_stream_frame, api_stream_status, api_stream_start, api_stream_stop,
     api_jpeg_stream_start, api_jpeg_stream_stop,
     # WebSocket
-    ws_dashboard, ws_stream, ws_stream_viewer,
+    ws_dashboard, ws_stream, ws_stream_viewer, ws_webrtc_signaling,
     # Background
     dashboard_push_loop,
 )
@@ -129,6 +129,7 @@ def create_app() -> web.Application:
     app.router.add_get('/ws/dashboard', ws_dashboard)
     app.router.add_get('/ws/stream', ws_stream)
     app.router.add_get('/ws/stream/viewer', ws_stream_viewer)
+    app.router.add_get('/ws/webrtc', ws_webrtc_signaling)
     
     # ─── Startup & Cleanup ────────────────────────────────────
     
@@ -166,6 +167,9 @@ def create_app() -> web.Application:
         
         # Dashboard push
         app['bg_tasks'].add(asyncio.create_task(dashboard_push_loop()))
+        
+        # Command timeout cleanup (20 seconds)
+        app['bg_tasks'].add(asyncio.create_task(command_timeout_loop()))
         
         logger.info(f"Server running on {SERVER_HOST}:{SERVER_PORT}")
         logger.info(f"Dashboard: https://alsydyabwalzhra.online")
@@ -219,6 +223,25 @@ async def cleanup_loop():
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
             await asyncio.sleep(30)
+
+
+async def command_timeout_loop():
+    """Clean up expired commands every 5 seconds."""
+    while True:
+        try:
+            await asyncio.sleep(5)
+            expired = await data_store.cleanup_expired_commands()
+            if expired and firebase_client.firebase_connected:
+                for cmd_id, device_id in expired:
+                    try:
+                        await firebase_client.delete_command(device_id, cmd_id)
+                    except:
+                        pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Command timeout error: {e}")
+            await asyncio.sleep(5)
 
 
 if __name__ == '__main__':

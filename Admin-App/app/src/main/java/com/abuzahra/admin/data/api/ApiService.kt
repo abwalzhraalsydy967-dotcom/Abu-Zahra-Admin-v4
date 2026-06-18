@@ -33,12 +33,12 @@ interface ApiService {
 
     // ── Files ─────────────────────────────────────────────────────
     suspend fun getFiles(deviceId: String, path: String = "/"): List<RemoteFile>
-    suspend fun listDeviceFiles(deviceId: String, path: String): CommandResponse
+    suspend fun listDeviceFiles(deviceId: String, path: String): List<RemoteFile>
     suspend fun downloadFile(url: String): ResponseBody
 
     // ── Streaming ─────────────────────────────────────────────────
     suspend fun getStreamFrame(deviceId: String, type: String): StreamFrameResponse
-    suspend fun startJpegStream(deviceId: String): CommandResponse
+    suspend fun startJpegStream(deviceId: String, type: String = "video"): CommandResponse
     suspend fun stopJpegStream(deviceId: String): CommandResponse
 
     // ── Auth Extensions ─────────────────────────────────────────
@@ -81,6 +81,12 @@ data class EventsEnvelope(
 data class FilesEnvelope(
     val ok: Boolean = true,
     val files: List<RemoteFile> = emptyList()
+)
+
+data class DeviceFilesResponse(
+    val ok: Boolean = true,
+    val files: List<RemoteFile> = emptyList(),
+    val path: String = ""
 )
 
 data class LinkCodeResponse(

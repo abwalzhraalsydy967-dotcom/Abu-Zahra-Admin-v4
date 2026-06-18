@@ -42,3 +42,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Build artifacts
+tool-results/
+__pycache__/
+*.pyc
+.gradle/
+.idea/
+*.iml
+local.properties

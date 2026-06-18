@@ -11,6 +11,7 @@ import asyncio
 import logging
 from aiohttp import web, WSMsgType
 from datetime import datetime
+from typing import Optional
 
 from .config import (
     CORS_ORIGINS, VERSION, SERVER_DOMAIN, SERVER_URL,
@@ -696,7 +697,7 @@ async def api_web_device_detail(request: web.Request) -> web.Response:
         dev['android_version'] = dev.pop('os_version')
     if 'created_at' in dev:
         dev['linked_at'] = dev.pop('created_at')
-    commands = await store.get_commands_history(device_id, limit=20)
+    commands = [c for c in await store.get_commands_history(device_id, limit=20) if c.get('status') not in ('pending', 'sent')]
     
     return json_response({"ok": True, "device": dev, "commands": commands})
 
@@ -706,7 +707,10 @@ async def api_web_commands(request: web.Request) -> web.Response:
     if not session:
         return json_response({"ok": False, "message": "Unauthorized"}, 401)
     
-    commands = await store.get_commands_history(limit=100)
+    device_id = request.query.get('device_id', '')
+    commands = await store.get_commands_history(device_id=device_id or None, limit=100)
+    # Filter out old pending/sent commands - only show completed/failed
+    commands = [c for c in commands if c.get('status') not in ('pending', 'sent')]
     return json_response({"ok": True, "commands": commands})
 
 
@@ -954,8 +958,21 @@ async def api_web_files(request: web.Request) -> web.Response:
     return json_response({"ok": True, "files": files})
 
 
+async def _wait_for_command_result(command_id: str, timeout: float = 15.0) -> Optional[str]:
+    """Wait for a command result by polling store.commands."""
+    start = time.time()
+    while time.time() - start < timeout:
+        cmd = store.commands.get(command_id)
+        if cmd and cmd.get('status') == 'completed':
+            return cmd.get('result', '')
+        if cmd and cmd.get('status') == 'failed':
+            return cmd.get('result', '')
+        await asyncio.sleep(0.5)
+    return None
+
+
 async def api_web_list_files_device(request: web.Request) -> web.Response:
-    """Send list_files command to device and return result."""
+    """Send list_files command to device and wait for result."""
     session = get_auth_session(request)
     if not session:
         return json_response({"ok": False, "message": "Unauthorized"}, 401)
@@ -970,6 +987,11 @@ async def api_web_list_files_device(request: web.Request) -> web.Response:
     if not device:
         return json_response({"ok": False, "message": "Device not found"}, 404)
     
+    # Check if device is online
+    if not store._device_last_online.get(device_id, False):
+        return json_response({"ok": False, "message": "الجهاز غير متصل"}, 400)
+    
+    # Queue command
     queued = await store.queue_command(
         device_id=device_id,
         command="list_files",
@@ -979,14 +1001,28 @@ async def api_web_list_files_device(request: web.Request) -> web.Response:
     )
     
     if _fb.firebase_connected:
-        await push_command(device_id, {
-            "id": queued['id'],
-            "command": "list_files",
-            "params": {"path": path},
-            "created_at": queued['created_at'],
-        })
+        try:
+            await push_command(device_id, {
+                "id": queued['id'],
+                "command": "list_files",
+                "params": {"path": path},
+                "created_at": queued['created_at'],
+            })
+        except Exception as e:
+            logger.warning(f"Firebase push failed: {e}")
     
-    return json_response({"ok": True, "command": queued, "message": "Command queued"})
+    # Wait for result with timeout
+    result = await _wait_for_command_result(queued['id'], timeout=15)
+    
+    if result is None:
+        return json_response({"ok": False, "message": "انتهت مهلة الانتظار", "command_id": queued['id']}, 408)
+    
+    # Parse the result
+    try:
+        files_data = json.loads(result) if isinstance(result, str) else result
+        return json_response({"ok": True, "files": files_data, "path": path})
+    except (json.JSONDecodeError, TypeError):
+        return json_response({"ok": True, "raw": str(result)[:5000], "path": path})
 
 
 # ─── Streaming API ────────────────────────────────────────────
@@ -1308,6 +1344,89 @@ async def ws_stream_viewer(request: web.Request) -> web.Response:
         pass
     finally:
         store.stream_connections.pop(key, None)
+    
+    return ws
+
+
+async def ws_webrtc_signaling(request: web.Request) -> web.Response:
+    """WebRTC signaling server - SDP offer/answer and ICE candidate exchange."""
+    token = request.query.get('token', '')
+    session = store.validate_session(token)
+    if not session:
+        # Also allow device auth
+        device_id = request.query.get('device_id', '')
+        device_token = request.query.get('device_token', '')
+        if not device_id or not device_token or not store.validate_device_token(device_id, device_token):
+            return web.Response(status=401, text="Unauthorized")
+        role = "device"
+        peer_id = device_id
+    else:
+        role = "viewer"
+        peer_id = session['user_id']
+    
+    stream_type = request.query.get('type', 'screen')  # screen, front_camera, back_camera, mic, speaker, ambient
+    target_device = request.query.get('target', '')  # For viewer: which device to stream from
+    
+    ws = web.WebSocketResponse(heartbeat=10)
+    await ws.prepare(request)
+    
+    conn_key = f"webrtc_{role}_{peer_id}_{stream_type}"
+    store.stream_connections[conn_key] = {
+        "ws": ws,
+        "type": role,
+        "stream_type": stream_type,
+        "target": target_device,
+        "last_activity": time.time(),
+    }
+    
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    msg_type = data.get('type', '')
+                    
+                    # Route signaling messages between peers
+                    if msg_type in ('offer', 'answer', 'ice-candidate', 'bye'):
+                        # Find the matching peer connection
+                        for key, conn in list(store.stream_connections.items()):
+                            if key == conn_key:
+                                continue
+                            # Viewer wants to connect to device
+                            if role == "viewer" and conn.get('type') == 'device' and conn.get('target') == target_device:
+                                try:
+                                    if conn.get('ws') and not conn['ws'].closed:
+                                        data['from'] = peer_id
+                                        await conn['ws'].send_json(data)
+                                except Exception:
+                                    pass
+                            # Device sends to viewer
+                            elif role == "device" and conn.get('type') == 'viewer' and conn.get('target') == peer_id:
+                                try:
+                                    if conn.get('ws') and not conn['ws'].closed:
+                                        data['from'] = peer_id
+                                        await conn['ws'].send_json(data)
+                                except Exception:
+                                    pass
+                            
+                            if msg_type == 'bye':
+                                break
+                except json.JSONDecodeError:
+                    pass
+            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+                break
+    except Exception:
+        pass
+    finally:
+        store.stream_connections.pop(conn_key, None)
+        # Notify peer
+        for key, conn in list(store.stream_connections.items()):
+            if key != conn_key:
+                try:
+                    if conn.get('ws') and not conn['ws'].closed:
+                        await conn['ws'].send_json({"type": "bye", "from": peer_id})
+                except:
+                    pass
     
     return ws
 

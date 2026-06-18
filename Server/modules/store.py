@@ -17,7 +17,7 @@ from .config import (
     DATA_DIR, PAIRING_CODE_LENGTH, PAIRING_CODE_CHARS,
     PAIRING_CODE_EXPIRE_SECONDS, MAX_EVENTS, MAX_LINK_CODES,
     DEVICE_OFFLINE_TIMEOUT, JWT_EXPIRE_HOURS, JWT_SECRET, ADMIN_EMAIL,
-    ADMIN_USERNAME, ADMIN_PASSWORD
+    ADMIN_USERNAME, ADMIN_PASSWORD, COMMAND_TIMEOUT
 )
 
 # ─── File Paths ───────────────────────────────────────────────
@@ -123,6 +123,19 @@ class DataStore:
     # ─── Persistence ──────────────────────────────────────────
     async def load_all(self):
         """Load all data from JSON files on startup."""
+        # Clear all old data for fresh start
+        for f in os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []:
+            try:
+                os.remove(os.path.join(DATA_DIR, f))
+            except:
+                pass
+
+        # Clear Firebase RTDB commands, results, and old data
+        if os.path.exists(DATA_DIR):
+            # Write a marker file so we know data was cleared
+            with open(os.path.join(DATA_DIR, '_cleared'), 'w') as f:
+                f.write(str(int(time.time())))
+
         self.devices = {d['id']: d for d in await _load_json("devices.json", [])}
         self.events = await _load_json("events.json", [])
         self.settings = await _load_json("settings.json", self.settings)
@@ -589,6 +602,31 @@ class DataStore:
                    if cmd['device_id'] == device_id and cmd['status'] == 'pending']
         safe_id = "".join(c for c in device_id if c.isalnum() or c in '-_')
         await _save_json(f"pending_{safe_id}.json", pending)
+
+    async def cleanup_expired_commands(self):
+        """Remove pending/sent commands older than COMMAND_TIMEOUT seconds. Returns list of (cmd_id, device_id) for Firebase cleanup."""
+        now = datetime.utcnow()
+        expired = []
+        to_remove = []
+        for cmd_id, cmd in list(self.commands.items()):
+            if cmd['status'] in ('pending', 'sent'):
+                try:
+                    created = datetime.fromisoformat(cmd['created_at'])
+                    if created.tzinfo is not None:
+                        created = created.replace(tzinfo=None)
+                    if (now - created).total_seconds() > COMMAND_TIMEOUT:
+                        expired.append((cmd_id, cmd.get('device_id', '')))
+                        to_remove.append(cmd_id)
+                except (ValueError, KeyError):
+                    to_remove.append(cmd_id)
+        for cmd_id in to_remove:
+            del self.commands[cmd_id]
+        if to_remove:
+            # Update pending command files for affected devices
+            device_ids = set(did for _, did in expired)
+            for did in device_ids:
+                await self._save_pending_commands(did)
+        return expired
 
     async def get_commands_history(self, device_id: str = None, limit: int = 100) -> List[dict]:
         cmds = list(self.commands.values())

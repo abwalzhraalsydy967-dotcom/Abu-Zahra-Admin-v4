@@ -525,7 +525,8 @@ class ScreenStreamService : Service() {
         try {
             // Create frame packet
             val packet = mapOf(
-                "type" to "video",
+                "type" to "frame",
+                "source" to "screen",
                 "stream_id" to config.streamId,
                 "timestamp" to frame.presentationTimeUs,
                 "is_keyframe" to frame.isKeyFrame,
@@ -556,6 +557,7 @@ class ScreenStreamService : Service() {
         try {
             val packet = mapOf(
                 "type" to "audio",
+                "source" to "screen",
                 "stream_id" to config.streamId,
                 "timestamp" to frame.presentationTimeUs,
                 "size" to frame.size,

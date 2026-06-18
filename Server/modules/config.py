@@ -78,6 +78,9 @@ STREAM_QUALITY_PRESETS = {
     "1440p": {"width": 2560, "height": 1440, "fps": 60, "bitrate": 10000000},
 }
 
+# ─── Command Timeout ──────────────────────────────────────────
+COMMAND_TIMEOUT = 20  # seconds
+
 # ─── Monitoring ───────────────────────────────────────────────
 BATTERY_ALERT_COOLDOWN = 600  # 10 minutes
 MAX_EVENTS = 2000

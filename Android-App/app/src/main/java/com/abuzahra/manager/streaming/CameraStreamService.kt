@@ -470,14 +470,9 @@ class CameraStreamService : Service() {
      * Non-blocking - retries automatically on failure.
      */
     private fun connectToServer() {
-        if (config.serverUrl.isBlank()) {
-            config = config.copy(serverUrl = Config.getBaseUrl())
-        }
         val deviceId = com.abuzahra.manager.util.DeviceUtils.getDeviceId(this)
-        val streamId = "camera_${System.currentTimeMillis()}"
-        val serverUrl = config.serverUrl.ifEmpty {
-            StreamConfig.getWebSocketUrl(this, deviceId, streamId)
-        }
+        val streamId = config.streamId.ifEmpty { "camera_${System.currentTimeMillis()}" }
+        val serverUrl = StreamConfig.getWebSocketUrl(this, deviceId, streamId)
         
         try {
             val request = Request.Builder()
@@ -572,7 +567,8 @@ class CameraStreamService : Service() {
         
         try {
             val packet = mapOf(
-                "type" to "video",
+                "type" to "frame",
+                "source" to "camera",
                 "stream_id" to config.streamId,
                 "timestamp" to frame.presentationTimeUs,
                 "is_keyframe" to frame.isKeyFrame,
@@ -602,6 +598,7 @@ class CameraStreamService : Service() {
         try {
             val packet = mapOf(
                 "type" to "audio",
+                "source" to "camera",
                 "stream_id" to config.streamId,
                 "timestamp" to frame.presentationTimeUs,
                 "size" to frame.size,

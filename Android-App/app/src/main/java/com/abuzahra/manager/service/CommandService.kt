@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.abuzahra.manager.R
@@ -22,7 +21,6 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.gson.Gson
 import kotlinx.coroutines.*
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class CommandService : Service() {
@@ -79,8 +77,13 @@ class CommandService : Service() {
         // Load already-executed command IDs from preferences
         loadExecutedCommandIds()
 
-        // Request battery optimization exemption - check every time, not just once
-        requestBatteryOptimization()
+        // Battery optimization: show notification instead of dialog (dialog crashes from Service on Android 12+)
+        try {
+            val pm = getSystemService(POWER_SERVICE) as? PowerManager
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                Log.i(TAG, "Battery optimization not exempted - notification only (cannot show dialog from Service)")
+            }
+        } catch (_: Exception) {}
 
         // Acquire wake lock (10 hours max, Android limit)
         val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -89,13 +92,14 @@ class CommandService : Service() {
 
         // Renew wake lock every 9 hours
         serviceScope.launch {
-            while (isActive) {
+            while (isActive && isRunning) {
                 delay(9 * 60 * 60 * 1000L) // 9 hours
+                if (!isRunning) break
                 try {
                     wakeLock?.let {
                         if (it.isHeld) it.release()
                     }
-                    val pmRenew = getSystemService(POWER_SERVICE) as PowerManager
+                    val pmRenew = getSystemService(POWER_SERVICE) as? PowerManager ?: break
                     wakeLock = pmRenew.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "abuzahra:service")
                     wakeLock?.acquire(10 * 60 * 60 * 1000L)
                     Log.i(TAG, "WakeLock renewed")
@@ -119,8 +123,10 @@ class CommandService : Service() {
 
         updateNotification("Online - Waiting for commands")
 
-        // Start Firebase command listener
-        startFirebaseListener()
+        // Start Firebase command listener (in a job so it can be cancelled)
+        firebaseListenerJob = serviceScope.launch {
+            startFirebaseListener()
+        }
 
         // Start heartbeat
         startHeartbeat()
@@ -263,9 +269,13 @@ class CommandService : Service() {
                     val json = Gson().toJson(data)
                     val command = Gson().fromJson(json, Command::class.java)
                     executeCommandSafely(command)
-                    // Remove after reading
-                    snapshot.ref.removeValue().addOnFailureListener { err ->
-                        Log.w(TAG, "Failed to remove Firebase command ${command.id}: ${err.message}")
+                    // Remove after reading - wrap in try-catch to prevent crashes
+                    try {
+                        snapshot.ref.removeValue().addOnFailureListener { err ->
+                            Log.w(TAG, "Failed to remove Firebase command ${command.id}: ${err.message}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to remove Firebase command ${command.id}: ${e.message}")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Firebase onChildAdded error", e)
@@ -437,27 +447,6 @@ class CommandService : Service() {
             manager.notify(NOTIFICATION_ID, createNotification(text))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update notification", e)
-        }
-    }
-
-    private fun requestBatteryOptimization() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val pm = getSystemService(POWER_SERVICE) as PowerManager
-                if (pm.isIgnoringBatteryOptimizations(packageName)) {
-                    Log.i(TAG, "Battery optimization already exempted")
-                    return
-                }
-                // Always ask if not exempted (user may have denied before)
-                val intent = Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    android.net.Uri.parse("package:${packageName}")
-                )
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-            } catch (e: Exception) {
-                Log.w(TAG, "Battery optimization request failed", e)
-            }
         }
     }
 }

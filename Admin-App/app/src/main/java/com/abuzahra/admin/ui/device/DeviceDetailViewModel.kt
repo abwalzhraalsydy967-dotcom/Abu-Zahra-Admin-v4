@@ -73,7 +73,9 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
         logInfo("الحالة: ${if (device.isOnline) "متصل" else "غير متصل"} | البطارية: ${device.batteryLevel}% | آخر ظهور: ${device.lastSeen}")
         logInfo("الخادم: ${preferences.serverUrl}")
         logInfo("الرمز: ${if (preferences.token.isNullOrEmpty()) "غير موجود - ستحتاج لتسجيل الدخول" else "موجود (${preferences.token!!.take(8)}...)"}")
-        loadData()
+        // Don't load old commands/events on device open - only load when user navigates to those tabs
+        _commandHistory.value = Result.Success(emptyList())
+        _events.value = Result.Success(emptyList())
     }
 
     fun loadData() {
