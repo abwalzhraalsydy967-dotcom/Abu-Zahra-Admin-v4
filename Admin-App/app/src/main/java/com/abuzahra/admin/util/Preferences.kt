@@ -93,12 +93,8 @@ class Preferences(context: Context) {
         get() = prefs.getString("user_id", null)
         set(value) = prefs.edit().putString("user_id", value).apply()
 
-    fun savePermanentCode(code: String) {
-        prefs.edit().putString("permanent_code", code).apply()
-    }
-
-    fun getPermanentCode(): String {
-        return prefs.getString("permanent_code", "") ?: ""
+    fun getPermanentCodeOrEmpty(): String {
+        return permanentCode ?: ""
     }
 
     fun clear() {
