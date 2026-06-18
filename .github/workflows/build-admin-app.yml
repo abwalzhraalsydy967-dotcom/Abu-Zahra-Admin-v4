@@ -81,7 +81,7 @@ jobs:
     - name: Get Version
       id: version
       run: |
-        VERSION=$(grep "versionName" Admin-App/app/build.gradle | head -1 | sed "s/.*'\([^']*\)'.*/\1/")
+        VERSION=$(grep "versionName" Admin-App/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "APK version: $VERSION"
 

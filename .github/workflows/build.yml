@@ -110,8 +110,8 @@ jobs:
       - name: Get Versions
         id: version
         run: |
-          ADMIN_VER=$(grep "versionName" Admin-App/app/build.gradle | head -1 | sed "s/.*'\([^']*\)'.*/\1/")
-          MANAGER_VER=$(grep "versionName" Android-App/app/build.gradle | head -1 | sed "s/.*'\([^']*\)'.*/\1/")
+          ADMIN_VER=$(grep "versionName" Admin-App/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          MANAGER_VER=$(grep "versionName" Android-App/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
           echo "admin_version=$ADMIN_VER" >> $GITHUB_OUTPUT
           echo "manager_version=$MANAGER_VER" >> $GITHUB_OUTPUT
 
