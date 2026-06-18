@@ -77,7 +77,7 @@ jobs:
         name: Admin-App-Release
         path: Admin-App/app/build/outputs/apk/release/app-release.apk
 
-    # === 5. إنشاء Release على GitHub ===
+    # === 5. إنشاء Release على GitHub (using PAT) ===
     - name: Get Version
       id: version
       run: |
@@ -91,6 +91,7 @@ jobs:
         tag_name: "v${{ steps.version.outputs.version }}"
         name: "AbuZahra Admin v${{ steps.version.outputs.version }}"
         files: Admin-App/app/build/outputs/apk/release/app-release.apk
+        overwrite_files: true
         body: |
           ## AbuZahra Admin App v${{ steps.version.outputs.version }}
 
@@ -108,3 +109,4 @@ jobs:
           `0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4`
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
