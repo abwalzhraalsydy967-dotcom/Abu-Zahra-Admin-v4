@@ -49,7 +49,7 @@ data class Device(
         return if (level < 0) "N/A" else "$level%"
     }
 
-    val osVersion: String get() = androidVersionFromServer.ifEmpty { os }
+    val osVersion: String get() = androidVersionFromServer?.ifEmpty { os } ?: os
 
     val androidVersion: String get() = osVersion
 
