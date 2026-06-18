@@ -49,3 +49,35 @@ Stage Summary:
 - Google Sign-In rewritten to use GIS library with explicit client ID (fixes "popup-closed-by-user" error)
 - .env.local updated with all correct Firebase values from the new google-services.json
 - Code pushed to GitHub: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4.git
+---
+Task ID: 7
+Agent: Main Agent
+Task: Migrate both Android apps to new Firebase project (abwalzhraalsydy-62ccf)
+
+Work Log:
+- Analyzed new google-services (28).json: project 159319780620 (abwalzhraalsydy-62ccf) with com.abuzahra.admin and com.abuzahra.manager
+- Identified all files still referencing old project (studio-7073076148-6afe0):
+  - Android-App/app/google-services.json
+  - Android-App/app/src/main/java/com/abuzahra/manager/Config.kt
+  - Server/modules/config.py
+- Updated Android-App/app/google-services.json with new Firebase config
+- Updated Android-App Config.kt: FIREBASE_PROJECT -> abwalzhraalsydy-62ccf
+- Updated Server config.py: FIREBASE_PROJECT -> abwalzhraalsydy-62ccf
+- Updated Admin-App/app/google-services.json with full new config (both apps)
+- Created .env.local with all new Firebase values
+- Fixed RegisterViewModel.kt: incorrect arrayOf<TrustManager> syntax causing compile error
+- Added release signing config to Android-App build.gradle (v3.6.0) using Admin-App keystore
+- Fixed signing config keystore path: ../Admin-App -> ../../Admin-App/release.keystore
+- Fixed GitHub workflows: versionName extraction (double quotes instead of single quotes)
+- Updated build-android-app.yml to build both Debug and Release APKs
+- Updated build.yml to build Release for Manager app and auto-read version numbers
+- Pushed 3 commits: Firebase migration, build fixes, workflow fixes
+- All builds succeeded: Admin-App + Manager-App Release APKs
+
+Stage Summary:
+- Both apps now use new Firebase project: abwalzhraalsydy-62ccf
+- New RTDB URL: https://abwalzhraalsydy-62ccf-default-rtdb.firebaseio.com
+- New API Key: AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk
+- Release: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/tag/v2.0.0-21
+- APKs: AbuZahra-Admin-v2.0.0.apk (3MB), AbuZahra-Manager-v3.6.0.apk (7MB)
+- All old Firebase references (studio-7073076148-6afe0) removed from app code
