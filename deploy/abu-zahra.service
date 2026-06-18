@@ -1,0 +1,22 @@
+[Unit]
+Description=Abu-Zahra Server v4.0
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/abu-zahra/Server
+ExecStart=/usr/bin/python3 -u main.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/abu-zahra/Server/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=abu-zahra
+
+# Security
+NoNewPrivileges=false
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

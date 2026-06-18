@@ -1,0 +1,152 @@
+name: Build Android APKs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Admin-App/**'
+      - 'Android-App/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-admin:
+    name: Build Admin App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK Licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Install SDK Platform 34
+        run: |
+          sdkmanager "platforms;android-34"
+          sdkmanager "build-tools;34.0.0"
+
+      - name: Print SHA-1 from Permanent Keystore
+        run: |
+          echo "============================================================"
+          echo "          FIREBASE SHA-1 (from release.keystore)"
+          echo "============================================================"
+          keytool -list -v -keystore Admin-App/release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
+          echo "============================================================"
+
+      - name: Validate Configs
+        working-directory: Admin-App
+        run: |
+          if [ ! -f settings.gradle ]; then
+            echo "rootProject.name = 'AbuAlZahra-Admin'" > settings.gradle
+            echo "include ':app'" >> settings.gradle
+          fi
+          if [ ! -f gradle.properties ]; then
+            echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+            echo "android.useAndroidX=true" >> gradle.properties
+          fi
+
+      - name: Build Admin App (Release)
+        working-directory: Admin-App
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Upload Admin APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Admin-App-APK
+          path: Admin-App/app/build/outputs/apk/release/app-release.apk
+
+  build-manager:
+    name: Build Manager App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Print SHA-1
+        run: |
+          echo "============================================================"
+          echo "          MANAGER APP - FIREBASE SHA-1"
+          echo "============================================================"
+          keytool -list -v -keystore Admin-App/release.keystore -alias abuzahra -storepass abuzahra2024 | grep "SHA1:"
+          echo "============================================================"
+
+      - name: Build Manager App (Release)
+        working-directory: Android-App
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Upload Manager APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-App-APK
+          path: Android-App/app/build/outputs/apk/release/*.apk
+
+  release:
+    name: Create GitHub Release
+    needs: [build-admin, build-manager]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Versions
+        id: version
+        run: |
+          ADMIN_VER=$(grep "versionName" Admin-App/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          MANAGER_VER=$(grep "versionName" Android-App/app/build.gradle | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          echo "admin_version=$ADMIN_VER" >> $GITHUB_OUTPUT
+          echo "manager_version=$MANAGER_VER" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Rename APKs
+        run: |
+          mv Admin-App-APK/*.apk "AbuZahra-Admin-v${{ steps.version.outputs.admin_version }}.apk" 2>/dev/null || true
+          mv Android-App-APK/*.apk "AbuZahra-Manager-v${{ steps.version.outputs.manager_version }}.apk" 2>/dev/null || true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.version.outputs.admin_version }}-${{ github.run_number }}"
+          name: "Abu-Zahra v${{ steps.version.outputs.admin_version }} Build #${{ github.run_number }}"
+          body: |
+            ## Abu-Zahra Admin & Manager Apps
+
+            ### Admin App v${{ steps.version.outputs.admin_version }}:
+            - Firebase Auth (Google Sign-In + Email/Password)
+            - تحديث مشروع Firebase الجديد (abwalzhraalsydy-62ccf)
+            - Live Streaming, Data Viewer, Monitoring
+            - User Management
+
+            ### Manager App v${{ steps.version.outputs.manager_version }}:
+            - تحديث مشروع Firebase الجديد (abwalzhraalsydy-62ccf)
+            - جميع الأوامر والمراقبة تعمل على قاعدة البيانات الجديدة
+
+            ### مفتاح SHA-1:
+            `0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4`
+          files: |
+            AbuZahra-Admin-v*.apk
+            AbuZahra-Manager-v*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

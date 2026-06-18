@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "159319780620",
+    "project_id": "abwalzhraalsydy-62ccf",
+    "storage_bucket": "abwalzhraalsydy-62ccf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:159319780620:android:680395e3035cac75f52d29",
+        "android_client_info": {
+          "package_name": "com.abuzahra.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
