@@ -122,3 +122,29 @@ Stage Summary:
 - Dashboard data binding fixed (was completely broken)
 - Server API field mapping aligned with dashboard
 - All Firebase references point to new project (abwalzhraalsydy-62ccf)
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Admin app errors - ParameterizedType crash, Google Sign-In failure, and server data mismatch
+
+Work Log:
+- Analyzed two screenshots from user showing: (1) ParameterizedType cast error on DataActivity, (2) "Firebase Auth not configured" error on Google Sign-In
+- Identified 3 root causes:
+  1. ProGuard/R8 stripping Gson generic type signatures → ParameterizedType crash
+  2. Server transforms device field names (online→is_online, battery→battery_level, os→android_version, created_at→linked_at) but Android Device model only expected original names
+  3. Server wraps /api/web/stats response in {"stats": {...}} but Android expected fields at root level
+  4. Google Sign-In getWebClientId() could return null if JSON parsing failed
+- Fixed proguard-rules.pro: Added comprehensive Gson TypeToken/TypeAdapter/TypeAdapterFactory keep rules, Retrofit service interface keep rules, OkHttp keep rules
+- Fixed Device.kt: Added @SerializedName fields for server-transformed names (is_online, battery_level, android_version, linked_at) with fallback logic
+- Fixed StatsResponse.kt: Added StatsEnvelope and StatsData wrapper classes to match server's {"ok":true,"stats":{...}} format
+- Fixed ApiClient.kt: Changed Retrofit getStats() to return StatsEnvelope and unwrapped to StatsResponse in ApiServiceImpl
+- Fixed LoginActivity.kt: Added hardcoded FALLBACK_WEB_CLIENT_ID as fallback, moved companion object, removed duplicate
+- Fixed compile error: String?.ifEmpty → String?.ifEmpty with safe call
+- Bumped version to 2.0.1 (versionCode 3)
+- Pushed to GitHub, triggered build, downloaded artifact, created release
+
+Stage Summary:
+- APK built successfully (3.6MB)
+- Release created at: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/tag/v2.0.1
+- APK download: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/download/v2.0.1/Admin-App-v2.0.1-release.apk
+- All 3 root causes fixed with proper solutions
