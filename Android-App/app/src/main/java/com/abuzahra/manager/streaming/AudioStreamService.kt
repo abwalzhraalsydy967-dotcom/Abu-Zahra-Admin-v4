@@ -484,8 +484,10 @@ class AudioStreamService : Service() {
         if (config.serverUrl.isBlank()) {
             config = config.copy(serverUrl = Config.getBaseUrl())
         }
+        val deviceId = com.abuzahra.manager.util.DeviceUtils.getDeviceId(this)
+        val streamId = "audio_${System.currentTimeMillis()}"
         val serverUrl = config.serverUrl.ifEmpty {
-            StreamConfig.getWebSocketUrl(this)
+            StreamConfig.getWebSocketUrl(this, deviceId, streamId)
         }
         
         try {

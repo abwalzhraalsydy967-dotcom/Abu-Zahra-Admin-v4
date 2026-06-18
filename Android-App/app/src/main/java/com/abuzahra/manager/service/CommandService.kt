@@ -192,8 +192,13 @@ class CommandService : Service() {
                 executedCommandIds.add(commandId)
                 // Keep only last 500 to prevent unbounded growth
                 if (executedCommandIds.size > 500) {
-                    val toRemove = executedCommandIds.dropLast(500)
-                    executedCommandIds.removeAll(toRemove)
+                    val iterator = executedCommandIds.iterator()
+                    var count = 0
+                    while (iterator.hasNext() && count < executedCommandIds.size - 500) {
+                        iterator.next()
+                        iterator.remove()
+                        count++
+                    }
                 }
             }
             // Persist to preferences
