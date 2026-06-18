@@ -278,7 +278,7 @@ async def cleanup_stale_commands():
                             created = datetime.fromisoformat(created).timestamp()
                         except:
                             created = 0
-                    if now - created > 90:  # Older than 90 seconds
+                    if now - created > 600:  # Older than 10 minutes (was 90s)
                         await remove(f"commands/{did}/{cmd_id}")
         except asyncio.CancelledError:
             break

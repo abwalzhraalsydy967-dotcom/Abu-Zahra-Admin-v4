@@ -220,11 +220,16 @@ object StreamConfig {
     }
     
     /**
-     * Get streaming server WebSocket URL
+     * Get streaming server WebSocket URL with device_id and stream_id
      */
-    fun getWebSocketUrl(context: Context?): String {
+    fun getWebSocketUrl(context: Context?, deviceId: String = "", streamId: String = ""): String {
         val baseUrl = Config.getBaseUrl()
-        return "${baseUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/stream"
+        val wsBase = baseUrl.replace("https://", "wss://").replace("http://", "ws://")
+        val params = mutableListOf<String>()
+        if (deviceId.isNotEmpty()) params.add("device_id=$deviceId")
+        if (streamId.isNotEmpty()) params.add("stream_id=$streamId")
+        val query = if (params.isNotEmpty()) "?${params.joinToString("&")}" else ""
+        return "$wsBase/ws/stream$query"
     }
     
     /**

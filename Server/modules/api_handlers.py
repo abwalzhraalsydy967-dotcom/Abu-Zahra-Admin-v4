@@ -357,15 +357,21 @@ async def api_get_commands(request: web.Request) -> web.Response:
     
     commands = await store.get_pending_commands(device_id)
     
-    # Mark as sent
+    # Mark as sent AND update status so they are not fetched again
+    now = datetime.utcnow().isoformat()
     for cmd in commands:
-        cmd['sent_at'] = datetime.utcnow().isoformat()
+        cmd['sent_at'] = now
+        cmd['status'] = 'sent'
+    
+    # Save updated state
+    if commands:
+        await store._save_pending_commands(device_id)
     
     return json_response({
         "ok": True,
         "commands": commands,
         "count": len(commands),
-        "server_time": datetime.utcnow().isoformat(),
+        "server_time": now,
     })
 
 
@@ -767,14 +773,17 @@ async def api_web_send_command(request: web.Request) -> web.Response:
         source="web"
     )
     
-    # Push to Firebase
+    # Push to Firebase (wrapped in try/except to prevent crashes)
     if _fb.firebase_connected:
-        await push_command(device_id, {
-            "id": queued['id'],
-            "command": actual_cmd,
-            "params": actual_params,
-            "created_at": queued['created_at'],
-        })
+        try:
+            await push_command(device_id, {
+                "id": queued['id'],
+                "command": actual_cmd,
+                "params": actual_params,
+                "created_at": queued['created_at'],
+            })
+        except Exception as e:
+            logger.warning(f"Firebase push failed for cmd {queued['id']}: {e}")
     
     await store.add_event("command", f"Command queued: {actual_cmd} -> {device_id}",
                          "info", device_id=device_id, user_id=session['user_id'])

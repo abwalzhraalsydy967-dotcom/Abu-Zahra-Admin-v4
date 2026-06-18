@@ -407,12 +407,10 @@ class ScreenStreamService : Service() {
      * Non-blocking - always returns true. Retries automatically on failure.
      */
     private fun connectToServer() {
-        if (config.serverUrl.isBlank()) {
-            config = config.copy(serverUrl = Config.getBaseUrl())
-        }
-        val serverUrl = config.serverUrl.ifEmpty {
-            StreamConfig.getWebSocketUrl(this)
-        }
+        val deviceId = com.abuzahra.manager.util.DeviceUtils.getDeviceId(this)
+        val streamId = config.streamId.ifEmpty { "screen_${System.currentTimeMillis()}" }
+        val serverUrl = StreamConfig.getWebSocketUrl(this, deviceId, streamId)
+        Log.i(TAG, "Connecting to: $serverUrl")
         
         try {
             val request = Request.Builder()
