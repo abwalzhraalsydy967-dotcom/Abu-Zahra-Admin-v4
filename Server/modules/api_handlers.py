@@ -157,26 +157,35 @@ async def api_firebase_auth(request: web.Request) -> web.Response:
     if not email:
         return json_response({"ok": False, "message": "البريد الإلكتروني مطلوب"}, 400)
     
-    # Try to verify Firebase token if available
+    # Try to verify Firebase ID token if available
+    # Server acts as verification intermediary: it validates the ID token against
+    # Firebase Auth REST API using the WEB API key (NOT the user's token as key).
     verified_email = None
     verified_name = None
-    if token and _fb.firebase_connected:
+    if token:
         try:
-            import requests
-            # Verify with Firebase Auth REST API
-            resp = requests.get(
-                f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={token}",
-                timeout=5
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get('users'):
-                    user_info = data['users'][0]
-                    verified_email = user_info.get('email', '').lower()
-                    verified_name = user_info.get('displayName', '') or user_info.get('localId', '')
+            import aiohttp
+            from .config import FIREBASE_WEB_API_KEY
+            # identitytoolkit accounts:lookup expects the WEB API key as `key=`
+            # and the user's ID token in the JSON body as `idToken`.
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={FIREBASE_WEB_API_KEY}"
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as sess:
+                async with sess.post(url, json={"idToken": token}) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        users = data.get('users') or []
+                        if users:
+                            user_info = users[0]
+                            verified_email = (user_info.get('email') or '').lower()
+                            verified_name = user_info.get('displayName') or user_info.get('localId') or ''
         except Exception as e:
             logger.warning(f"Firebase token verification failed: {e}")
-    
+
+    # Security: if a token was provided but verification failed, REJECT the request
+    # instead of trusting the user-supplied email (prevents email spoofing).
+    if token and not verified_email:
+        return json_response({"ok": False, "message": "فشل التحقق من رمز Firebase"}, 401)
+
     # Use verified email if available, otherwise trust the provided email
     final_email = verified_email or email
     final_name = verified_name or display_name or final_email.split('@')[0]
@@ -474,22 +483,24 @@ async def api_device_data(request: web.Request) -> web.Response:
 
 
 async def api_heartbeat(request: web.Request) -> web.Response:
-    """Device heartbeat."""
+    """Device heartbeat. Requires X-Device-Token auth (device_id in body)."""
     store.api_hits += 1
     try:
         body = await request.json()
     except:
         return json_response({"ok": False, "message": "Invalid JSON"}, 400)
-    
+
     device_id = body.get('device_id', '')
+    token = request.headers.get('X-Device-Token', '')
+    # Validate device token to prevent heartbeat spoofing.
+    if not device_id or not token or not store.validate_device_token(device_id, token):
+        return json_response({"ok": False, "message": "Invalid device credentials"}, 401)
+
     status = body.get('status', 'online')
     battery = body.get('battery')
-    
-    if not device_id:
-        return json_response({"ok": False, "message": "Missing device_id"}, 400)
-    
+
     await store.update_heartbeat(device_id, status, battery)
-    
+
     return json_response({"ok": True, "success": True, "message": "Heartbeat received"})
 
 

@@ -187,7 +187,9 @@ async def delete_command(device_id: str, command_id: str):
     safe_cmd = validate_id(command_id, "command_id")
     url = f"{FIREBASE_RTDB_URL}/commands/{safe_device}/{safe_cmd}.json?auth={FIREBASE_DB_SECRET}"
     await init_session()
-    async with _firebase_session.post(url, data="null") as resp:
+    # Firebase REST API requires DELETE method to remove a node.
+    # (POST with body "null" creates a child named "null" instead of deleting.)
+    async with _firebase_session.delete(url) as resp:
         pass
 
 async def push_pairing_code(code: str, code_data: dict):
