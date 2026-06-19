@@ -10,7 +10,7 @@ import { addLog } from '@/lib/utils'
 const COOLDOWN_SECONDS = 60
 
 export default function VerifyEmailForm() {
-  const { pendingEmail, verificationLink, setView } = useAuth()
+  const { pendingEmail, verificationLink, setView, setVerificationLink } = useAuth()
   const [cooldown, setCooldown] = useState(0)
   const [isResending, setIsResending] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -36,18 +36,18 @@ export default function VerifyEmailForm() {
     addLog('info', 'إعادة إرسال رسالة التحقق', `البريد: ${pendingEmail}`)
 
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: pendingEmail,
-          password: '__resend__',
-          displayName: '',
-        }),
+        body: JSON.stringify({ email: pendingEmail }),
       })
       const data = await res.json()
       if (data.ok) {
         addLog('success', 'تم إعادة إرسال رسالة التحقق')
+        if (data.verification_link) {
+          // Update the link displayed in the UI
+          setVerificationLink(data.verification_link)
+        }
       } else {
         addLog('warning', 'لم يتم إعادة الإرسال', data.message || '')
       }
@@ -58,7 +58,7 @@ export default function VerifyEmailForm() {
     } finally {
       setIsResending(false)
     }
-  }, [cooldown, pendingEmail])
+  }, [cooldown, pendingEmail, setVerificationLink])
 
   const handleCopyLink = useCallback(() => {
     if (!verificationLink) return

