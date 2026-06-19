@@ -148,3 +148,36 @@ Stage Summary:
 - Release created at: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/tag/v2.0.1
 - APK download: https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4/releases/download/v2.0.1/Admin-App-v2.0.1-release.apk
 - All 3 root causes fixed with proper solutions
+
+---
+Task ID: 9
+Agent: Main Agent (Z.ai Code)
+Task: استنساخ المشروع كاملاً من مستودع GitHub (Abu-Zahra-Admin-v4) والعمل عليه في بيئة sandbox الحالية
+
+Work Log:
+- استنساخ المستودع https://github.com/abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4.git إلى /tmp باستخدام التوكن المقدم (depth 1)
+- فحص بنية المستودع: مشروع متعدد المكونات (Next.js Web Dashboard في src/، Admin-App و Android-App أندرويد، Server بايثون، skills، Releases، deploy)
+- نسخ احتياطي لبنية sandbox المحلية: .zscripts/، .env، Caddyfile
+- تنظيف محتويات /home/z/my-project بالكامل (إزالة مشروع Next.js الافتراضي السابق مع .git الخاص به)
+- نسخ كامل محتويات المستودع إلى /home/z/my-project بما في ذلك .git (لإمكانية الدفع إلى GitHub لاحقاً)
+- استعادة بنية sandbox: .zscripts/، .env (DATABASE_URL)، Caddyfile (gateway على port 81)
+- تثبيت التبعيات عبر `bun install` (825 حزمة: firebase, firebase-admin, framer-motion, @base-ui/react, radix-ui, next 16.2.9, react 19.2.4)
+- تشغيل `bun run lint`: كود التطبيق src/ نظيف تماماً (0 أخطاء)، الأخطاء كلها في سكربتات skills/ CLI (جزء من المستودع الأصلي)
+- تشغيل خادم التطوير بطريقة double-fork مع setsid لضمان بقاء العملية حية عبر أوامر shell:
+  `next dev -H 0.0.0.0 -p 3000` (PPID=1، يتيم متبنى من init)
+- استخدام -H 0.0.0.0 لجعل الخادم متاحاً عبر الشبكة (مطلوب لـ agent-browser)
+- التحقق عبر Agent Browser: الصفحة تفتح بنجاح (HTTP 200)، تعرض واجهة تسجيل الدخول "أبو زهرة - لوحة التحكم" بالعربية مع RTL
+- التحقق من التفاعل: النقر على "إنشاء حساب جديد" يعرض نموذج التسجيل الصحيح (الاسم، البريد، كلمة المرور، تأكيد، إنشاء حساب، العودة)
+- لا توجد أخطاء في console (فقط رسائل HMR/Fast Refresh العادية)
+- تحليل لقطة الشاشة عبر VLM: التصميم احترافي ومتناسق، النصوص العربية و RTL تعمل بشكل صحيح، لا توجد مشاكل بصرية
+- إضافة /.zscripts/، /Caddyfile، /dev.log، /dev.pid، /upload/ إلى .gitignore (ملفات sandbox محلية لا يجب الالتزام بها)
+
+Stage Summary:
+- المشروع مستنسخ بالكامل من GitHub وجاهز للعمل في /home/z/my-project
+- git remote يشير إلى المستودع الأصلي مع التوكن (يمكن للمستخدم الدفع مباشرة: git push origin main)
+- خادم التطوير يعمل بشكل مستقر على port 3000 (Next.js 16.2.9 + Turbopack)
+- الواجهة الرئيسية تعمل: صفحة تسجيل دخول عربية RTL احترافية مع تكامل Firebase Auth (قيم افتراضية مضمنة لمشروع abwalzhraalsydy-62ccf)
+- التفاعل يعمل: التنقل بين تسجيل الدخول/التسجيل/التحقق من البريد
+- البنية متعددة المكونات متاحة: Web Dashboard (src/)، Android apps (Admin-App، Android-App)، Python Server
+- ملاحظة: API routes التي تستخدم firebase-admin تتطلب ملف credentials/firebase-admin-sdk.json (غير مضمن في المستودع لأنه متجاهل)
+- لاحقاً يمكن للمستخدم إعداد .env.local بقيم Firebase الخاصة به أو الاعتماد على القيم الافتراضية المضمنة في الكود
