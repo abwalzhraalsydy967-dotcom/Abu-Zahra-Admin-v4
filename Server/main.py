@@ -25,7 +25,7 @@ from modules.api_handlers import (
     # Public
     api_health, api_login, api_firebase_auth, api_web_register,
     # Device
-    api_register, api_get_commands, api_command_result, api_device_data,
+    api_register, api_restore_session, api_get_commands, api_command_result, api_device_data,
     api_heartbeat, api_device_event, api_upload_file, api_upload_base64,
     api_download_file, api_device_settings,
     # Web/Admin
@@ -77,6 +77,7 @@ def create_app() -> web.Application:
     app.router.add_post('/api/web/register', api_web_register)
     app.router.add_post('/api/register', api_register)
     app.router.add_post('/api/verify_link', api_register)  # Alias
+    app.router.add_post('/api/restore_session', api_restore_session)
     
     # Device API
     app.router.add_get('/api/commands/{device_id}', api_get_commands)

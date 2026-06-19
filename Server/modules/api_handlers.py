@@ -313,29 +313,64 @@ async def api_web_register(request: web.Request) -> web.Response:
 # ─── Device API (authenticated by device token) ───────────────
 
 async def api_register(request: web.Request) -> web.Response:
-    """Device registration using pairing code."""""
+    """Device registration using a permanent link code (server as verification intermediary).
+
+    Flow: Android client sends {device_id, link_code, device_token, model, brand, os_version}.
+    Server verifies the code against Firebase (code_to_email/$code) AND the local user
+    record. If valid, links the device to the code's owner. One lifelong code per email.
+    """
     store.api_hits += 1
     try:
         body = await request.json()
     except:
         return json_response({"ok": False, "message": "Invalid JSON"}, 400)
-    
+
     device_id = body.get('device_id', '')
     link_code = body.get('link_code', '')
     device_token = body.get('device_token', '') or body.get('token', '')
     model = body.get('device_model', '') or body.get('model', '')
     brand = body.get('brand', '')
     os_version = body.get('os_version', '') or body.get('android', '')
-    
+
     if not device_id or not link_code:
         return json_response({"ok": False, "message": "Missing device_id or link_code"}, 400)
-    
-    # Verify pairing code
+
+    # ─── Step 1: verify the code locally first ───────────────────
     code_data = await store.verify_pairing_code(link_code)
+
+    # ─── Step 2: if not found locally, check Firebase (server as intermediary) ─
+    if not code_data and _fb.firebase_connected:
+        try:
+            from .firebase_client import verify_permanent_code_firebase
+            fb_mapping = await verify_permanent_code_firebase(link_code)
+            if fb_mapping and fb_mapping.get('user_id'):
+                # Find the user by the Firebase-stored user_id
+                fb_user = await store.get_user(fb_mapping['user_id'])
+                if not fb_user:
+                    # Fallback: find by email
+                    fb_email = fb_mapping.get('email', '').lower()
+                    for u in store.users.values():
+                        if u.get('email', '').lower() == fb_email:
+                            fb_user = u
+                            break
+                if fb_user:
+                    # Ensure the local user record has this permanent code
+                    if not fb_user.get('permanent_link_code'):
+                        fb_user['permanent_link_code'] = link_code
+                        await store.save_users()
+                    code_data = {
+                        'used': False,
+                        'user_id': fb_user['id'],
+                        'code': link_code,
+                        'permanent': True,
+                    }
+        except Exception as e:
+            logger.warning(f"Firebase code verification failed: {e}")
+
     if not code_data:
-        return json_response({"ok": False, "message": "كود الربط غير صالح أو منتهي الصلاحية"}, 400)
-    
-    # Register device
+        return json_response({"ok": False, "message": "كود الربط غير صالح"}, 400)
+
+    # ─── Step 3: register the device under the verified owner ────
     device = await store.register_device(
         device_id=device_id,
         token=device_token,
@@ -345,17 +380,70 @@ async def api_register(request: web.Request) -> web.Response:
         os_version=os_version,
         user_id=code_data.get('user_id'),
     )
-    
+
     if not device:
         return json_response({"ok": False, "message": "فشل تسجيل الجهاز"}, 500)
-    
+
     return json_response({
         "ok": True,
         "success": True,
         "device_id": device_id,
         "device_token": device_token,
         "server_domain": SERVER_DOMAIN,
+        "owner_id": device.get('owner_id'),
         "message": "تم تسجيل الجهاز بنجاح"
+    })
+
+
+async def api_restore_session(request: web.Request) -> web.Response:
+    """Restore a previous device session (no code required).
+
+    The client app stores its device_id + device_token locally. If the user
+    reinstalls or returns, they can restore the previous linking without
+    re-entering the code — the server re-validates the stored credentials and
+    re-activates the device. Requires X-Device-Token header + device_id in body.
+    """
+    store.api_hits += 1
+    try:
+        body = await request.json()
+    except:
+        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+
+    device_id = body.get('device_id', '')
+    device_token = body.get('device_token', '') or body.get('token', '')
+    header_token = request.headers.get('X-Device-Token', '')
+    token = device_token or header_token
+
+    if not device_id or not token:
+        return json_response({"ok": False, "message": "Missing device_id or token"}, 400)
+
+    device = store.devices.get(device_id)
+    if not device:
+        return json_response({
+            "ok": False,
+            "message": "لا توجد جلسة سابقة لهذا الجهاز. استخدم 'ربط هاتف جديد' مع كود الربط الخاص بك.",
+        }, 404)
+
+    # Token must match the stored device token
+    if device.get('token') != token:
+        return json_response({"ok": False, "message": "بيانات الاعتماد غير صحيحة"}, 401)
+
+    # Re-activate the device
+    device['active'] = True
+    now = datetime.utcnow().isoformat()
+    device['last_seen'] = now
+    store._device_last_online[device_id] = True
+    await store.save_devices()
+    await store.add_event("device", f"Session restored: {device_id}", "info", device_id=device_id)
+
+    return json_response({
+        "ok": True,
+        "success": True,
+        "device_id": device_id,
+        "device_token": token,
+        "owner_id": device.get('owner_id'),
+        "server_domain": SERVER_DOMAIN,
+        "message": "تمت استعادة الجلسة بنجاح",
     })
 
 
@@ -807,12 +895,38 @@ async def api_web_send_command(request: web.Request) -> web.Response:
 
 
 async def api_web_link_code(request: web.Request) -> web.Response:
+    """Return the user's lifelong permanent link code (one per email, stored in Firebase).
+
+    Per the new architecture: each user gets ONE permanent code generated once and
+    synced to Firebase. The server is the verification intermediary — the Android
+    client sends this code to /api/register, the server verifies it against the
+    user record (and Firebase). This endpoint no longer mints short-lived codes.
+    """
     session = get_auth_session(request)
     if not session:
         return json_response({"ok": False, "message": "Unauthorized"}, 401)
-    
-    code_data = store.generate_pairing_code(session['user_id'])
-    return json_response({"ok": True, "code": code_data['code'], "session_id": code_data['session_id']})
+
+    user = await store.get_user(session['user_id'])
+    if not user:
+        return json_response({"ok": False, "message": "User not found"}, 404)
+
+    # Get or create the single lifelong permanent code for this user
+    code = await store.get_or_create_permanent_code(session['user_id'])
+
+    # Ensure it's synced to Firebase (idempotent — safe to call every time)
+    if _fb.firebase_connected:
+        try:
+            from .firebase_client import sync_permanent_code
+            await sync_permanent_code(user['email'], code, user['id'])
+        except Exception as e:
+            logger.warning(f"Failed to sync permanent code to Firebase: {e}")
+
+    return json_response({
+        "ok": True,
+        "code": code,
+        "permanent": True,
+        "message": "هذا هو كود الربط الخاص بك — صالح مدى الحياة",
+    })
 
 
 async def api_web_settings_get(request: web.Request) -> web.Response:

@@ -272,20 +272,20 @@ export default function Dashboard() {
 
   const handleGenerateLinkCode = async () => {
     setLinkCodeLoading(true)
-    addLog('info', 'جارِ توليد كود ربط جديد...')
+    addLog('info', 'جارِ الحصول على كود الربط الخاص بك...')
     try {
       const res = await api.generateLinkCode()
       if (res.ok && res.code) {
         const code = res.code
         setPermanentCode(code)
         setShowPermanentCode(true)
-        addLog('success', 'تم توليد كود ربط جديد', `الكود: ${code}`)
+        addLog('success', 'كود الربط الخاص بك', `الكود: ${code} — صالح مدى الحياة`)
       } else {
-        addLog('error', 'فشل توليد كود الربط', res.message)
+        addLog('error', 'فشل الحصول على كود الربط', res.message)
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
-      addLog('error', 'خطأ في توليد كود الربط', msg)
+      addLog('error', 'خطأ في الحصول على كود الربط', msg)
     } finally {
       setLinkCodeLoading(false)
     }
@@ -475,7 +475,7 @@ export default function Dashboard() {
                 ) : (
                   <Plus className="w-4 h-4" />
                 )}
-                توليد كود ربط
+                كود الربط الخاص بي
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -679,7 +679,7 @@ export default function Dashboard() {
             ) : (
               <Plus className="w-4 h-4" />
             )}
-            <span className="hidden sm:inline">توليد كود ربط</span>
+            <span className="hidden sm:inline">كود الربط الخاص بي</span>
           </Button>
         </div>
       </div>

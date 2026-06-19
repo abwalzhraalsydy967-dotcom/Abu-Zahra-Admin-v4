@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Abu-Zahra Android Client — LinkActivity layout (Phase 3)
+  Two-action UI:
+    1. "ربط هاتف جديد" (Link New Phone) — reveals a code input section
+    2. "استعادة جلسة" (Restore Session) — attempts restore directly
+  No manual server URL field — server is hardcoded in Config.kt.
+  RTL-aware (Arabic UI). Dark theme (#0a0a0f bg, #E63946 red accent).
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/linkRootLayout"
     android:layout_width="match_parent"
@@ -6,8 +14,10 @@
     android:orientation="vertical"
     android:padding="24dp"
     android:gravity="center"
+    android:layoutDirection="rtl"
     android:background="#0a0a0f">
 
+    <!-- Logo / Title -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -20,65 +30,125 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Remote Admin Control"
+        android:text="التحكم عن بُعد"
         android:textSize="14sp"
         android:textColor="#888888"
-        android:layout_marginBottom="32dp" />
+        android:layout_marginBottom="24dp" />
 
+    <!-- Device ID (informational) -->
     <TextView
         android:id="@+id/textDeviceId"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Device ID: ..."
+        android:text="معرّف الجهاز: ..."
         android:textSize="12sp"
         android:textColor="#60a5fa"
         android:fontFamily="monospace"
-        android:layout_marginBottom="24dp" />
-
-    <EditText
-        android:id="@+id/editCode"
-        android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:background="@drawable/input_bg"
-        android:hint="Enter Link Code"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#666666"
-        android:textSize="18sp"
-        android:textAllCaps="true"
         android:gravity="center"
-        android:letterSpacing="0.2"
-        android:inputType="textCapCharacters"
-        android:layout_marginBottom="12dp" />
+        android:layout_marginBottom="28dp" />
 
-    <EditText
-        android:id="@+id/editServer"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:background="@drawable/input_bg"
-        android:hint="Server URL (optional)"
-        android:textColor="#FFFFFF"
-        android:textColorHint="#666666"
-        android:textSize="13sp"
-        android:gravity="center"
-        android:layout_marginBottom="20dp" />
+    <!-- ===== PRIMARY ACTION BUTTONS (always visible) ===== -->
 
     <Button
-        android:id="@+id/btnLink"
+        android:id="@+id/btnLinkNew"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:text="🔗 Link Device"
+        android:layout_height="56dp"
+        android:text="🔗 ربط هاتف جديد"
         android:textSize="16sp"
         android:textStyle="bold"
         android:background="@drawable/button_bg"
         android:textColor="#FFFFFF"
+        android:layout_marginBottom="12dp" />
+
+    <Button
+        android:id="@+id/btnRestore"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="♻️ استعادة جلسة"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:background="@drawable/button_bg_secondary"
+        android:textColor="#E63946"
         android:layout_marginBottom="16dp" />
 
+    <!-- ===== CODE INPUT SECTION (hidden until "ربط هاتف جديد" is clicked) ===== -->
+    <LinearLayout
+        android:id="@+id/codeSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:background="@drawable/input_bg"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="أدخل كود الربط الدائم"
+            android:textSize="13sp"
+            android:textColor="#aaaaaa"
+            android:layout_marginBottom="8dp"
+            android:layout_gravity="center" />
+
+        <EditText
+            android:id="@+id/editCode"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="@drawable/input_bg"
+            android:hint="كود الربط"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#666666"
+            android:textSize="18sp"
+            android:textAllCaps="true"
+            android:gravity="center"
+            android:letterSpacing="0.2"
+            android:inputType="textCapCharacters"
+            android:maxLength="16"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnConfirmCode"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:text="تأكيد الربط"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:background="@drawable/button_bg"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnCancelCode"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:text="إلغاء"
+            android:textSize="13sp"
+            android:background="@drawable/button_bg_secondary"
+            android:textColor="#888888" />
+
+    </LinearLayout>
+
+    <!-- ===== PERMISSIONS BUTTON (bottom) ===== -->
+    <Button
+        android:id="@+id/btnPerms"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="الصلاحيات"
+        android:textSize="13sp"
+        android:background="@drawable/button_bg_secondary"
+        android:textColor="#60a5fa"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- ===== STATUS TEXT ===== -->
     <TextView
         android:id="@+id/textStatus"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text=""
         android:textSize="13sp"
-        android:textColor="#888888" />
+        android:textColor="#888888"
+        android:gravity="center" />
 
 </LinearLayout>
