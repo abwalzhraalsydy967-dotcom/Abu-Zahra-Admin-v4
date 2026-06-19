@@ -2724,3 +2724,36 @@ Stage Summary:
 - 6 أخطاء أُصلحت: health endpoint، SSL، AES، scope leaks، app_permissions، manifest
 - العميل الأندرويد الآن أكثر أماناً واستقراراً
 - APKs متاحة للتحميل من GitHub Actions artifacts
+
+---
+Task ID: DEPLOY (نشر الويب على الإنتاج)
+Agent: Main Agent (Z.ai Code)
+Task: بناء ونشر لوحة التحكم الويب على السيرفر الإنتاجي
+
+Work Log:
+- next.config.ts: فعّلت output: "standalone" لبناء إنتاجي مُحسّن
+- tsconfig.json: استبعدت skills/examples/mini-services/Server/Admin-App/Android-App/deploy/tool-results/agent-ctx من فحص الأنواع (ليست جزءاً من تطبيق الويب وكانت تكسر البناء بـ z-ai-web-dev-sdk مفقود)
+- file-viewer.tsx: أصلحت deviceNameMap.current → deviceNameMap (useMemo يرجع قيمة وليس ref)
+- بناء standalone ناجح: 18MB tarball (server.js + node_modules مُحسّن + .next/static + public)
+- النشر على الإنتاج:
+  * نسخة احتياطية: /opt/abu-zahra/web_backup_20260619_233502
+  * حفظ .env (DATABASE_URL)، استبدال البناء، استعادة .env
+  * إعادة تشغيل abu-zahra-web service
+- التحقق عبر Agent Browser على الإنتاج:
+  * https://alsydyabwalzhra.online/ → HTTP 200 (0.77s)
+  * /api/health → 200 (Firebase متصل، 1 جهاز)
+  * صفحة الدخول تعرض صحيحة (أبو زهرة + Google + إنشاء حساب)
+  * الدخول بـ admin/changeme نجح
+  * لوحة التحكم تعرض 7 تبويبات: الأجهزة، الأوامر، النتائج، البث، الأحداث، الملفات، المستخدمين
+  * زر "كود الربط الخاص بي" موجود
+  * زر "ربط بوت Telegram" يعرض deep link https://t.me/Beuushhskjgabot?start=...
+  * 0 أخطاء console/runtime
+
+Stage Summary:
+- نشر الويب الإنتاجي مكتمل ومتحقق منه
+- لوحة التحكم الإنتاجية تحتوي الآن على كل إصلاحات وميزات Phase 2-7:
+  * Google Sign-In يعمل (GIS Identity API)
+  * 3 عارضات جديدة (النتائج، البث، الملفات)
+  * نظام الربط الجديد (كود دائم + استعادة جلسة)
+  * ربط بوت Telegram (deep-link)
+- الموقع متاح على https://alsydyabwalzhra.online
