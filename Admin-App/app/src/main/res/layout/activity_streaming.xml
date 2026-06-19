@@ -45,21 +45,28 @@
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="شاشة الهاتف" />
+                android:text="بث الشاشة" />
 
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipCamera"
+                android:id="@+id/chipFrontCamera"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="الكاميرا" />
+                android:text="الكاميرا الأمامية" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipBackCamera"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="الكاميرا الخلفية" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipAudio"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="الميكروفون" />
+                android:text="بث الصوت" />
 
         </com.google.android.material.chip.ChipGroup>
 

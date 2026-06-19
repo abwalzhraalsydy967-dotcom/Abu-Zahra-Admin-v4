@@ -1,5 +1,8 @@
 package com.abuzahra.admin.ui.users
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
@@ -25,6 +28,8 @@ class UsersActivity : AppCompatActivity() {
 
         setupToolbar()
         setupFab()
+        setupRegenerateCode()
+        setupSwipeRefresh()
         loadUsers()
     }
 
@@ -39,6 +44,71 @@ class UsersActivity : AppCompatActivity() {
         binding.fabAddUser.setOnClickListener {
             showCreateUserDialog()
         }
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.setOnRefreshListener {
+            loadUsers()
+        }
+    }
+
+    private fun setupRegenerateCode() {
+        // Regenerates the CURRENT admin's permanent link code via
+        // POST /api/web/regenerate_code (admin only).
+        binding.btnRegenerateCode.setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("تجديد كود الربط الدائم")
+                .setMessage("سيتم إلغاء الكود الحالي وتوليد كود جديد. الأجهزة المرتبطة بالكود القديم ستحتاج لإعادة الربط. هل تريد المتابعة؟")
+                .setPositiveButton("تجديد") { _, _ ->
+                    regenerateCode()
+                }
+                .setNegativeButton("إلغاء", null)
+                .show()
+        }
+    }
+
+    private fun regenerateCode() {
+        binding.progressBar.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            try {
+                val prefs = Preferences.getInstance(this@UsersActivity)
+                val api = prefs.getApiService()
+                val response = api.regenerateCode()
+                if (response.ok && response.code.isNotEmpty()) {
+                    // Persist the new code locally so the dashboard shows it.
+                    prefs.permanentCode = response.code
+                    showNewCodeDialog(response.code)
+                } else {
+                    Toast.makeText(
+                        this@UsersActivity,
+                        "فشل تجديد الكود",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@UsersActivity,
+                    "خطأ: ${e.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } finally {
+                binding.progressBar.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun showNewCodeDialog(code: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("تم تجديد الكود")
+            .setMessage("كود الربط الدائم الجديد:\n\n$code\n\nاحفظ هذا الكود لربط الأجهزة الجديدة.")
+            .setPositiveButton("نسخ") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("link_code", code))
+                Toast.makeText(this, "تم نسخ الكود", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("حسناً", null)
+            .setCancelable(false)
+            .show()
     }
 
     private fun loadUsers() {
@@ -68,6 +138,7 @@ class UsersActivity : AppCompatActivity() {
                 Toast.makeText(this@UsersActivity, "خطأ: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
                 binding.progressBar.visibility = View.GONE
+                binding.swipeRefresh.isRefreshing = false
             }
         }
     }

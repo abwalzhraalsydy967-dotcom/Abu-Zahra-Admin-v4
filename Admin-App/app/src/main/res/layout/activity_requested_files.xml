@@ -17,7 +17,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:title="@string/files"
+            app:title="الملفات المطلوبة"
             app:titleTextColor="@color/text_primary"
             app:navigationIcon="@drawable/ic_back" />
 
@@ -38,38 +38,49 @@
                 android:layout_height="match_parent"
                 android:orientation="vertical">
 
-                <!-- Requested files entry: opens RequestedFilesActivity which lists
-                     files uploaded by devices (photos, screenshots, recordings, ...)
-                     that auto-expire on the server after 1 hour. -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnRequestedFiles"
-                    style="Widget.Material3.Button.OutlinedButton"
+                <!-- Auto-expire notice -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_margin="@dimen/margin_md"
-                    android:text="الملفات المطلوبة"
-                    app:icon="@drawable/ic_folder"
-                    app:iconGravity="textStart" />
+                    app:cardCornerRadius="@dimen/radius_md"
+                    app:cardElevation="@dimen/card_elevation"
+                    app:cardBackgroundColor="@color/surface_variant">
 
-                <!-- Current Path -->
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/tilPath"
-                    style="Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="@dimen/margin_md"
-                    app:startIconDrawable="@drawable/ic_folder"
-                    app:startIconTint="@color/text_hint">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etPath"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textUri"
-                        android:text="/"
-                        android:textDirection="ltr" />
+                        android:orientation="horizontal"
+                        android:padding="@dimen/padding_md"
+                        android:gravity="center_vertical">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_logs"
+                            android:layout_marginEnd="@dimen/margin_sm"
+                            app:tint="@color/warning" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="تنبيه: يتم حذف هذه الملفات تلقائياً من الخادم بعد ساعة واحدة من رفعها. حمّل ما تحتاجه قبل انتهاء المهلة."
+                            android:textSize="@dimen/text_caption"
+                            android:textColor="@color/text_secondary" />
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Device filter (optional) -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipDeviceFilter"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="@dimen/margin_md"
+                    android:layout_marginBottom="@dimen/margin_sm"
+                    app:singleSelection="true" />
 
                 <!-- File List -->
                 <androidx.recyclerview.widget.RecyclerView
@@ -78,7 +89,8 @@
                     android:layout_height="0dp"
                     android:layout_weight="1"
                     android:clipToPadding="false"
-                    android:paddingHorizontal="@dimen/margin_md" />
+                    android:paddingHorizontal="@dimen/margin_md"
+                    android:paddingBottom="@dimen/margin_md" />
 
                 <!-- Empty State -->
                 <LinearLayout
@@ -99,10 +111,18 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/no_files"
+                        android:text="لا توجد ملفات مطلوبة"
                         android:textSize="@dimen/text_title"
                         android:textColor="@color/text_primary"
                         android:layout_marginTop="@dimen/margin_md" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="الملفات التي يرفعها الجهاز ستظهر هنا"
+                        android:textSize="@dimen/text_caption"
+                        android:textColor="@color/text_hint"
+                        android:layout_marginTop="@dimen/margin_xs" />
 
                 </LinearLayout>
 
@@ -129,16 +149,5 @@
         </FrameLayout>
 
     </FrameLayout>
-
-    <!-- FAB for upload -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabUpload"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/margin_lg"
-        android:src="@drawable/ic_upload"
-        android:contentDescription="@string/upload_file"
-        app:tint="@color/on_primary" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

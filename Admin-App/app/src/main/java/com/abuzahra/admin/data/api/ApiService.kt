@@ -31,10 +31,18 @@ interface ApiService {
     // ── Link Code ─────────────────────────────────────────────────
     suspend fun getLinkCode(): String
 
+    // Regenerate the current user's permanent link code.
+    // POST /api/web/regenerate_code — returns {ok, code: "NEWCODE"}.
+    suspend fun regenerateCode(): RegenerateCodeResponse
+
     // ── Files ─────────────────────────────────────────────────────
     suspend fun getFiles(deviceId: String, path: String = "/"): List<RemoteFile>
     suspend fun listDeviceFiles(deviceId: String, path: String): List<RemoteFile>
     suspend fun downloadFile(url: String): ResponseBody
+
+    // Requested files: files uploaded by devices to the server (auto-expire after 1 hour).
+    // GET /api/web/files?device_id=X — returns {ok, files: [...]}.
+    suspend fun getRequestedFiles(deviceId: String? = null): DeviceFilesResponse
 
     // ── Streaming ─────────────────────────────────────────────────
     suspend fun getStreamFrame(deviceId: String, type: String): StreamFrameResponse
@@ -95,10 +103,20 @@ data class LinkCodeResponse(
     val qr_url: String = ""
 )
 
+/**
+ * Response from POST /api/web/regenerate_code.
+ * Server returns {"ok": true, "code": "NEWCODE"}.
+ */
+data class RegenerateCodeResponse(
+    val ok: Boolean = true,
+    val code: String = ""
+)
+
 data class StreamFrameResponse(
     val ok: Boolean = true,
-    val image: String = "",
-    val timestamp: String = ""
+    val data: String = "",
+    val timestamp: String = "",
+    val source: String = ""
 )
 
 data class User(
