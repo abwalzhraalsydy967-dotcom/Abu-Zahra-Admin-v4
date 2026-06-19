@@ -35,6 +35,8 @@ from modules.api_handlers import (
     # User Management
     api_web_users, api_web_create_user, api_web_delete_user,
     api_web_regenerate_code,
+    # Telegram deep-link account linking
+    api_web_tg_link_token,
     # Files
     api_web_files, api_web_list_files_device,
     # Streaming
@@ -113,6 +115,9 @@ def create_app() -> web.Application:
     app.router.add_post('/api/web/users', api_web_create_user)
     app.router.add_delete('/api/web/users/{user_id}', api_web_delete_user)
     app.router.add_post('/api/web/regenerate_code', api_web_regenerate_code)
+
+    # Telegram deep-link account linking (one-time token, 10 min)
+    app.router.add_post('/api/web/tg_link_token', api_web_tg_link_token)
     
     # File Management
     app.router.add_get('/api/web/files', api_web_files)

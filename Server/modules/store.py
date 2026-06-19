@@ -114,8 +114,16 @@ class DataStore:
         self._ip_device_map: Dict[str, str] = {}
         
         # Telegram per-user sessions: {chat_id: {user_id, authenticated, devices[], selected_device, ...}}
+        # Persisted to tg_sessions.json so users don't have to re-authenticate on
+        # every server restart.
         self.tg_sessions: Dict[str, dict] = {}
-        
+
+        # Telegram deep-link account linking tokens (one-time, expire in 10 min).
+        # {token: {user_id, expires_at, created_at}}
+        # NOT persisted — these are short-lived and ephemeral by design.
+        self.tg_link_tokens: Dict[str, dict] = {}
+        self.TG_LINK_TOKEN_EXPIRE_SECONDS = 600  # 10 minutes
+
         # Stats
         self.api_hits = 0
         self.messages_sent = 0
@@ -132,6 +140,18 @@ class DataStore:
         self.pairing_codes = {c['code']: c for c in await _load_json("link_codes.json", [])}
         self.sessions = {s['token']: s for s in await _load_json("sessions.json", [])}
         self.users = {u['id']: u for u in await _load_json("users.json", [])}
+        # Load persisted Telegram sessions so users stay logged in across
+        # server restarts. Stored as a list of session dicts in tg_sessions.json.
+        loaded_tg = await _load_json("tg_sessions.json", [])
+        if isinstance(loaded_tg, list):
+            for s in loaded_tg:
+                if isinstance(s, dict) and s.get('chat_id') is not None:
+                    self.tg_sessions[str(s['chat_id'])] = s
+        elif isinstance(loaded_tg, dict):
+            # Backward-compatible: dict keyed by chat_id
+            for k, v in loaded_tg.items():
+                if isinstance(v, dict):
+                    self.tg_sessions[str(k)] = v
         
         # Ensure admin user exists
         if not self.users:
@@ -175,6 +195,25 @@ class DataStore:
 
     async def save_sessions(self):
         await _save_json("sessions.json", list(self.sessions.values()))
+
+    async def save_tg_sessions(self):
+        """Persist Telegram user sessions to disk so login state survives restarts.
+
+        Called explicitly from telegram_bot.py on auth-state mutations only
+        (login / logout / link account / selected_device change) — NOT on every
+        message, to avoid excessive disk I/O.
+        """
+        # Strip transient in-memory only fields before writing to disk.
+        # `last_activity` is fine to persist (just a timestamp).
+        sessions_to_save = []
+        for s in self.tg_sessions.values():
+            if not isinstance(s, dict):
+                continue
+            # Defensive: ensure chat_id is present (it's the key, but stored inside too)
+            if s.get('chat_id') is None:
+                continue
+            sessions_to_save.append(s)
+        await _save_json("tg_sessions.json", sessions_to_save)
 
     # ─── User Management (Email-based) ────────────────────────
     
@@ -310,6 +349,53 @@ class DataStore:
         user['permanent_link_code'] = code
         await self.save_users()
         return code
+
+    # ─── Telegram Deep-Link Tokens (one-time, 10-minute) ─────
+
+    def generate_tg_link_token(self, user_id: str) -> str:
+        """Generate a one-time deep-link token for linking a Telegram chat to
+        a web user account. Token expires after TG_LINK_TOKEN_EXPIRE_SECONDS
+        (default 600 = 10 min). Each token can be used exactly once.
+
+        Returns the token string (NOT stored on disk — these are ephemeral).
+        """
+        token = secrets.token_urlsafe(24)
+        now = time.time()
+        self.tg_link_tokens[token] = {
+            "user_id": user_id,
+            "created_at": now,
+            "expires_at": now + self.TG_LINK_TOKEN_EXPIRE_SECONDS,
+            "used": False,
+        }
+        # Best-effort cleanup of expired tokens to keep the dict small.
+        if len(self.tg_link_tokens) > 100:
+            for t in list(self.tg_link_tokens.keys()):
+                if self.tg_link_tokens[t].get('expires_at', 0) < now:
+                    self.tg_link_tokens.pop(t, None)
+        return token
+
+    def verify_tg_link_token(self, token: str) -> Optional[str]:
+        """Verify a one-time deep-link token. Returns the user_id if valid and
+        not yet expired, deletes the token (one-time use), and returns None
+        otherwise.
+        """
+        if not token:
+            return None
+        data = self.tg_link_tokens.get(token)
+        if not data:
+            return None
+        # Expired?
+        if data.get('expires_at', 0) < time.time():
+            self.tg_link_tokens.pop(token, None)
+            return None
+        # Already used?
+        if data.get('used'):
+            self.tg_link_tokens.pop(token, None)
+            return None
+        user_id = data.get('user_id')
+        # Mark as used and remove (one-time token).
+        self.tg_link_tokens.pop(token, None)
+        return user_id
 
     # ─── Session Management ───────────────────────────────────
     
