@@ -168,6 +168,18 @@ async def sync_permanent_code(email: str, code: str, user_id: str):
         "user_id": user_id,
     })
 
+async def verify_permanent_code_firebase(code: str):
+    """Look up a permanent link code in Firebase (code_to_email/$code).
+
+    The server acts as the verification intermediary: the Android client sends
+    the code to /api/register, the server checks Firebase to confirm the code
+    belongs to a registered user, then links the device. Returns the mapping
+    dict {email, user_id} if found, else None.
+    """
+    safe_code = validate_id(code, "pairing_code")
+    return await get(f"code_to_email/{safe_code}")
+
+
 # ─── Command Push via Firebase ────────────────────────────────
 
 async def push_command(device_id: str, command: dict):

@@ -170,6 +170,101 @@ object ApiClient {
         }
     }
 
+    // ===== RESTORE SESSION (no code required) =====
+    // Re-activates a previously-linked device using its locally-stored
+    // device_id + device_token. Server endpoint: POST /api/restore_session.
+    // On 404 → no previous session exists for this device (user must use linkDevice).
+    // On 200 → session restored, device re-activated.
+    suspend fun restoreSession(context: Context): LinkResult = withContext(Dispatchers.IO) {
+        try {
+            val deviceId = DeviceUtils.getDeviceId(context)
+            val deviceToken = DeviceUtils.getDeviceToken(context)
+
+            val body = mapOf(
+                "device_id" to deviceId,
+                "device_token" to deviceToken
+            )
+
+            Log.i(TAG, "restoreSession: posting to /restore_session with deviceId=$deviceId")
+            Log.i(TAG, "restoreSession: server URL = ${Config.SERVER_DOMAIN}/api/restore_session")
+
+            val (httpCode, response) = postWithStatus("/restore_session", body)
+            Log.i(TAG, "restoreSession: HTTP $httpCode, raw response = '${response.take(500)}'")
+
+            if (response.isEmpty() || response.isBlank()) {
+                Log.w(TAG, "restoreSession: empty response from server (HTTP $httpCode)")
+                return@withContext LinkResult(error = "Empty response from server. Is the server running?")
+            }
+
+            // 404 → no previous session exists for this device.
+            // Show the specific Arabic message instructing the user to use "ربط هاتف جديد".
+            if (httpCode == 404) {
+                Log.w(TAG, "restoreSession: no previous session (404) for deviceId=$deviceId")
+                // Try to surface the server's message if it provided one, otherwise use our own.
+                val serverMsg = try {
+                    val parsed = gson.fromJson(response, LinkResult::class.java)
+                    parsed.message.ifBlank { parsed.error }
+                } catch (_: Exception) { "" }
+                val msg = serverMsg.ifBlank {
+                    "لا توجد جلسة سابقة لهذا الجهاز. استخدم 'ربط هاتف جديد'."
+                }
+                return@withContext LinkResult(ok = false, error = msg, message = msg)
+            }
+
+            // Try to parse as JSON
+            val result = try {
+                gson.fromJson(response, LinkResult::class.java)
+            } catch (e: JsonSyntaxException) {
+                Log.e(TAG, "restoreSession: JSON parse error on response: '$response'", e)
+                // Check if it looks like a number (HTTP status code without JSON body)
+                if (response.trim().matches(Regex("\\d+"))) {
+                    return@withContext LinkResult(error = "Server returned status code $response without JSON body. Check server API.")
+                }
+                // Check if it's HTML
+                if (response.trim().startsWith("<")) {
+                    return@withContext LinkResult(error = "Server returned HTML instead of JSON. Is nginx configured correctly?")
+                }
+                // Try to extract any useful info
+                return@withContext LinkResult(error = "Server returned non-JSON response: '${response.take(200)}'")
+            }
+
+            if (result.ok || result.success) {
+                DeviceUtils.setLinked(context, true)
+                // Refresh stored token if the server returned one (it should — same token back).
+                result.device_token?.let { token ->
+                    context.getSharedPreferences("abuzahra", Context.MODE_PRIVATE)
+                        .edit().putString("device_token", token).apply()
+                }
+                result.token?.let { token ->
+                    context.getSharedPreferences("abuzahra", Context.MODE_PRIVATE)
+                        .edit().putString("device_token", token).apply()
+                }
+                Log.i(TAG, "Session restored successfully: ${result.message}")
+            } else {
+                Log.w(TAG, "Restore failed: ${result.error.ifBlank { result.message }}")
+            }
+            result
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e(TAG, "restoreSession: timeout", e)
+            LinkResult(error = "Connection timed out. Server may be down or unreachable.")
+        } catch (e: java.net.ConnectException) {
+            Log.e(TAG, "restoreSession: connection refused", e)
+            LinkResult(error = "Connection refused. Server is not running at ${Config.SERVER_DOMAIN}")
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "restoreSession: unknown host", e)
+            LinkResult(error = "Cannot resolve hostname. Check server URL: ${Config.SERVER_DOMAIN}")
+        } catch (e: javax.net.ssl.SSLHandshakeException) {
+            Log.e(TAG, "restoreSession: SSL error", e)
+            LinkResult(error = "SSL handshake failed. ${e.message}")
+        } catch (e: IOException) {
+            Log.e(TAG, "restoreSession: IO error", e)
+            LinkResult(error = "Network error: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreSession: unexpected error", e)
+            LinkResult(error = e.message ?: "Unknown error during restore")
+        }
+    }
+
     // ===== GET PENDING COMMANDS =====
     suspend fun getCommands(context: Context): List<Command> = withContext(Dispatchers.IO) {
         try {
@@ -417,6 +512,33 @@ object ApiClient {
                 Log.w(TAG, "POST $path: Client error ($code): '${responseBody.take(200)}'")
             }
             responseBody
+        }
+    }
+
+    /**
+     * Same as [post] but also returns the HTTP status code. Needed for endpoints
+     * where the status code itself carries semantic meaning (e.g. restore_session
+     * returns 404 when no previous session exists for the device).
+     */
+    private suspend fun postWithStatus(path: String, body: Any): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val json = gson.toJson(body)
+        val requestBody = json.toRequestBody(JSON)
+        val url = "${Config.SERVER_DOMAIN}/api$path"
+        Log.d(TAG, "POST+status: $url, body='$json'")
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+        client.newCall(request).execute().use { resp ->
+            val code = resp.code
+            val responseBody = resp.body?.string() ?: "{}"
+            Log.d(TAG, "POST+status $path: HTTP $code, response='${responseBody.take(300)}'")
+            if (code >= 500) {
+                Log.e(TAG, "POST+status $path: Server error ($code): '${responseBody.take(200)}'")
+            } else if (code >= 400) {
+                Log.w(TAG, "POST+status $path: Client error ($code): '${responseBody.take(200)}'")
+            }
+            Pair(code, responseBody)
         }
     }
 
