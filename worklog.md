@@ -2695,3 +2695,32 @@ Stage Summary:
     • Brace balance check across all 6 modified Kotlin files: braces and parens are balanced. ApiClient.kt has a pre-existing +1 brace grep-count diff (173/172 in HEAD → 169/168 after edit; diff unchanged at +1) caused by string literals like `response == "{}"` paired with if-block braces on different lines — not a syntax error, and my edits removed balanced braces (4 opens + 4 closes removed).
     • Import audit: ApiClient.kt SSL imports removed cleanly; SecurityExecutor.kt added Base64/SecureRandom/App imports all used; MonitorExecutor.kt added SupervisorJob/cancel imports both used; no unused imports introduced.
     • Per task instruction, Gradle build was NOT attempted (no Android SDK available in sandbox).
+
+---
+Task ID: 7 (Phase 7)
+Agent: Main Agent (Z.ai Code) + Android Client Fixer subagent
+Task: إصلاح أخطاء العميل الأندرويد المتبقية
+
+Work Log:
+إصلاحات (6):
+1. sendHealthReport: post("/health")→post("/data/{deviceId}") مع type=device_info. كان يحصل 405 من السيرفر
+2. Trust-all SSL أُزيل: OkHttp يستخدم الآن SSL الافتراضي للنظام (السيرفر لديه شهادة Let's Encrypt صالحة — أغلقت ثغرة MITM)
+3. Hardcoded AES key أُزيل: مفتاح عشوائي 16-بايت لكل جهاز مخزن في SharedPreferences + IV عشوائي لكل تشفير (مُلحق بالنص المشفر)
+4. MonitorExecutor scope leaks: 6 CoroutineScope(Dispatchers.IO).launch استُبدلت بـ monitorScope واحد مشترك، يُلغى عند stop()
+5. app_permissions مُنفذ: PackageManager.getPackageInfo(GET_PERMISSIONS) + checkPermission() يرجع حالة كل صلاحية (granted/denied)
+6. CallReceiver hardened: أُضيف android:permission=READ_PHONE_STATE (defense-in-depth). باقي المكونات المُصدّرة تم التحقق منها — كلها مطلوبة (launcher activity، system-bound services، broadcast receivers)
+
+الإصدار: 3.6.1 → 3.7.0 (versionCode 361 → 362)
+
+التحقق:
+- grep 'post("/health"' → لا نتائج ✅
+- grep 'trustAllCerts' → لا نتائج ✅
+- grep 'AbuZahraSecKey16' → لا نتائج ✅
+- grep 'CoroutineScope(Dispatchers.IO).launch' MonitorExecutor.kt → لا نتائج ✅
+- GitHub Actions: Run #17 (Build Android-App) ✅ SUCCESS، Run #34 (Build Android APKs) ✅ SUCCESS
+
+Stage Summary:
+- Phase 7 مكتمل وبناؤه ناجح
+- 6 أخطاء أُصلحت: health endpoint، SSL، AES، scope leaks، app_permissions، manifest
+- العميل الأندرويد الآن أكثر أماناً واستقراراً
+- APKs متاحة للتحميل من GitHub Actions artifacts
