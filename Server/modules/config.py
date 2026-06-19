@@ -37,6 +37,9 @@ ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "YOUR_CHAT_ID_HERE")
 FIREBASE_PROJECT = os.environ.get("FIREBASE_PROJECT", "abwalzhraalsydy-62ccf")
 FIREBASE_RTDB_URL = f"https://{FIREBASE_PROJECT}-default-rtdb.firebaseio.com"
 FIREBASE_DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")
+# Firebase Web API key (from google-services.json → current_key). Used to verify
+# ID tokens via identitytoolkit REST API. Server is a verification intermediary only.
+FIREBASE_WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY", "AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk")
 
 # ─── Data Directory ───────────────────────────────────────────
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")

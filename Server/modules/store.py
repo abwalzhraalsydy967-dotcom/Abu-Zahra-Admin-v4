@@ -122,19 +122,9 @@ class DataStore:
 
     # ─── Persistence ──────────────────────────────────────────
     async def load_all(self):
-        """Load all data from JSON files on startup."""
-        # Clear all old data for fresh start
-        for f in os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []:
-            try:
-                os.remove(os.path.join(DATA_DIR, f))
-            except:
-                pass
-
-        # Clear Firebase RTDB commands, results, and old data
-        if os.path.exists(DATA_DIR):
-            # Write a marker file so we know data was cleared
-            with open(os.path.join(DATA_DIR, '_cleared'), 'w') as f:
-                f.write(str(int(time.time())))
+        """Load all data from JSON files on startup (persistence-preserving)."""
+        # NOTE: Do NOT delete data files on startup — that wiped all users/devices
+        # on every restart. We load existing state and only create missing files.
 
         self.devices = {d['id']: d for d in await _load_json("devices.json", [])}
         self.events = await _load_json("events.json", [])

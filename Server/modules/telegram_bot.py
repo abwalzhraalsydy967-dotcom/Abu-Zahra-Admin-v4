@@ -11,7 +11,7 @@ import urllib.parse
 from typing import Optional
 from datetime import datetime
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, FormData
 
 from .config import (
     BOT_TOKEN, ADMIN_CHAT_ID, TG_RATE_LIMIT, TG_DEDUP_SECONDS,
@@ -456,7 +456,7 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
             f"⏱️ مدة التشغيل: {stats['uptime'] // 3600}س {stats['uptime'] % 3600 // 60}د\n"
             f"📱 أجهزة: {stats['devices_total']} ({stats['devices_online']} متصل)\n"
             f"🎮 أوامر معلقة: {stats['commands_pending']}\n"
-            f"🔥 Firebase: {'متصل' if firebase_connected else 'غير متصل'}\n"
+            f"🔥 Firebase: {'متصل' if _fb.firebase_connected else 'غير متصل'}\n"
             f"📊 الإصدار: {VERSION}",
             reply_markup=main_menu_keyboard(chat_id))
     
@@ -580,7 +580,7 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
         await send_message(chat_id,
             f"📡 <b>حالة الخادم</b>\n✅ يعمل | ⏱️ {stats['uptime'] // 3600}س | "
             f"📱 {stats['devices_online']}/{stats['devices_total']} | "
-            f"🔥 {'متصل' if firebase_connected else 'غير متصل'} | v{VERSION}")
+            f"🔥 {'متصل' if _fb.firebase_connected else 'غير متصل'} | v{VERSION}")
     
     elif callback_data == "srv_stats":
         stats = store.get_stats()
@@ -609,6 +609,10 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
         device = store.devices.get(device_id)
         if not device:
             await send_message(chat_id, "❌ الجهاز غير موجود.")
+            return
+        # Ownership enforcement: only the device's owner (or admin) may view it.
+        if device.get('owner_id') != user['id'] and user.get('role') != 'admin':
+            await send_message(chat_id, "⛔ ليس لديك صلاحية للوصول إلى هذا الجهاز.")
             return
         session["selected_device"] = device_id
         online = store._device_last_online.get(device_id, False)
@@ -647,6 +651,11 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
         if len(parts) >= 3:
             category = parts[1]
             device_id = "_".join(parts[2:])
+            # Ownership enforcement before showing command menu for a device.
+            device = store.devices.get(device_id)
+            if not device or (device.get('owner_id') != user['id'] and user.get('role') != 'admin'):
+                await send_message(chat_id, "⛔ ليس لديك صلاحية للوصول إلى هذا الجهاز.")
+                return
             cat_info = CMD_CATEGORIES.get(category, {})
             await send_message(chat_id, f"📂 {cat_info.get('name', category)}:",
                              reply_markup=category_commands_keyboard(category, device_id))
@@ -684,6 +693,13 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
     device = store.devices.get(device_id)
     if not device:
         await send_message(chat_id, "❌ الجهاز غير موجود.")
+        return
+    
+    # ─── Ownership enforcement (multi-user isolation) ───────────
+    # A user may only execute commands on devices they own.
+    if device.get('owner_id') != user['id']:
+        await send_message(chat_id, "⛔ ليس لديك صلاحية للتحكم في هذا الجهاز.")
+        logger.warning(f"TG ownership denied: chat={chat_id} user={user.get('id')} device={device_id} owner={device.get('owner_id')}")
         return
     
     online = store._device_last_online.get(device_id, False)
