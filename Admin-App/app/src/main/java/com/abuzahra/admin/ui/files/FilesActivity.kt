@@ -79,6 +79,7 @@ class FilesActivity : AppCompatActivity() {
         setupToolbar()
         setupRecyclerView()
         setupFab()
+        setupRequestedFilesButton()
         observeViewModel()
         viewModel.loadDevices()
     }
@@ -106,6 +107,12 @@ class FilesActivity : AppCompatActivity() {
             } else {
                 false
             }
+        }
+    }
+
+    private fun setupRequestedFilesButton() {
+        binding.btnRequestedFiles.setOnClickListener {
+            startActivity(Intent(this, RequestedFilesActivity::class.java))
         }
     }
 
@@ -203,11 +210,22 @@ class FilesActivity : AppCompatActivity() {
     }
 
     private fun downloadFile(file: RemoteFile) {
+        if (file.id.isBlank()) {
+            Snackbar.make(
+                binding.root,
+                "لا يمكن تحميل هذا الملف مباشرة (معرّف الملف غير متوفر). استخدم زر «تحميل ملف» لإرسال أمر get_file للجهاز.",
+                Snackbar.LENGTH_LONG
+            ).show()
+            return
+        }
         Snackbar.make(binding.root, "جاري تحميل ${file.name}...", Snackbar.LENGTH_SHORT).show()
         CoroutineScope(Dispatchers.IO).coroutineLaunch {
             try {
                 val api = prefs.getApiService()
-                val url = "${prefs.serverUrl}api/upload/${file.path}"
+                // Server route: GET /api/files/{file_id} with Authorization: Bearer <token>
+                // The Bearer token is added automatically by the OkHttp interceptor
+                // built into prefs.getApiService() (ApiClient.createWithToken).
+                val url = "${prefs.serverUrl}api/files/${file.id}"
                 val body = api.downloadFile(url)
 
                 // Save to Downloads folder

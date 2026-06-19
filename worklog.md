@@ -2423,3 +2423,126 @@ Stage Summary:
 - ربط deep-link: بديل آمن لإرسال كلمة المرور نصياً (one-time token، 10 دقائق)
 - /link دائم: يرجع الكود الدائم بدلاً من توليد كود مؤقت
 - فحص الملكية (من Phase 1): كل مستخدم يرى أجهزته فقط
+
+---
+Task ID: 5-b
+Agent: Admin App Fixer
+Task: إصلاح جميع أخطاء تطبيق الإدارة Android
+
+Work Log:
+- قرأت worklog.md (Tasks 5, 6, 11-d, 11-e) لفهم سياق مشروع أبو زهرا v4.0
+- قرأت ملفات Admin-App الرئيسية:
+  * data/api/ApiService.kt (الـ interface + data classes للـ envelopes)
+  * data/api/ApiClient.kt (Retrofit interface + ApiServiceImpl + builders)
+  * data/api/ApiResponse.kt (sealed Result)
+  * data/model/Device.kt, RemoteFile.kt, CommandDefinitions.kt
+  * ui/streaming/StreamingActivity.kt + activity_streaming.xml
+  * ui/files/FilesActivity.kt + FileListAdapter.kt + activity_files.xml + item_file.xml
+  * ui/device/DeviceDetailActivity.kt + DeviceDetailViewModel.kt + activity_device_detail.xml
+  * ui/users/UsersActivity.kt + UserAdapter.kt + activity_users.xml + item_user.xml
+  * util/Preferences.kt, AndroidManifest.xml, strings.xml, colors.xml, dimens.xml, file_paths.xml
+- قرأت نقاط نهاية الخادم في Server/modules/api_handlers.py:
+  * api_stream_frame (line 1202) — يرجع {ok, data, timestamp, source}
+  * api_download_file (line 708) — GET /api/files/{file_id} مع Bearer
+  * api_web_files (line 1111) — GET /api/web/files?device_id=X يرجع {ok, files:[...]}
+  * api_web_regenerate_code (line 1049) — POST يرجع {ok, code: "NEWCODE"}
+  * jpeg_stream_start (line 1294-1300) — يتوقع stream_type = "screen"/"front_camera"/"back_camera"/"audio"
+  * latest_frames يُخزَّن دائماً تحت المفتاح {device_id}:video (lines 524, 691, 1421, 1450)
+- قرأت Server/modules/commands.py COMMAND_REGISTRY (116 مفتاح)
+- قرأت src/lib/commands.ts للتأكد من معاملات:
+  * show_notification: title + text (وليس message)
+  * change_passcode: old_pin + new_pin (وليس password واحد)
+  * set_stream_quality: quality ∈ {480p, 720p, 1080p, 1440p} (وليس low/medium/high)
+- قرأت Server/modules/config.py STREAM_QUALITY_PRESETS لتأكيد قيم الجودة
+
+- الملفات المعدَّلة:
+  1. Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiService.kt
+     - StreamFrameResponse: حذف `image`، إضافة `data` + `source`
+     - إضافة data class RegenerateCodeResponse(ok, code)
+     - إضافة `suspend fun regenerateCode(): RegenerateCodeResponse` في interface
+     - إضافة `suspend fun getRequestedFiles(deviceId: String? = null): DeviceFilesResponse`
+  2. Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiClient.kt
+     - إضافة @POST("api/web/regenerate_code") + @GET("api/web/files") في RetrofitApiService
+     - تنفيذ regenerateCode() + getRequestedFiles() في ApiServiceImpl
+  3. Admin-App/app/src/main/java/com/abuzahra/admin/ui/streaming/StreamingActivity.kt (إعادة كتابة كاملة)
+     - 4 شرائح بدل 3: chipScreen/chipFrontCamera/chipBackCamera/chipAudio
+     - streamType ∈ {"screen", "front_camera", "back_camera", "audio"} (يطابق jpeg_loop)
+     - استبدال response.image → response.data
+     - getStreamFrame دائماً يُستدعى بـ type="video" (لأن الخادم يخزن كل frames تحت :video)
+     - caches ApiService instance واحدة (تحسين perf: لم يعد يبني ApiClient لكل frame)
+     - تسميات عربية للشرائح: "بث الشاشة" / "الكاميرا الأمامية" / "الكاميرا الخلفية" / "بث الصوت"
+  4. Admin-App/app/src/main/res/layout/activity_streaming.xml
+     - استبدال chipCamera بـ chipFrontCamera + chipBackCamera (4 شرائح بدل 3)
+     - تحديث تسميات الشرائح للعربية المطلوبة
+  5. Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/FilesActivity.kt
+     - استبدال URL التحميل الخاطئ api/upload/${file.path} → api/files/${file.id}
+     - التحقق من وجود file.id قبل التحميل (ملفات الجهاز المباشرة لا تملك id)
+     - إضافة setupRequestedFilesButton() يفتح RequestedFilesActivity
+  6. Admin-App/app/src/main/res/layout/activity_files.xml
+     - إضافة زر "الملفات المطلوبة" في الأعلى يفتح RequestedFilesActivity
+  7. Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/DeviceDetailActivity.kt
+     - إزالة اعتراض chip STREAMING (كان يفتح StreamingActivity بدل عرض 9 أوامر)
+     - إضافة زر "البث المباشر" (btnLiveStream) يفتح StreamingActivity بشكل مستقل
+     - تصحيح show_notification: param key "message" → "text"
+     - تصحيح set_stream_quality: "low/medium/high" → "480p/720p/1080p/1440p"
+     - تصحيح change_passcode: param واحد "password" → "old_pin" + "new_pin"
+  8. Admin-App/app/src/main/res/layout/activity_device_detail.xml
+     - إضافة btnLiveStream (MaterialButton OutlinedButton) فوق قائمة الأوامر
+  9. Admin-App/app/src/main/java/com/abuzahra/admin/ui/users/UsersActivity.kt (إعادة كتابة)
+     - إضافة setupRegenerateCode() زر "تجديد كود الربط الدائم"
+     - إضافة regenerateCode() يستدعي api.regenerateCode() ويعرض الكود في حوار
+     - حفظ الكود الجديد في prefs.permanentCode
+     - حوار "نسخ" ينسخ الكود للحافظة
+     - إضافة setupSwipeRefresh() (إصلاح BUG #6 إضافي: SwipeRefresh كان بلا listener)
+  10. Admin-App/app/src/main/res/layout/activity_users.xml
+      - إضافة btnRegenerateCode في أعلى الـ layout
+      - تحويل المحتوى لـ LinearLayout عمودي يحوي الزر + SwipeRefresh
+
+- الملفات الجديدة:
+  11. Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFilesActivity.kt (جديد)
+      - يفتح GET /api/web/files?device_id=X
+      - فلتر أجهزة (ChipGroup): "كل الأجهزة" + جهاز لكل جهاز
+      - قائمة ملفات (RequestedFileAdapter) لكل ملف: زر عرض + زر تحميل
+      - تحميل عبر GET /api/files/{file_id} مع Bearer (مُضاف تلقائياً من interceptor)
+      - عرض الملف: يُنزَّل لـ cacheDir ثم يُفتح بـ ACTION_VIEW عبر FileProvider
+      - تنبيه أن الملفات تنتهي صلاحيتها بعد ساعة
+      - معالجة 401 (انتهاء الجلسة) → إعادة تسجيل الدخول
+      - SwipeRefresh + pull-to-refresh
+  12. Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFileAdapter.kt (جديد)
+      - ListAdapter<RemoteFile, ViewHolder>
+      - يعرض filename, file_type label, size, caption, upload time
+      - أيقونة حسب file_type (photo/camera/screenshot → صورة، video → فيديو، audio → صوت)
+  13. Admin-App/app/src/main/res/layout/activity_requested_files.xml (جديد)
+      - Toolbar + تنبيه انتهاء الصلاحية + ChipGroup فلتر + RecyclerView + EmptyState + Loading
+  14. Admin-App/app/src/main/res/layout/item_requested_file.xml (جديد)
+      - MaterialCardView يحوي أيقونة + اسم + meta + وقت + زر View + زر Download
+
+- ملفات معدَّلة أخرى:
+  15. Admin-App/app/src/main/AndroidManifest.xml
+      - تسجيل RequestedFilesActivity جديدة (parentActivity = DashboardActivity)
+
+Stage Summary:
+- Bug 1 (CRITICAL — StreamFrameResponse field mismatch): تم تصحيح `val image: String` → `val data: String` في StreamFrameResponse. جميع usages في StreamingActivity.kt تم تحديثها من `response.image` → `response.data`. التحقق: `grep -rn "\.image\b" Admin-App/` لا يرجع شيئاً.
+- Bug 2 (CRITICAL — File download URL wrong): تم استبدال `api/upload/${file.path}` (404 دائماً) بـ `api/files/${file.id}` (المسار الصحيح على الخادم مع Bearer auth يُضاف تلقائياً من OkHttp interceptor). أضيف فحص `file.id.isBlank()` لأن ملفات الجهاز المباشرة (من list_files) لا تملك id. التحقق: `grep -rn "api/upload/" Admin-App/` لا يرجع أي download URL (فقط @POST("api/upload") للرفع، وهو صحيح).
+- Bug 3 (CRITICAL — Stream type mismatch): تم استبدال 3 شرائح ("شاشة"/"كاميرا"/"صوت" بمفاتيح خاطئة) بـ 4 شرائح صحيحة: "بث الشاشة" (screen), "الكاميرا الأمامية" (front_camera), "الكاميرا الخلفية" (back_camera), "بث الصوت" (audio). عند بدء البث يُرسل النوع الصحيح لـ jpeg_start. عند polling يُرسل دائماً type="video" لأن الخادم يخزن كل frames تحت المفتاح {device_id}:video.
+- Bug 4 (CRITICAL — 9 streaming commands never shown): تم حذف اعتراض chip STREAMING في setupCategoryChips(). الآن النقر على شريحة "البث المباشر" يعرض الـ 9 أوامر (start_screen_stream, stop_screen_stream, start_camera_stream, stop_camera_stream, start_audio_stream, stop_audio_stream, switch_camera, set_stream_quality, stop_all_streams) في شبكة الأوامر. زر مستقل "البث المباشر" (btnLiveStream) أُضيف أعلى شبكة الأوامر يفتح StreamingActivity (عارض البث المباشر).
+- Bug 5 (Missing "requested files" viewer): تم إنشاء RequestedFilesActivity جديد + RequestedFileAdapter + 2 layouts (activity_requested_files.xml, item_requested_file.xml). يفتح GET /api/web/files?device_id=X، يعرض اسم/نوع/حجم/وقت/جهاز كل ملف، لكل ملف زر View (فتح عبر FileProvider + ACTION_VIEW) + زر Download (تنزيل لمجلد Downloads). تنبيه أن الملفات تنتهي صلاحيتها بعد ساعة. فلترة بالجهاز عبر ChipGroup. نقطة الدخول: زر "الملفات المطلوبة" في أعلى FilesActivity. الـ API method `getRequestedFiles(deviceId: String?)` أُضيف في ApiService + ApiClient.
+- Bug 6 (Missing regenerate code UI): تم إضافة زر "تجديد كود الربط الدائم" في UsersActivity. يستدعي `api.regenerateCode()` (POST /api/web/regenerate_code) ويعرض الكود الجديد في حوار مع زر "نسخ". يحفظ الكود الجديد في prefs.permanentCode. الـ API method + data class `RegenerateCodeResponse(ok, code)` أُضيفت. (ملاحظة: الخادم يرجع `code` وليس `link_code`، لذا أُنشئ data class منفصل بدلاً من إعادة استخدام LinkCodeResponse.) إصلاح إضافي: SwipeRefresh في activity_users.xml كان بلا listener — تم ربطه بـ loadUsers().
+- Bug 7 (Param mismatches vs web dashboard): تم التحقق من commands.ts (لوحة الويب) + commands.py (الخادم) وتصحيح 3 أوامر في DeviceDetailActivity.COMMAND_PARAMS:
+  * `show_notification`: param key "message" → "text" (يطابق commands.ts:124)
+  * `set_stream_quality`: قيم "low/medium/high" → "480p/720p/1080p/1440p" (يطابق STREAM_QUALITY_PRESETS في config.py + commands.ts:301-305)
+  * `change_passcode`: param واحد "password" → paramين "old_pin" + "new_pin" (يطابق commands.ts:242-245)
+- التحقق النهائي:
+  * `grep -rn "\.image\b" Admin-App/` → لا نتائج (كلها تغيرت لـ .data)
+  * `grep -rn "api/upload/" Admin-App/` → لا نتائج (فقط @POST("api/upload") للرفع الصحيح)
+  * `grep -rn "response.image" Admin-App/` → لا نتائج
+  * تحقق XML صالح لـ 7 ملفات (parse OK)
+  * توازن الأقواس والـ braces في كل ملفات Kotlin المعدَّلة
+  * كل الـ drawables المستخدمة موجودة (ic_logs, ic_lock, ic_search, ic_download, ic_folder, ic_file, ic_screenshot, ic_back, ic_person)
+  * لم أحاول البناء بـ Gradle (لا Android SDK في الـ sandbox كما هو مطلوب)
+- لم يتم كسر أي وظيفة موجودة:
+  * عرض الأوامر 116 = 116 ما زال متطابقاً مع الخادم
+  * تسجيل الدخول/التسجيل/Google Sign-In لم تُمَس
+  * DashboardActivity + DeviceAdapter لم يُمَسّا
+  * LogsActivity + MonitorActivity + DataActivity + SettingsActivity لم تُمَس
+  * جميع أنماط الـ layout الموجودة (Material3 + CoordinatorLayout + SwipeRefresh + FileProvider) اتُّبعت في الـ layouts الجديدة

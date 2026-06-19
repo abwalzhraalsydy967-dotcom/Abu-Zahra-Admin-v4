@@ -300,6 +300,18 @@
                     android:layout_marginBottom="@dimen/margin_sm"
                     android:layout_marginStart="@dimen/margin_xs" />
 
+                <!-- Live Stream Button (opens StreamingActivity — separate from the
+                     STREAMING command category which now shows the 9 streaming commands) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLiveStream"
+                    style="Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="البث المباشر"
+                    app:icon="@drawable/ic_screenshot"
+                    app:iconGravity="textStart"
+                    android:layout_marginBottom="@dimen/margin_md" />
+
                 <!-- Command Category Chips -->
                 <com.google.android.material.chip.ChipGroup
                     android:id="@+id/chipCommandCategory"

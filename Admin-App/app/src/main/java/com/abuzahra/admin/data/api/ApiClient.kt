@@ -67,6 +67,12 @@ private interface RetrofitApiService {
     @GET("api/web/link_code")
     suspend fun getLinkCode(): LinkCodeResponse
 
+    @POST("api/web/regenerate_code")
+    suspend fun regenerateCode(): RegenerateCodeResponse
+
+    @GET("api/web/files")
+    suspend fun getRequestedFiles(@Query("device_id") deviceId: String?): DeviceFilesResponse
+
     @GET("api/web/device/files")
     suspend fun getFiles(
         @Query("device_id") deviceId: String,
@@ -176,6 +182,14 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
         val response = retrofit.getLinkCode()
         if (!response.ok) throw ApiException("Failed to get link code")
         return response.link_code
+    }
+
+    override suspend fun regenerateCode(): RegenerateCodeResponse {
+        return retrofit.regenerateCode()
+    }
+
+    override suspend fun getRequestedFiles(deviceId: String?): DeviceFilesResponse {
+        return retrofit.getRequestedFiles(deviceId)
     }
 
     override suspend fun getFiles(deviceId: String, path: String): List<RemoteFile> {

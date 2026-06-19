@@ -207,6 +207,12 @@ class DeviceDetailActivity : AppCompatActivity() {
         binding.btnLocation.setOnClickListener { viewModel.getLocation() }
         binding.btnBatteryInfo.setOnClickListener { viewModel.getBatteryInfo() }
 
+        // Live stream button — opens StreamingActivity (live viewer).
+        // The STREAMING command chip now behaves like all other chips and
+        // shows the 9 streaming commands (start/stop_screen_stream, switch_camera,
+        // set_stream_quality, ...). The live viewer is opened via this button.
+        binding.btnLiveStream.setOnClickListener { openStreaming() }
+
         // All 8 command category chips
         setupCategoryChips()
 
@@ -248,13 +254,10 @@ class DeviceDetailActivity : AppCompatActivity() {
 
         allChips.forEach { (category, chip) ->
             chip.setOnClickListener {
-                // Check if streaming category selected - navigate to streaming activity
-                if (category == CommandDefinitions.Category.STREAMING) {
-                    openStreaming()
-                    return@setOnClickListener
-                }
-
-                // Uncheck all, check clicked
+                // All chips behave identically — including STREAMING, which now
+                // shows the 9 streaming commands in the grid. The live viewer
+                // (StreamingActivity) is opened via the dedicated "البث المباشر"
+                // button above the command chips.
                 allChips.values.forEach { c -> c.isChecked = false }
                 chip.isChecked = true
                 viewModel.setCategory(category)
@@ -439,7 +442,7 @@ class DeviceDetailActivity : AppCompatActivity() {
         ),
         "show_notification" to listOf(
             ParamDef("title", "العنوان", "text"),
-            ParamDef("message", "الرسالة", "multiline")
+            ParamDef("text", "النص", "multiline")
         ),
         "set_ringtone" to listOf(
             ParamDef("url", "رابط النغمة", "url")
@@ -490,10 +493,11 @@ class DeviceDetailActivity : AppCompatActivity() {
             ParamDef("url", "رابط الصوت", "url")
         ),
         "set_stream_quality" to listOf(
-            ParamDef("quality", "الجودة (low/medium/high)", "text", "medium")
+            ParamDef("quality", "الجودة (480p/720p/1080p/1440p)", "text", "720p")
         ),
         "change_passcode" to listOf(
-            ParamDef("password", "كلمة المرور الجديدة", "text")
+            ParamDef("old_pin", "الرمز الحالي", "text"),
+            ParamDef("new_pin", "الرمز الجديد", "text")
         )
     )
 }
