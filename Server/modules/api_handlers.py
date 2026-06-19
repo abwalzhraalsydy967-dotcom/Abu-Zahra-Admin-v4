@@ -25,7 +25,7 @@ from .firebase_client import (
     store_calls, store_notifications, store_device_info, store_location
 )
 from .file_storage import save_upload, save_base64_upload, get_file, get_storage_stats
-from .telegram_bot import forward_result
+from .telegram_bot import forward_result, get_bot_username
 
 logger = logging.getLogger("api")
 
@@ -1057,6 +1057,53 @@ async def api_web_regenerate_code(request: web.Request) -> web.Response:
         if user:
             await sync_permanent_code(user['email'], new_code, session['user_id'])
     return json_response({"ok": True, "code": new_code})
+
+
+async def api_web_tg_link_token(request: web.Request) -> web.Response:
+    """Generate a one-time, 10-minute deep-link token for linking a Telegram
+    chat to the current web user's account.
+
+    Flow:
+      1. The dashboard calls this endpoint (authenticated).
+      2. The server mints a one-time token via store.generate_tg_link_token()
+         and returns it together with the bot username (fetched dynamically
+         via getMe on startup) and the full deep-link URL.
+      3. The user opens the deep-link https://t.me/<bot>?start=<token> on
+         their phone, which sends `/start <token>` to the bot.
+      4. The bot's `/start <token>` handler verifies the token via
+         store.verify_tg_link_token() and links the chat to the user.
+
+    Token expires in 10 minutes and can be used exactly once.
+    """
+    session = get_auth_session(request)
+    if not session:
+        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+
+    user = await store.get_user(session['user_id'])
+    if not user:
+        return json_response({"ok": False, "message": "User not found"}, 404)
+
+    token = store.generate_tg_link_token(session['user_id'])
+    bot_user = get_bot_username() or ""
+
+    # Build the deep-link URL. If the bot username isn't known yet (e.g. the
+    # server just started and getMe hasn't returned), still return the token
+    # so the user can retry; the dashboard can re-fetch shortly.
+    deep_link_url = f"https://t.me/{bot_user}?start={token}" if bot_user else ""
+
+    await store.add_event(
+        "auth",
+        f"TG deep-link token issued for user: {user['username']}",
+        "info", user_id=user['id'])
+
+    return json_response({
+        "ok": True,
+        "token": token,
+        "bot_username": bot_user,
+        "deep_link_url": deep_link_url,
+        "expires_in": getattr(store, "TG_LINK_TOKEN_EXPIRE_SECONDS", 600),
+        "message": "افتح الرابط على هاتفك لربط حسابك مع بوت Telegram",
+    })
 
 
 # ─── File Management API ──────────────────────────────────────

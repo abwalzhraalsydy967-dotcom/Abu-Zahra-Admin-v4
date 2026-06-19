@@ -22,6 +22,10 @@ export interface ApiResponse<T = any> {
   streams?: T
   code?: string
   session_id?: string
+  // Telegram deep-link account linking
+  bot_username?: string
+  deep_link_url?: string
+  expires_in?: number
 }
 
 export interface Device {
@@ -78,6 +82,15 @@ export interface StreamFrameResponse {
   data?: string // base64-encoded image (JPEG)
   timestamp?: number
   source?: string
+  message?: string
+}
+
+export interface TgLinkTokenResponse {
+  ok: boolean
+  token?: string
+  bot_username?: string
+  deep_link_url?: string
+  expires_in?: number
   message?: string
 }
 
@@ -201,6 +214,17 @@ class ApiClient {
 
   async generateLinkCode() {
     return this.request<{ code: string }>('/api/web/link_code')
+  }
+
+  /**
+   * Generate a one-time, 10-minute deep-link token for linking a Telegram
+   * chat to the current web user's account. The user opens the returned
+   * deep_link_url on their phone, which sends `/start <token>` to the bot.
+   */
+  async getTgLinkToken() {
+    return this.request<TgLinkTokenResponse>('/api/web/tg_link_token', {
+      method: 'POST',
+    })
   }
 
   async getUsers() {

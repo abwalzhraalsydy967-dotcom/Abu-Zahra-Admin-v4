@@ -30,6 +30,8 @@ import {
   ListChecks,
   Radio,
   FolderOpen,
+  MessageCircle,
+  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -127,6 +129,14 @@ export default function Dashboard() {
   const [copied, setCopied] = useState(false)
   const [showPermanentCode, setShowPermanentCode] = useState(false)
   const [linkCodeLoading, setLinkCodeLoading] = useState(false)
+  const [tgLinkLoading, setTgLinkLoading] = useState(false)
+  const [tgLinkDialog, setTgLinkDialog] = useState<{
+    open: boolean
+    deep_link_url: string
+    bot_username: string
+    expires_in: number
+  }>({ open: false, deep_link_url: '', bot_username: '', expires_in: 600 })
+  const [tgLinkCopied, setTgLinkCopied] = useState(false)
 
   /* ── Dialog State ── */
   const [paramDialog, setParamDialog] = useState<{
@@ -298,6 +308,44 @@ export default function Dashboard() {
       setTimeout(() => setCopied(false), 2000)
     }).catch(() => {
       addLog('error', 'فشل نسخ النص للحافظة')
+    })
+  }
+
+  const handleGenerateTgLink = async () => {
+    setTgLinkLoading(true)
+    addLog('info', 'جارِ توليد رابط ربط Telegram...')
+    try {
+      const res = await api.getTgLinkToken()
+      if (res.ok && res.deep_link_url) {
+        setTgLinkDialog({
+          open: true,
+          deep_link_url: res.deep_link_url,
+          bot_username: res.bot_username || '',
+          expires_in: res.expires_in || 600,
+        })
+        setTgLinkCopied(false)
+        addLog('success', 'تم توليد رابط ربط Telegram', `البوت: @${res.bot_username}`)
+      } else if (res.ok && res.token && !res.deep_link_url) {
+        // Token issued but bot username not yet known — instruct user to retry.
+        addLog('warning', 'لم يتم جلب اسم البوت بعد. أعد المحاولة خلال لحظات.', res.message || '')
+      } else {
+        addLog('error', 'فشل توليد رابط ربط Telegram', res.message)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
+      addLog('error', 'خطأ في توليد رابط ربط Telegram', msg)
+    } finally {
+      setTgLinkLoading(false)
+    }
+  }
+
+  const handleCopyTgLink = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setTgLinkCopied(true)
+      addLog('info', 'تم نسخ رابط ربط Telegram')
+      setTimeout(() => setTgLinkCopied(false), 2000)
+    }).catch(() => {
+      addLog('error', 'فشل نسخ الرابط')
     })
   }
 
@@ -476,6 +524,17 @@ export default function Dashboard() {
                   <Plus className="w-4 h-4" />
                 )}
                 كود الربط الخاص بي
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleGenerateTgLink}
+                disabled={tgLinkLoading}
+              >
+                {tgLinkLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <MessageCircle className="w-4 h-4" />
+                )}
+                ربط بوت Telegram
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -1240,6 +1299,109 @@ export default function Dashboard() {
     </Dialog>
   )
 
+  /* ─── Render: Telegram Deep-Link Dialog ────────────── */
+  const renderTgLinkDialog = () => (
+    <Dialog
+      open={tgLinkDialog.open}
+      onOpenChange={(open: boolean) => {
+        if (!open) {
+          setTgLinkDialog({
+            open: false,
+            deep_link_url: '',
+            bot_username: '',
+            expires_in: 600,
+          })
+          setTgLinkCopied(false)
+        }
+      }}
+    >
+      <DialogContent className="bg-slate-900 border-emerald-500/30 sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-white flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-emerald-400" />
+            ربط حسابك مع بوت Telegram
+          </DialogTitle>
+          <DialogDescription className="text-slate-400">
+            افتح الرابط أدناه على هاتفك الذي يحمل تطبيق Telegram، وسيتم ربط
+            حسابك مع البوت تلقائياً.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          {tgLinkDialog.bot_username && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50">
+              <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-xs text-slate-400">اسم البوت:</span>
+              <span className="text-sm text-emerald-300 font-mono" dir="ltr">
+                @{tgLinkDialog.bot_username}
+              </span>
+            </div>
+          )}
+
+          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+            <p className="text-[11px] text-slate-400 mb-1.5">رابط الربط (صالح لمدة {Math.floor(tgLinkDialog.expires_in / 60)} دقيقة):</p>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 text-xs text-emerald-300 bg-slate-900/80 px-2 py-1.5 rounded border border-slate-700/50 break-all"
+                dir="ltr"
+              >
+                {tgLinkDialog.deep_link_url}
+              </code>
+              <button
+                type="button"
+                onClick={() => handleCopyTgLink(tgLinkDialog.deep_link_url)}
+                className="shrink-0 p-1.5 rounded-md hover:bg-slate-700/50 transition-colors text-emerald-400 hover:text-emerald-300"
+                title="نسخ الرابط"
+                aria-label="نسخ الرابط"
+              >
+                {tgLinkCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-amber-300/80 leading-relaxed">
+              <p className="font-medium mb-1">ملاحظات:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>الرابط صالح لاستخدام واحد فقط.</li>
+                <li>تنتهي صلاحية الرابط خلال {Math.floor(tgLinkDialog.expires_in / 60)} دقائق.</li>
+                <li>افتحه على نفس الجهاز الذي تستخدم فيه Telegram.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setTgLinkDialog({
+                open: false,
+                deep_link_url: '',
+                bot_username: '',
+                expires_in: 600,
+              })
+              setTgLinkCopied(false)
+            }}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+          >
+            إغلاق
+          </Button>
+          <a
+            href={tgLinkDialog.deep_link_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+          >
+            <ExternalLink className="w-4 h-4" />
+            فتح الرابط
+          </a>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   /* ─── Main Render ──────────────────────────────────── */
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-950 via-emerald-950/50 to-slate-950">
@@ -1436,6 +1598,7 @@ export default function Dashboard() {
       {renderParamDialog()}
       {renderConfirmDialog()}
       {renderDeleteDialog()}
+      {renderTgLinkDialog()}
     </div>
   )
 }

@@ -11,12 +11,11 @@ import urllib.parse
 from typing import Optional
 from datetime import datetime
 
-from aiohttp import ClientSession, FormData
+from aiohttp import ClientSession, ClientTimeout, FormData
 
 from .config import (
     BOT_TOKEN, ADMIN_CHAT_ID, TG_RATE_LIMIT, TG_DEDUP_SECONDS,
-    SERVER_DOMAIN, SERVER_URL, PAIRING_CODE_CHARS, PAIRING_CODE_LENGTH,
-    PAIRING_CODE_EXPIRE_SECONDS, LINK_CODE_COOLDOWN, VERSION
+    SERVER_DOMAIN, VERSION
 )
 from .store import store
 from .commands import COMMAND_REGISTRY, CMD_CATEGORIES, get_commands_by_category
@@ -29,17 +28,36 @@ _tg_session: ClientSession = None
 polling_active = False
 tg_offset = 0
 
+# Bot username (fetched dynamically via getMe on startup; used to build
+# deep-link URLs for account linking: https://t.me/<bot_username>?start=<token>).
+bot_username: Optional[str] = None
+
 
 async def init_session():
     global _tg_session
     if _tg_session is None or _tg_session.closed:
-        _tg_session = ClientSession(timeout=ClientSession(total=30))
+        _tg_session = ClientSession(timeout=ClientTimeout(total=30))
 
 
 async def close():
     global _tg_session
     if _tg_session and not _tg_session.closed:
         await _tg_session.close()
+
+
+def get_bot_username() -> Optional[str]:
+    """Return the cached bot username (or None if not yet fetched)."""
+    return bot_username
+
+
+def build_deep_link_url(token: str) -> Optional[str]:
+    """Construct a Telegram deep-link URL: https://t.me/<bot>?start=<token>.
+
+    Returns None if bot_username is not yet known.
+    """
+    if not bot_username:
+        return None
+    return f"https://t.me/{bot_username}?start={token}"
 
 
 # ─── Telegram API Helpers ─────────────────────────────────────
@@ -49,7 +67,7 @@ async def api_call(method: str, payload: dict = None, timeout: int = 30) -> dict
     await init_session()
     url = f"{API_BASE}/{method}"
     try:
-        async with _tg_session.post(url, json=payload or {}, timeout=ClientSession(total=timeout)) as resp:
+        async with _tg_session.post(url, json=payload or {}, timeout=ClientTimeout(total=timeout)) as resp:
             result = await resp.json()
             if not result.get('ok'):
                 logger.error(f"TG API error: {method} -> {result}")
@@ -88,7 +106,7 @@ async def send_photo(chat_id: str, photo_data: bytes, caption: str = "", reply_m
     if reply_markup:
         data.add_field("reply_markup", json.dumps(reply_markup), content_type="application/json")
     try:
-        async with _tg_session.post(url, data=data, timeout=ClientSession(total=60)) as resp:
+        async with _tg_session.post(url, data=data, timeout=ClientTimeout(total=60)) as resp:
             result = await resp.json()
             store.messages_sent += 1
             return result
@@ -106,7 +124,7 @@ async def send_document(chat_id: str, file_data: bytes, filename: str = "file", 
     if caption:
         data.add_field("caption", caption)
     try:
-        async with _tg_session.post(url, data=data, timeout=ClientSession(total=120)) as resp:
+        async with _tg_session.post(url, data=data, timeout=ClientTimeout(total=120)) as resp:
             result = await resp.json()
             store.messages_sent += 1
             return result
@@ -126,7 +144,16 @@ async def answer_callback_query(callback_query_id: str, text: str = "", show_ale
 # ─── User Session Management (Multi-User) ─────────────────────
 
 def get_or_create_tg_session(chat_id: str) -> dict:
-    """Get or create an isolated Telegram user session."""
+    """Get or create an isolated Telegram user session.
+
+    Returns the session dict. The caller is responsible for calling
+    `await store.save_tg_sessions()` when an authentication-state mutation
+    happens (login, logout, link account, selected_device change). We do NOT
+    persist here on every get/create to avoid excessive disk I/O for plain
+    menu navigation.
+    """
+    # Normalise chat_id to string for consistent dict keys + JSON keys.
+    chat_id = str(chat_id)
     if chat_id not in store.tg_sessions:
         store.tg_sessions[chat_id] = {
             "chat_id": chat_id,
@@ -139,6 +166,16 @@ def get_or_create_tg_session(chat_id: str) -> dict:
         }
     store.tg_sessions[chat_id]["last_activity"] = time.time()
     return store.tg_sessions[chat_id]
+
+
+async def _persist_tg_session(chat_id: str) -> None:
+    """Persist TG sessions after an auth-state mutation. Best-effort: swallows
+    errors so message handling isn't broken by a disk hiccup.
+    """
+    try:
+        await store.save_tg_sessions()
+    except Exception as e:
+        logger.warning(f"Failed to persist TG session for chat {chat_id}: {e}")
 
 
 def get_user_for_tg(chat_id: str) -> Optional[dict]:
@@ -169,14 +206,36 @@ def get_devices_for_tg(chat_id: str) -> list:
 # ─── Authentication ──────────────────────────────────────────
 
 async def authenticate_tg_user(chat_id: str, username: str, password: str) -> bool:
-    """Authenticate a Telegram user with their platform credentials."""
+    """Authenticate a Telegram user with their platform credentials.
+
+    On successful auth the session is persisted to disk so the user stays
+    logged in across server restarts.
+    """
     user = await store.authenticate_user(username, password)
     if user:
         session = get_or_create_tg_session(chat_id)
         session["authenticated"] = True
         session["user_id"] = user["id"]
+        await _persist_tg_session(chat_id)
         return True
     return False
+
+
+async def link_tg_chat_to_user(chat_id: str, user_id: str) -> bool:
+    """Link a Telegram chat to a web user account via deep-link token.
+
+    Used by the `/start <token>` flow. Persists the session so the link
+    survives restarts. Returns True on success.
+    """
+    user = store.users.get(user_id)
+    if not user:
+        return False
+    session = get_or_create_tg_session(chat_id)
+    session["authenticated"] = True
+    session["user_id"] = user_id
+    session["linked_at"] = datetime.utcnow().isoformat()
+    await _persist_tg_session(chat_id)
+    return True
 
 
 # ─── Keyboard Builders ────────────────────────────────────────
@@ -309,7 +368,7 @@ async def handle_message(chat_id: str, text: str, message_id: int, from_user: di
     """Handle incoming Telegram text messages."""
     text = text.strip()
     session = get_or_create_tg_session(chat_id)
-    
+
     # Dedup
     dedup_key = f"{chat_id}:{message_id}"
     if dedup_key in store._tg_processed_messages:
@@ -317,17 +376,28 @@ async def handle_message(chat_id: str, text: str, message_id: int, from_user: di
     store._tg_processed_messages.add(dedup_key)
     if len(store._tg_processed_messages) > 200:
         store._tg_processed_messages = set(list(store._tg_processed_messages)[-100:])
-    
+
     # Rate limit
     if not store.check_rate_limit(f"tg_chat_{chat_id}", TG_RATE_LIMIT, 30):
         await send_message(chat_id, "⏳ أنت ترسل رسائل بسرعة كبيرة. انتظر قليلاً.")
         return
-    
+
+    # ─── Deep-link account linking via /start <token> ─────────
+    # This is checked BEFORE the authentication gate because the whole point is
+    # to let an unauthenticated user link their chat to a web account by
+    # opening a t.me/<bot>?start=<token> deep-link generated on the dashboard.
+    if text.startswith("/start"):
+        parts = text.split(None, 1)
+        token_arg = parts[1].strip() if len(parts) == 2 else ""
+        if token_arg:
+            await handle_start_token(chat_id, token_arg, session)
+            return
+
     # Handle authentication state
     if not session.get("authenticated"):
         await handle_unauthenticated(chat_id, text, session)
         return
-    
+
     # Handle commands
     if text.startswith("/"):
         cmd = text.split()[0].lower()
@@ -336,6 +406,48 @@ async def handle_message(chat_id: str, text: str, message_id: int, from_user: di
         await send_message(chat_id, "استخدم الأزرار أدناه أو الأوامر المتاحة.\n"
                          "أرسل /help لعرض قائمة الأوامر.",
                          reply_markup=main_menu_keyboard(chat_id))
+
+
+async def handle_start_token(chat_id: str, token: str, session: dict) -> None:
+    """Handle the `/start <token>` deep-link flow.
+
+    The token is a one-time, 10-minute token generated by the web dashboard
+    (POST /api/web/tg_link_token). The server verifies it (no Telegram API
+    call needed — the token lives in store.tg_link_tokens). On success the
+    chat is linked to the user's account, the session is persisted, and a
+    success message is sent. On failure an error message is sent.
+    """
+    token = token.strip()
+    user_id = store.verify_tg_link_token(token)
+    if not user_id:
+        await send_message(chat_id,
+            "❌ رابط الربط غير صالح أو منتهي الصلاحية.\n\n"
+            "💡 يمكنك توليد رابط جديد من لوحة التحكم على الويب "
+            "(زر «ربط بوت Telegram»)، أو تسجيل الدخول يدوياً بإرسال:\n"
+            "<code>اسم_المستخدم كلمة_المرور</code>",
+            reply_markup=inline_keyboard([[("🔐 تسجيل الدخول", "do_login")]]))
+        return
+
+    user = store.users.get(user_id)
+    if not user:
+        await send_message(chat_id,
+            "❌ الحساب المرتبط بهذا الرابط غير موجود.",
+            reply_markup=inline_keyboard([[("🔐 تسجيل الدخول", "do_login")]]))
+        return
+
+    ok = await link_tg_chat_to_user(chat_id, user_id)
+    if not ok:
+        await send_message(chat_id, "❌ تعذّر ربط الحساب. حاول مرة أخرى.")
+        return
+
+    await send_message(chat_id,
+        f"✅ <b>تم ربط حسابك بنجاح!</b>\n\n"
+        f"👤 المستخدم: <b>{user['username']}</b>\n"
+        f"📧 البريد: {user['email']}\n"
+        f"🆔 معرف المستخدم: <code>{user['id']}</code>\n\n"
+        f"يمكنك الآن التحكم في أجهزتك من خلال هذا البوت. "
+        f"أرسل /menu لعرض القائمة الرئيسية.",
+        reply_markup=main_menu_keyboard(chat_id))
 
 
 async def handle_unauthenticated(chat_id: str, text: str, session: dict):
@@ -350,12 +462,13 @@ async def handle_unauthenticated(chat_id: str, text: str, session: dict):
         if admin_user:
             session["authenticated"] = True
             session["user_id"] = admin_user["id"]
+            await _persist_tg_session(chat_id)
             await send_message(chat_id, f"✅ مرحباً {admin_user['username']}!\n"
                              f"تم تسجيل الدخول تلقائياً كمسؤول.\n\n"
                              f"معرف المستخدم: <code>{admin_user['id']}</code>",
                              reply_markup=main_menu_keyboard(chat_id))
             return
-    
+
     # Parse login attempt: "username password"
     parts = text.split(None, 1)
     if len(parts) == 2:
@@ -369,11 +482,14 @@ async def handle_unauthenticated(chat_id: str, text: str, session: dict):
                              reply_markup=main_menu_keyboard(chat_id))
         else:
             await send_message(chat_id, "❌ خطأ في اسم المستخدم أو كلمة المرور.\n"
-                             "أرسل: <code>اسم_المستخدم كلمة_المرور</code>")
+                             "أرسل: <code>اسم_المستخدم كلمة_المرور</code>\n\n"
+                             "💡 أو استخدم ربط الحساب عبر رابط deep-link من لوحة التحكم.")
         return
-    
+
     await send_message(chat_id, "🔐 يجب تسجيل الدخول أولاً\n\n"
-                     "أرسل: <code>اسم_المستخدم كلمة_المرور</code>\n\n"
+                     "الطريقة المُفضّلة: اربط حسابك عبر رابط deep-link من لوحة التحكم على الويب "
+                     "(زر «ربط بوت Telegram»).\n\n"
+                     "أو أرسل يدوياً: <code>اسم_المستخدم كلمة_المرور</code>\n\n"
                      "مثال:\n<code>admin admin</code>",
                      reply_markup=inline_keyboard([[("🔐 تسجيل الدخول", "do_login")]]))
 
@@ -431,12 +547,20 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
         await send_message(chat_id, text, reply_markup=device_list_keyboard(chat_id))
     
     elif cmd == "/link":
-        code_data = store.generate_pairing_code(user['id'])
-        code = code_data['code']
+        # Lifelong permanent code (one per user, stored in Firebase as the
+        # verification intermediary). NOT a short-lived pairing code.
+        code = await store.get_or_create_permanent_code(user['id'])
+        # Best-effort sync to Firebase so the Android client can verify against it.
+        if _fb.firebase_connected:
+            try:
+                from .firebase_client import sync_permanent_code
+                await sync_permanent_code(user['email'], code, user['id'])
+            except Exception as e:
+                logger.warning(f"Failed to sync permanent code to Firebase: {e}")
         await send_message(chat_id,
-            f"🔗 <b>كود الربط</b>\n\n"
+            f"🔗 <b>كود الربط الخاص بك</b>\n\n"
             f"<code>{code}</code>\n\n"
-            f"⏰ صالح لمدة {PAIRING_CODE_EXPIRE_SECONDS // 60} دقائق\n"
+            f"♾️ هذا الكود صالح مدى الحياة — لا يحتاج للتجديد.\n"
             f"📱 أدخل هذا الكود في تطبيق الجهاز للربط.",
             reply_markup=main_menu_keyboard(chat_id))
     
@@ -444,6 +568,10 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
         device_id = args[0]
         success = await store.unlink_device(device_id, user['id'])
         if success:
+            # Clear selected_device if it was the unlinked one (state mutation).
+            if session.get("selected_device") == device_id:
+                session["selected_device"] = None
+                await _persist_tg_session(chat_id)
             await send_message(chat_id, f"✅ تم فك ربط الجهاز {device_id}", reply_markup=main_menu_keyboard(chat_id))
         else:
             await send_message(chat_id, "❌ فشل فك الربط. تأكد من معرف الجهاز.")
@@ -567,11 +695,17 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
                              reply_markup=command_category_picker(session["selected_device"]))
     
     elif callback_data == "do_link":
-        code_data = store.generate_pairing_code(user['id'])
-        code = code_data['code']
+        # Lifelong permanent code (one per user, stored in Firebase).
+        code = await store.get_or_create_permanent_code(user['id'])
+        if _fb.firebase_connected:
+            try:
+                from .firebase_client import sync_permanent_code
+                await sync_permanent_code(user['email'], code, user['id'])
+            except Exception as e:
+                logger.warning(f"Failed to sync permanent code to Firebase: {e}")
         await send_message(chat_id,
-            f"🔗 <b>كود الربط</b>\n\n<code>{code}</code>\n\n"
-            f"⏰ صالح لمدة {PAIRING_CODE_EXPIRE_SECONDS // 60} دقائق",
+            f"🔗 <b>كود الربط الخاص بك</b>\n\n<code>{code}</code>\n\n"
+            f"♾️ صالح مدى الحياة — لا يحتاج للتجديد.",
             reply_markup=main_menu_keyboard(chat_id))
     
     # ─── Server Management ────────────────────────────────────
@@ -614,13 +748,15 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
         if device.get('owner_id') != user['id'] and user.get('role') != 'admin':
             await send_message(chat_id, "⛔ ليس لديك صلاحية للوصول إلى هذا الجهاز.")
             return
+        # Persist the selected_device change (state mutation worth saving).
         session["selected_device"] = device_id
+        await _persist_tg_session(chat_id)
         online = store._device_last_online.get(device_id, False)
         battery = device.get('battery', 'N/A')
         model = device.get('model', 'Unknown')
         brand = device.get('brand', '')
         os_ver = device.get('os', '')
-        
+
         text = (
             f"📱 <b>{model}</b>\n\n"
             f"🏷️ المعرف: <code>{device_id}</code>\n"
@@ -673,6 +809,10 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
         device_id = callback_data[len("do_unlink_"):]
         success = await store.unlink_device(device_id, user['id'])
         if success:
+            # Clear selected_device if it was the unlinked one (state mutation).
+            if session.get("selected_device") == device_id:
+                session["selected_device"] = None
+                await _persist_tg_session(chat_id)
             await send_message(chat_id, f"✅ تم فك ربط الجهاز.", reply_markup=main_menu_keyboard(chat_id))
         else:
             await send_message(chat_id, "❌ فشل فك الربط.")
@@ -797,7 +937,7 @@ async def poll_loop():
             url = f"{API_BASE}/getUpdates"
             payload = {"offset": tg_offset, "timeout": 30, "allowed_updates": ["message", "callback_query"]}
             
-            async with _tg_session.post(url, json=payload, timeout=ClientSession(total=35)) as resp:
+            async with _tg_session.post(url, json=payload, timeout=ClientTimeout(total=35)) as resp:
                 data = await resp.json()
             
             if not data.get('ok'):
@@ -844,13 +984,28 @@ async def poll_loop():
 
 async def start_bot():
     """Start the Telegram bot polling."""
+    global bot_username
+
+    # Fetch the bot username dynamically via getMe — used for building
+    # deep-link URLs (https://t.me/<bot_username>?start=<token>) for the
+    # account-linking flow. Cached globally so api_handlers can expose it.
+    try:
+        me = await api_call("getMe", {})
+        if me and me.get('ok') and me.get('result', {}).get('username'):
+            bot_username = me['result']['username']
+            logger.info(f"Telegram bot username: @{bot_username}")
+        else:
+            logger.warning(f"getMe did not return username: {me}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch bot username via getMe: {e}")
+
     # Set bot commands
     await api_call("setMyCommands", {
         "commands": [
-            {"command": "start", "description": "القائمة الرئيسية"},
+            {"command": "start", "description": "القائمة الرئيسية / ربط الحساب"},
             {"command": "help", "description": "قائمة الأوامر"},
             {"command": "devices", "description": "قائمة الأجهزة"},
-            {"command": "link", "description": "إنشاء كود ربط"},
+            {"command": "link", "description": "كود الربط الخاص بك (دائم)"},
             {"command": "status", "description": "حالة الخادم"},
             {"command": "stats", "description": "الإحصائيات"},
             {"command": "logs", "description": "آخر السجلات"},
