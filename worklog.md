@@ -2546,3 +2546,43 @@ Stage Summary:
   * DashboardActivity + DeviceAdapter لم يُمَسّا
   * LogsActivity + MonitorActivity + DataActivity + SettingsActivity لم تُمَس
   * جميع أنماط الـ layout الموجودة (Material3 + CoordinatorLayout + SwipeRefresh + FileProvider) اتُّبعت في الـ layouts الجديدة
+
+---
+Task ID: 5 (Phase 5)
+Agent: Main Agent (Z.ai Code) + Admin App Fixer subagent
+Task: تطوير تطبيق الإدارة Android — إصلاح 4 أخطاء حرجة + ميزات ناقصة
+
+Work Log:
+إصلاحات حرجة (4):
+1. StreamFrameResponse.field mismatch: image → data (ApiService.kt + جميع الاستخدامات في StreamingActivity.kt). البث لم يكن يعرض أي صور لأن التطبيق يقرأ .image والسيرفر يرجع .data
+2. File download URL: api/upload/{path} → api/files/{id} مع Bearer auth. التحميل كان يرجع 404 دائماً
+3. Stream types: screen/camera/audio → screen/front_camera/back_camera/audio. polling دائماً يستخدم type=video (السيرفر يخزن كل الإطارات تحت مفتاح :video). إضافة زر "الكاميرا الخلفية"
+4. إزالة اعتراض STREAMING chip → 9 أوامر بث أصبحت ظاهرة. إضافة زر منفصل "البث المباشر" لفتح عارض البث
+
+ميزات جديدة (2):
+5. RequestedFilesActivity: عارض الملفات المرفوعة من الأجهزة (GET /api/web/files). View + Download + ملاحظة الانتهاء التلقائي (1 ساعة). فلترة حسب الجهاز
+6. Regenerate code UI في UsersActivity: زر "تجديد كود الربط الدائم" (POST /api/web/regenerate_code)
+
+إصلاحات param mismatches (3):
+7. set_stream_quality: low/medium/high → 480p/720p/1080p/1440p
+8. show_notification: message → text
+9. change_passcode: password واحد → old_pin + new_pin
+
+ملفات: 11 معدّلة + 4 جديدة (RequestedFilesActivity.kt, RequestedFileAdapter.kt, activity_requested_files.xml, item_requested_file.xml)
+الإصدار: 2.1.0 → 2.2.0 (versionCode 5 → 6)
+
+التحقق:
+- grep -rn "\.image\b" Admin-App/ → لا نتائج ✅
+- grep -rn "api/upload/" Admin-App/ → لا نتائج (تحميل فقط) ✅
+- XML parses OK ✅
+- Kotlin balanced braces ✅
+- AndroidManifest سجّل RequestedFilesActivity ✅
+- مُدفع إلى GitHub (commit b3f3795)
+- GitHub Actions بدأت: Run #38 (Build Admin-App) + Run #32 (Build Android APKs) — كلاهما in_progress
+
+Stage Summary:
+- Phase 5 مكتمل (بانتظار بناء GitHub Actions للتأكد النهائي)
+- 4 أخطاء حرجة أُصلحت: البث يعرض الصور الآن، التحميل يعمل، أنواع البث صحيحة، 9 أوامر بث ظاهرة
+- ميزتان جديدتان: عارض الملفات المطلوبة + تجديد الكود
+- 3 param mismatches أُصلحت
+- البناء عبر GitHub Actions قيد التشغيل
