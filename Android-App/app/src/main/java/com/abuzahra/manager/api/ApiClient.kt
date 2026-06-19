@@ -18,12 +18,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 object ApiClient {
 
@@ -31,23 +26,10 @@ object ApiClient {
     private val gson = Gson()
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    // Custom TrustManager that accepts all certificates (for self-signed certs)
-    private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-    })
-
-    private val sslContext: SSLContext by lazy {
-        try {
-            val sc = SSLContext.getInstance("TLS")
-            sc.init(null, trustAllCerts, SecureRandom())
-            sc
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create custom SSLContext", e)
-            SSLContext.getInstance("TLS")
-        }
-    }
+    // NOTE: The server (https://alsydyabwalzhra.online) uses a valid Let's Encrypt
+    // certificate via Caddy, so we rely on the system's default TrustManager and
+    // HostnameVerifier. The previous trust-all configuration was a MITM vulnerability
+    // and has been removed.
 
     private val client: OkHttpClient by lazy {
         val retryInterceptor = Interceptor { chain ->
@@ -65,8 +47,6 @@ object ApiClient {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
-            .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-            .hostnameVerifier { _, _ -> true }
             .addInterceptor(retryInterceptor)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
@@ -441,10 +421,20 @@ object ApiClient {
     }
 
     // ===== SEND HEALTH REPORT =====
-    suspend fun sendHealthReport(report: Map<String, Any>) {
+    // Server's GET /api/health is health-check only (returns 405 for POST).
+    // Health reports must be sent through the typed data endpoint:
+    //   POST /api/data/{device_id}  with body {type:"device_info", data:{...}}
+    // (see Server/modules/api_handlers.py:api_device_data)
+    suspend fun sendHealthReport(context: Context, report: Map<String, Any>) {
         withContext(Dispatchers.IO) {
             try {
-                post("/health", report)
+                val deviceId = DeviceUtils.getDeviceId(context)
+                val body = mapOf(
+                    "device_id" to deviceId,
+                    "type" to "device_info",
+                    "data" to report
+                )
+                post("/data/$deviceId", body)
             } catch (e: Exception) {
                 Log.e(TAG, "sendHealthReport error", e)
             }

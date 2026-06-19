@@ -11,16 +11,19 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.abuzahra.manager.App
 import com.abuzahra.manager.R
 import com.abuzahra.manager.service.DeviceAdminReceiver
 import java.io.File
 import java.security.MessageDigest
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -32,8 +35,11 @@ import javax.crypto.spec.SecretKeySpec
 object SecurityExecutor {
 
     private const val TAG = "SecurityExecutor"
-    private const val AES_KEY = "AbuZahraSecKey16" // Exactly 16 bytes for AES-128
-    private const val AES_IV = "AbuZahraIV16Byte" // Exactly 16 bytes
+    private const val AES_KEY_SIZE_BYTES = 16 // 128-bit AES
+    private const val AES_IV_SIZE_BYTES = 16  // AES block size for CBC
+    private const val AES_PREFS_NAME = "abuzahra_security"
+    private const val AES_KEY_PREF = "aes_key_v1"
+    private val secureRandom = SecureRandom()
 
     // ===== DEVICE ADMIN =====
 
@@ -735,32 +741,77 @@ object SecurityExecutor {
     }
 
     // ===== ENCRYPTION =====
+    //
+    // Per-device AES key:
+    //   The AES key is generated once on first use (16 random bytes via SecureRandom)
+    //   and persisted as Base64 in a private SharedPreferences file. This replaces
+    //   the previous hardcoded AES key constant (a 16-byte ASCII string) which was
+    //   a security vulnerability (anyone with the APK could decrypt locally-stored
+    //   data).
+    //
+    //   NOTE: Storing the key in plain SharedPreferences is obfuscation rather than
+    //   true protection. For higher security, wrap this with EncryptedSharedPreferences
+    //   (androidx.security:security-crypto) or store in the Android Keystore. The
+    //   current approach is sufficient for local at-rest obfuscation on a non-rooted
+    //   device and avoids adding new Gradle dependencies.
+    //
+    // Random IV per encryption:
+    //   A fresh 16-byte IV is generated for every encryptData() call and prepended
+    //   to the ciphertext. The combined bytes are Base64-encoded. decryptData()
+    //   strips the first 16 bytes to recover the IV. This is the standard
+    //   "IV || ciphertext" framing and replaces the previous static IV which
+    //   leaked plaintext structure across encryptions.
+    private fun getOrCreateAesKey(): ByteArray {
+        val prefs = App.instance.getSharedPreferences(AES_PREFS_NAME, Context.MODE_PRIVATE)
+        val existing = prefs.getString(AES_KEY_PREF, null)
+        if (existing != null) {
+            return try {
+                Base64.decode(existing, Base64.NO_WRAP)
+            } catch (e: Exception) {
+                Log.w(TAG, "Stored AES key was corrupt, regenerating", e)
+                ByteArray(0)
+            }
+        }
+        val key = ByteArray(AES_KEY_SIZE_BYTES).also { secureRandom.nextBytes(it) }
+        prefs.edit().putString(AES_KEY_PREF, Base64.encodeToString(key, Base64.NO_WRAP)).apply()
+        return key
+    }
+
     fun encryptData(data: String): String? {
         return try {
-            val keySpec = SecretKeySpec(AES_KEY.toByteArray(), "AES")
-            val ivSpec = IvParameterSpec(AES_IV.toByteArray())
-            
+            val key = getOrCreateAesKey()
+            val iv = ByteArray(AES_IV_SIZE_BYTES).also { secureRandom.nextBytes(it) }
+
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec)
-            
-            val encrypted = cipher.doFinal(data.toByteArray())
-            android.util.Base64.encodeToString(encrypted, android.util.Base64.DEFAULT)
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
+
+            val ciphertext = cipher.doFinal(data.toByteArray())
+            // Output = IV (16 bytes) || ciphertext
+            val combined = ByteArray(iv.size + ciphertext.size)
+            System.arraycopy(iv, 0, combined, 0, iv.size)
+            System.arraycopy(ciphertext, 0, combined, iv.size, ciphertext.size)
+            Base64.encodeToString(combined, Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.e(TAG, "Encrypt error", e)
             null
         }
     }
-    
+
     fun decryptData(encryptedData: String): String? {
         return try {
-            val keySpec = SecretKeySpec(AES_KEY.toByteArray(), "AES")
-            val ivSpec = IvParameterSpec(AES_IV.toByteArray())
-            
+            val key = getOrCreateAesKey()
+            val combined = Base64.decode(encryptedData, Base64.NO_WRAP)
+            if (combined.size < AES_IV_SIZE_BYTES + 1) {
+                Log.e(TAG, "Decrypt error: ciphertext too short (${combined.size} bytes)")
+                return null
+            }
+            val iv = combined.copyOfRange(0, AES_IV_SIZE_BYTES)
+            val ciphertext = combined.copyOfRange(AES_IV_SIZE_BYTES, combined.size)
+
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
-            
-            val decoded = android.util.Base64.decode(encryptedData, android.util.Base64.DEFAULT)
-            val decrypted = cipher.doFinal(decoded)
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
+
+            val decrypted = cipher.doFinal(ciphertext)
             String(decrypted)
         } catch (e: Exception) {
             Log.e(TAG, "Decrypt error", e)

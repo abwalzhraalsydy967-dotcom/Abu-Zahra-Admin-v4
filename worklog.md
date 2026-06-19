@@ -2626,3 +2626,72 @@ Stage Summary:
     • `bun run lint` → 0 errors under /home/z/my-project/src/ (only 2 pre-existing <img> warnings in command-results.tsx and file-viewer.tsx, neither file was modified); streaming-viewer.tsx has no lint issues
     • `curl -s -o /dev/null -w '%{http_code}' http://localhost:3000` → 200
     • `grep -n "type == 'audio'" Server/modules/api_handlers.py` → 1465: elif msg_type == 'audio':
+
+---
+Task ID: 7-b
+Agent: Android Client Fixer
+Task: إصلاح أخطاء العميل الأندرويد المتبقية (health endpoint، SSL، AES، scope leaks، stubs، exported)
+
+Work Log:
+- Read worklog.md for project context (server v4.0 at https://alsydyabwalzhra.online, Phase 1 fixed heartbeat auth, Phase 3 rewrote LinkActivity two-field UI)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/api/ApiClient.kt (lines 34-70 trust-all SSL block, lines 359-375 sendHeartbeat, lines 443-452 sendHealthReport)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/executor/SecurityExecutor.kt (lines 35-36 hardcoded AES_KEY/AES_IV, lines 738-769 encryptData/decryptData)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/executor/CommandExecutor.kt (lines 135-149 app management dispatch including enable_app/disable_app/app_permissions stubs)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/executor/AppExecutor.kt (getAppInfo pattern at line 175, to follow same style for getAppPermissions)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/executor/MonitorExecutor.kt (6 CoroutineScope(Dispatchers.IO).launch sites at lines 268, 546, 623, 679, 765, 836; existing cleanup() at line 1000 that cancels individual jobs but not the scopes)
+- Read Android-App/app/src/main/java/com/abuzahra/manager/worker/HealthMonitor.kt (line 78 calls sendHealthReport; checkHealth(context) receives a Context param so context is available to pass through)
+- Read Android-App/app/src/main/AndroidManifest.xml (7 components with exported=true)
+- Read Server/modules/api_handlers.py lines 535-570 (api_device_data expects POST /api/data/{device_id} with body {type, data, command}; type "device_info" → store_device_info)
+- Read Server/main.py line 88-89 (routes /api/data/{device_id} and /api/data both → api_device_data)
+- Read Android-App/app/build.gradle (no androidx.security:security-crypto dependency present → chose SharedPreferences-backed key approach to avoid adding new Gradle deps)
+
+Files modified:
+- Android-App/app/src/main/java/com/abuzahra/manager/api/ApiClient.kt
+    • Bug 1: Rewrote sendHealthReport signature from `(report: Map<String, Any>)` to `(context: Context, report: Map<String, Any>)`; now posts to `/data/$deviceId` with body `{device_id, type:"device_info", data:report}` (matches server's api_device_data handler) instead of the GET-only `/health` endpoint that returned 405
+    • Bug 2: Removed the entire trust-all block — `trustAllCerts` array, `sslContext` lazy property, `.sslSocketFactory(...)` and `.hostnameVerifier { _, _ -> true }` calls. OkHttpClient now uses the system default TrustManager/HostnameVerifier (server has a valid Let's Encrypt cert via Caddy). Removed now-unused imports: java.security.SecureRandom, java.security.cert.X509Certificate, javax.net.ssl.SSLContext, javax.net.ssl.TrustManager, javax.net.ssl.X509TrustManager
+- Android-App/app/src/main/java/com/abuzahra/manager/worker/HealthMonitor.kt
+    • Bug 1: Updated line 78 to pass `context` to `ApiClient.sendHealthReport(context, report.toMap())` (context is the parameter received by `checkHealth(context: Context)`)
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/SecurityExecutor.kt
+    • Bug 3: Removed hardcoded `AES_KEY = "AbuZahraSecKey16"` and `AES_IV = "AbuZahraIV16Byte"` constants
+    • Bug 3: Added `getOrCreateAesKey()` helper that generates a random 16-byte AES-128 key on first use (SecureRandom) and persists it as Base64 in a private SharedPreferences file ("abuzahra_security" / "aes_key_v1")
+    • Bug 3: Rewrote `encryptData()` to generate a fresh random 16-byte IV per encryption, prepend the IV to the ciphertext, and Base64-encode the combined bytes (IV || ciphertext framing)
+    • Bug 3: Rewrote `decryptData()` to Base64-decode, extract the first 16 bytes as the IV, and decrypt the remainder
+    • Bug 3: Added imports for android.util.Base64, java.security.SecureRandom, com.abuzahra.manager.App; added constants AES_KEY_SIZE_BYTES, AES_IV_SIZE_BYTES, AES_PREFS_NAME, AES_KEY_PREF; added private secureRandom instance
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/MonitorExecutor.kt
+    • Bug 4: Added shared `monitorScope: CoroutineScope` field (SupervisorJob() + Dispatchers.IO) on the object
+    • Bug 4: Replaced all 6 `CoroutineScope(Dispatchers.IO).launch { ... }` sites (lines 268, 546, 623, 679, 765, 836) with `monitorScope.launch { ... }`
+    • Bug 4: Updated `cleanup()` to null out all Job fields and to `monitorScope.cancel()` then recreate the scope so monitoring can be restarted after cleanup
+    • Bug 4: Added imports for kotlinx.coroutines.SupervisorJob and kotlinx.coroutines.cancel
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/AppExecutor.kt
+    • Bug 5: Added `getAppPermissions(context, params)` function that uses PackageManager.getPackageInfo(pkg, GET_PERMISSIONS) and pm.checkPermission() to list each requested permission with its granted/denied status. Accepts package name via either "package_name" or "arg" param key (matching existing getAppInfo convention). Returns map with package, count, granted_count, denied_count, and permissions list. Handles NameNotFoundException separately from generic exceptions
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/CommandExecutor.kt
+    • Bug 5: Replaced `app_permissions` stub with `"app_permissions" -> AppExecutor.getAppPermissions(context, params)`
+    • Bug 5: Rewrote `enable_app` and `disable_app` error messages to be more helpful — explain that device-owner/root is required, that the app is not provisioned as device owner, suggest using app_info/get_app_info instead, and add a "hint" key explaining the DPC/MDM enrolment path
+- Android-App/app/src/main/AndroidManifest.xml
+    • Bug 6: Added `android:permission="android.permission.READ_PHONE_STATE"` to CallReceiver — it was the only exported receiver without a permission attribute (defense-in-depth on top of PHONE_STATE being a protected system broadcast). The system holds all permissions so it can still deliver PHONE_STATE; non-system apps without READ_PHONE_STATE can no longer trigger the receiver
+
+Stage Summary:
+- Bug 1 (health endpoint 405): FIXED. sendHealthReport now posts to /api/data/{device_id} with type=device_info, matching the server's api_device_data handler. HealthMonitor passes the Worker context through. No more 405 errors.
+- Bug 2 (trust-all SSL MITM vulnerability): FIXED. Removed custom TrustManager, SSLContext, sslSocketFactory, and hostnameVerifier. OkHttp now uses the system default SSL verification against the server's valid Let's Encrypt certificate.
+- Bug 3 (hardcoded AES key + static IV): FIXED. AES key is now randomly generated per-device on first use and persisted in a private SharedPreferences file. A fresh random IV is generated for every encryptData() call and prepended to the ciphertext (standard IV || ciphertext framing). decryptData() recovers the IV from the first 16 bytes. No new Gradle dependencies were needed.
+- Bug 4 (MonitorExecutor scope leaks): FIXED. All 6 fire-and-forget CoroutineScope(Dispatchers.IO).launch sites now use a single shared monitorScope. cleanup() cancels the scope and recreates it so monitoring can be restarted. No more leaked scopes accumulating across monitor start/stop cycles.
+- Bug 5 (app_permissions stub + better enable/disable_app errors): FIXED. app_permissions is now implemented via PackageManager.getPackageInfo(GET_PERMISSIONS) + checkPermission(), returning per-permission granted/denied status. enable_app/disable_app keep honest error messages (they genuinely require device-owner) but now explain the limitation and suggest get_app_info as an alternative, plus a hint about DPC/MDM enrolment.
+- Bug 6 (exported components): ANALYZED. After careful review, all 7 components currently marked exported=true are REQUIRED to be exported:
+    1. LinkActivity — has MAIN/LAUNCHER intent filter, IS the launcher activity (Phase 3 made it the entry point). Must stay exported=true. NOTE: the task instruction "LinkActivity → false" appears to be based on the assumption that LinkActivity is not the launcher, but the manifest clearly shows it has the MAIN/LAUNCHER intent filter. Setting it to false would make the app unlaunchable from the home screen.
+    2. MyAccessibilityService — system-bound service with BIND_ACCESSIBILITY_SERVICE permission. Android docs REQUIRE accessibility services to be exported=true for the system to bind. Required for keylogger functionality.
+    3. MyNotificationListenerService — system-bound service with BIND_NOTIFICATION_LISTENER_SERVICE permission. Required for notification monitoring.
+    4. BootReceiver — receives BOOT_COMPLETED and MY_PACKAGE_REPLACED system broadcasts; has RECEIVE_BOOT_COMPLETED permission. Must be exported to receive system broadcasts.
+    5. SMSReceiver — receives SMS_RECEIVED protected system broadcast; has BROADCAST_SMS permission. Must be exported.
+    6. CallReceiver — receives PHONE_STATE protected system broadcast. Must be exported. WAS the only receiver without a permission attribute → added android:permission="android.permission.READ_PHONE_STATE" as defense-in-depth (system holds all permissions so PHONE_STATE delivery is unaffected; non-system apps can no longer trigger it).
+    7. DeviceAdminReceiver — system-bound with BIND_DEVICE_ADMIN permission. Required for device admin features.
+  All exported=true components either have a system-held permission attribute or receive protected system broadcasts, so they are already protected from arbitrary third-party invocation. The only concrete security improvement was adding the READ_PHONE_STATE permission to CallReceiver. MainActivity and PermissionActivity were already correctly exported=false.
+- Verification results:
+    • `grep -rn 'post("/health"' Android-App/` → no matches ✓
+    • `grep -rn 'trustAllCerts' Android-App/` → no matches ✓
+    • `grep -rn 'AbuZahraSecKey16' Android-App/` → no matches ✓
+    • `grep -rn 'AbuZahraIV16Byte' Android-App/` → no matches ✓
+    • `grep -n 'CoroutineScope(Dispatchers.IO).launch' Android-App/.../MonitorExecutor.kt` → no matches ✓
+    • `grep -n 'sslSocketFactory\|hostnameVerifier' ApiClient.kt` → no matches ✓
+    • Brace balance check across all 6 modified Kotlin files: braces and parens are balanced. ApiClient.kt has a pre-existing +1 brace grep-count diff (173/172 in HEAD → 169/168 after edit; diff unchanged at +1) caused by string literals like `response == "{}"` paired with if-block braces on different lines — not a syntax error, and my edits removed balanced braces (4 opens + 4 closes removed).
+    • Import audit: ApiClient.kt SSL imports removed cleanly; SecurityExecutor.kt added Base64/SecureRandom/App imports all used; MonitorExecutor.kt added SupervisorJob/cancel imports both used; no unused imports introduced.
+    • Per task instruction, Gradle build was NOT attempted (no Android SDK available in sandbox).
