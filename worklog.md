@@ -181,3 +181,43 @@ Stage Summary:
 - البنية متعددة المكونات متاحة: Web Dashboard (src/)، Android apps (Admin-App، Android-App)، Python Server
 - ملاحظة: API routes التي تستخدم firebase-admin تتطلب ملف credentials/firebase-admin-sdk.json (غير مضمن في المستودع لأنه متجاهل)
 - لاحقاً يمكن للمستخدم إعداد .env.local بقيم Firebase الخاصة به أو الاعتماد على القيم الافتراضية المضمنة في الكود
+
+---
+Task ID: 10
+Agent: Main Agent (Z.ai Code)
+Task: الاتصال بسيرفر الإنتاج وفحص مشروع الباك إند المنشور
+
+Work Log:
+- عميل SSH غير مثبت في الـ sandbox (لا صلاحيات root للتثبيت)، تم تثبيت paramiko عبر pip في الـ venv
+- الاتصال الناجح بالسيرفر root@216.128.156.226 (hostname: facebook-bot, Ubuntu 22.04)
+- فحص بنية المشروع المنشور في /opt/abu-zahra/:
+  * Server/ - باك إند Python (aiohttp) v4.0 مع main.py + modules/ (api_handlers, commands, config, store, telegram_bot, firebase_client, file_storage, dashboard_html)
+  * web/ - Next.js standalone build (server.js + .next/)
+  * data/ - تخزين الملفات (temp + uploads)
+- فحص خدمات systemd:
+  * abu-zahra.service (Python Server على port 8080) - active + enabled
+  * abu-zahra-web.service (Next.js على port 3001) - active + enabled
+  * caddy (reverse proxy على 80/443) - active + enabled
+- فحص Caddyfile: النطاق alsydyabwalzhra.online، /api/* → 8080، /ws/* → 8080 (WebSocket 24h)، /api/auth/* و/_next/* → 3001، الباقي → 3001
+- فحص .env على السيرفر: يحتوي BOT_TOKEN، ADMIN_CHAT_ID، FIREBASE_DB_SECRET، ADMIN_PASSWORD=changeme
+- التحقق من الصحة عبر الإنترنت: https://alsydyabwalzhra.online/api/health يعمل (HTTP 200) ويعيد {"ok":true, "version":"4.0.0", "firebase":true, "devices":1, "commands":27}
+- جهاز أندرويد واحد متصل فعلياً ويرسل heartbeats: SM-N960U (Samsung) مع owner_id USR-1FAA00623113
+- مقارنة بنية المستودع: مستودعنا GitHub (abwalzhraalsydy967-dotcom/Abu-Zahra-Admin-v4) يحتوي Server/main.py + Server/modules/ — يطابق تماماً الكود المنشور v4.0 ✅
+- /tmp/abu-zahra-new على السيرفر هو clone من مستودع مختلف (abwalzhraalsydy48-hue/Abu-Zahra-Admin-New) بنسخة قديمة (server.py monolithic + Flask) — لا علاقة له بالمنشور الحالي
+- /opt/abu-zahra ليس git repo (تم النشر يدوياً)
+
+مشاكل مكتشفة في السجلات:
+1. Python Server: أخطاء متكررة "Upload error: Connection lost" حول 14:06-14:07 (فشل رفع ملفات من الجهاز)
+2. Next.js Web: أخطاء "Failed to find Server Action" — البناء المنشور غير متزامن مع ما يتوقعه العميل (Build stale / cache mismatch)
+
+موارد السيرفر:
+- الذاكرة: 950MB إجمالي، 221MB مستخدم، 558MB متاح
+- القرص: 23GB إجمالي، 9.9GB مستخدم (46%)، 12GB متاح
+
+Stage Summary:
+- السيرفر الإنتاجي يعمل بشكل صحي على https://alsydyabwalzhra.online
+- مستودع GitHub الحالي (Abu-Zahra-Admin-v4) هو المصدر المطابق للكود المنشور v4.0
+- البنية: Client (Android) → Caddy (443) → {Python Server (8080), Next.js (3001)} ← Firebase RTDB + Telegram Bot
+- جهاز أندرويد واحد متصل وفعال
+- المشروع جاهز للعمل عليه: يمكن تعديل الكود محلياً في الـ sandbox ثم نشره على السيرفر عبر SCP/rsync وإعادة تشغيل الخدمات
+- يُنصح بمعالجة: (1) أخطاء Upload Connection lost، (2) تحديث بناء Next.js لحل خطأ Server Actions، (3) تغيير ADMIN_PASSWORD الافتراضي
