@@ -9,6 +9,7 @@ import {
   Monitor,
   Camera,
   Video,
+  Mic,
   Loader2,
   AlertCircle,
   RefreshCw,
@@ -24,7 +25,7 @@ interface Props {
   device: Device
 }
 
-type StreamType = 'screen' | 'front_camera' | 'back_camera'
+type StreamType = 'screen' | 'front_camera' | 'back_camera' | 'audio'
 type StreamStatus = 'idle' | 'starting' | 'active' | 'stopping' | 'error'
 
 const STREAM_TYPES: {
@@ -33,6 +34,9 @@ const STREAM_TYPES: {
   icon: typeof Monitor
   startCmd: string
   stopCmd: string
+  /** When true, the server-side JPEG polling loop is skipped (audio uses its own
+   *  streaming pipeline and does not benefit from repeated record_audio commands). */
+  skipJpegLoop?: boolean
 }[] = [
   {
     value: 'screen',
@@ -55,7 +59,17 @@ const STREAM_TYPES: {
     startCmd: 'start_camera_stream',
     stopCmd: 'stop_camera_stream',
   },
+  {
+    value: 'audio',
+    label: 'البث الصوتي',
+    icon: Mic,
+    startCmd: 'start_audio_stream',
+    stopCmd: 'stop_audio_stream',
+    skipJpegLoop: true,
+  },
 ]
+
+const isAudioType = (t: StreamType) => t === 'audio'
 
 export default function StreamingViewer({ device }: Props) {
   const [streamType, setStreamType] = useState<StreamType>('screen')
@@ -81,15 +95,26 @@ export default function StreamingViewer({ device }: Props) {
   }, [device.id])
 
   const pollFrame = async () => {
+    const currentType = streamTypeRef.current
+    // Audio frames are AAC chunks, not displayable images — we still poll the
+    // endpoint to confirm the device is streaming, but we don't render the bytes.
+    const fetchType = isAudioType(currentType) ? 'audio' : 'video'
     try {
-      const frame = await api.streamFrame(deviceIdRef.current, 'video')
+      const frame = await api.streamFrame(deviceIdRef.current, fetchType)
       if (frame.ok && frame.data) {
-        setFrameUrl(`data:image/jpeg;base64,${frame.data}`)
+        if (!isAudioType(currentType)) {
+          setFrameUrl(`data:image/jpeg;base64,${frame.data}`)
+        }
         if (frame.timestamp) setFrameTs(frame.timestamp)
         setLastFetchOk(true)
         if (statusRef.current === 'starting') {
           setStatus('active')
-          addLog('success', 'تم استقبال أول إطار من البث')
+          addLog(
+            'success',
+            isAudioType(currentType)
+              ? 'تم استقبال أول إطارات صوتية من البث'
+              : 'تم استقبال أول إطار من البث'
+          )
         }
       } else {
         setLastFetchOk(false)
@@ -137,7 +162,8 @@ export default function StreamingViewer({ device }: Props) {
     addLog('info', `بدء بث ${label}`, `الجهاز: ${device.name}`)
 
     try {
-      const startCmd = STREAM_TYPES.find((t) => t.value === type)!.startCmd
+      const typeConfig = STREAM_TYPES.find((t) => t.value === type)!
+      const startCmd = typeConfig.startCmd
       const cmdRes = await api.sendCommand(device.id, startCmd, {
         camera: type === 'back_camera' ? 'back' : 'front',
       })
@@ -147,13 +173,21 @@ export default function StreamingViewer({ device }: Props) {
         addLog('success', `تم إرسال أمر بدء البث: ${startCmd}`)
       }
 
-      const jpegRes = await api.jpegStreamStart(device.id, type, 3)
-      if (!jpegRes.ok) {
-        addLog('warning', 'تحذير من بدء JPEG stream', jpegRes.message)
+      // The JPEG-poll loop is only useful for visual streams (screen/camera).
+      // For audio the device streams AAC chunks over ws_stream directly, so we
+      // skip the server-side screenshot/record_audio loop entirely.
+      if (!typeConfig.skipJpegLoop) {
+        const jpegRes = await api.jpegStreamStart(device.id, type, 3)
+        if (!jpegRes.ok) {
+          addLog('warning', 'تحذير من بدء JPEG stream', jpegRes.message)
+        }
       }
 
       pollFrame()
-      framePollRef.current = setInterval(pollFrame, 2000)
+      // Audio doesn't need to poll as aggressively — every 3s is enough to
+      // confirm the stream is alive without burning bandwidth on discarded
+      // AAC chunks.
+      framePollRef.current = setInterval(pollFrame, isAudioType(type) ? 3000 : 2000)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
       addLog('error', 'خطأ في بدء البث', msg)
@@ -318,7 +352,70 @@ export default function StreamingViewer({ device }: Props) {
       <div className="rounded-xl border border-slate-800/60 bg-slate-950/60 overflow-hidden">
         <div className="relative aspect-video bg-black flex items-center justify-center">
           <AnimatePresence mode="wait">
-            {frameUrl ? (
+            {isAudioType(streamType) ? (
+              /* Audio streams deliver AAC chunks that cannot be rendered as an
+                 image and are not directly playable in an <audio> tag without
+                 a muxing layer. Instead of pretending to play them, show an
+                 honest "recording in progress" indicator and direct users to
+                 the Files tab for the final recording. */
+              <motion.div
+                key="audio-indicator"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center text-center p-8"
+              >
+                {isActive ? (
+                  <>
+                    <div className="relative mb-4">
+                      <span className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping" />
+                      <div className="relative p-4 rounded-full bg-rose-500/15 border border-rose-500/30">
+                        <Mic className="w-8 h-8 text-rose-400" />
+                      </div>
+                    </div>
+                    <p className="text-sm font-medium text-rose-300">
+                      🎙️ البث الصوتي جارٍ...
+                    </p>
+                    <p className="text-xs mt-2 text-slate-400 max-w-xs">
+                      يتم استقبال إطارات الصوت من الجهاز. سيكون ملف التسجيل
+                      الكامل متاحاً في تبويب «الملفات» بعد انتهاء التسجيل.
+                    </p>
+                    {lastFetchOk === false && (
+                      <p className="text-xs mt-2 text-amber-400/80">
+                        بانتظار أول إطارات صوتية من الجهاز...
+                      </p>
+                    )}
+                  </>
+                ) : isBusy ? (
+                  <>
+                    <Loader2 className="w-10 h-10 mb-3 text-emerald-400/60 animate-spin" />
+                    <p className="text-sm">
+                      {status === 'starting'
+                        ? 'جارٍ تشغيل البث الصوتي...'
+                        : 'جارٍ الإيقاف...'}
+                    </p>
+                  </>
+                ) : status === 'error' ? (
+                  <>
+                    <AlertCircle className="w-10 h-10 mb-3 text-red-400/70" />
+                    <p className="text-sm text-red-300">تعذّر تشغيل البث الصوتي</p>
+                    {errorMsg && (
+                      <p className="text-xs mt-1 text-red-400/60 break-all text-center max-w-xs">
+                        {errorMsg}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-10 h-10 mb-3 text-slate-700" />
+                    <p className="text-sm">البث الصوتي متوقف</p>
+                    <p className="text-xs mt-1 text-slate-600">
+                      اضغط «بدء البث» لبدء استقبال الصوت
+                    </p>
+                  </>
+                )}
+              </motion.div>
+            ) : frameUrl ? (
               <motion.img
                 key={frameUrl.slice(0, 50)}
                 src={frameUrl}
@@ -443,9 +540,19 @@ export default function StreamingViewer({ device }: Props) {
       <div className="text-xs text-slate-500 leading-relaxed p-3 rounded-lg bg-slate-900/40 border border-slate-800/40">
         <p className="font-medium text-slate-400 mb-1">ملاحظات:</p>
         <ul className="list-disc list-inside space-y-0.5 text-slate-500">
-          <li>يتم إرسال أمر البث إلى الجهاز وبدء التقاط الإطارات من الخادم.</li>
-          <li>يُحدّث الإطار تلقائياً كل ثانيتين أثناء النشاط.</li>
-          <li>إذا لم تظهر الإطارات، تأكد من اتصال الجهاز وصلاحيات الكاميرا/الشاشة.</li>
+          {isAudioType(streamType) ? (
+            <>
+              <li>يُرسل الجهاز إطارات الصوت (AAC) عبر WebSocket ولا يمكن تشغيلها مباشرة في المتصفح.</li>
+              <li>يُظهر المؤشر أن التسجيل جارٍ، وسيكون الملف الكامل متاحاً في تبويب «الملفات» بعد الإيقاف.</li>
+              <li>تأكد من صلاحية تسجيل الصوت على الجهاز وإذن الميكروفون.</li>
+            </>
+          ) : (
+            <>
+              <li>يتم إرسال أمر البث إلى الجهاز وبدء التقاط الإطارات من الخادم.</li>
+              <li>يُحدّث الإطار تلقائياً كل ثانيتين أثناء النشاط.</li>
+              <li>إذا لم تظهر الإطارات، تأكد من اتصال الجهاز وصلاحيات الكاميرا/الشاشة.</li>
+            </>
+          )}
           <li>اضغط «إيقاف» قبل مغادرة الصفحة لإيقاف البث على الجهاز.</li>
         </ul>
       </div>

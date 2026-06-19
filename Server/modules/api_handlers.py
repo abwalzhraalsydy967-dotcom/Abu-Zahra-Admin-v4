@@ -1461,6 +1461,28 @@ async def ws_stream(request: web.Request) -> web.Response:
                                             conn['ws'].send_json(data)
                                     except Exception:
                                         pass
+
+                    elif msg_type == 'audio':
+                        # Base64-encoded audio frame (AAC chunks from AudioStreamService).
+                        # Store separately under the "audio" key so the web viewer can poll
+                        # /api/stream/frame/{device_id}?type=audio and so that connected
+                        # viewers receive the chunks in real time.
+                        frame_data = data.get('data', '')
+                        if frame_data:
+                            store.latest_frames[f"{device_id}:audio"] = {
+                                "data": frame_data,
+                                "timestamp": time.time(),
+                                "source": data.get('source', 'audio'),
+                                "size": data.get('size', 0),
+                            }
+                            # Forward to viewers
+                            for conn_key, conn in list(store.stream_connections.items()):
+                                if conn.get('type') == 'viewer' and conn.get('target_stream') == stream_id:
+                                    try:
+                                        if conn.get('ws') and not conn['ws'].closed:
+                                            conn['ws'].send_json(data)
+                                    except Exception:
+                                        pass
                 except json.JSONDecodeError:
                     pass
             
@@ -1521,7 +1543,22 @@ async def ws_stream_viewer(request: web.Request) -> web.Response:
 
 
 async def ws_webrtc_signaling(request: web.Request) -> web.Response:
-    """WebRTC signaling server - SDP offer/answer and ICE candidate exchange."""
+    """WebRTC signaling server - SDP offer/answer and ICE candidate exchange.
+
+    NOTE (2024): This endpoint is currently NOT wired up to any client. The
+    Android ``WebRTCClient`` exists as scaffolding but is never instantiated,
+    and the web dashboard does not open a signaling WebSocket. The active
+    streaming path is the base64-over-WebSocket pipeline:
+
+        device (MediaCodec + Base64)
+          → ``ws_stream``            (api_handlers.ws_stream)
+          → ``store.latest_frames``  (keyed by ``"{device_id}:video|audio"``)
+          → ``/api/stream/frame/{device_id}?type=video|audio``
+          → web viewer (polling)
+
+    This handler is kept in place so a future WebRTC client can be wired up
+    without server changes.
+    """
     token = request.query.get('token', '')
     session = store.validate_session(token)
     if not session:
