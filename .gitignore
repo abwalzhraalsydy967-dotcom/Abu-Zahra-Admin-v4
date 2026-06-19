@@ -51,3 +51,10 @@ __pycache__/
 .idea/
 *.iml
 local.properties
+
+# Sandbox infrastructure (local only - not part of the project)
+/.zscripts/
+/Caddyfile
+/dev.log
+/dev.pid
+/upload/
