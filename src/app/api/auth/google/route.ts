@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminAuth } from '@/lib/firebase-admin'
+import { getAdminAuth, isFirebaseAdminAvailable } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,25 +13,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const auth = getAdminAuth()
-
-    // Verify the Google ID token using Admin SDK
-    const decodedToken = await auth.verifyIdToken(idToken, true)
-    const email = decodedToken.email || ''
-    const name = decodedToken.name || decodedToken.email?.split('@')[0] || ''
-    const uid = decodedToken.uid
-    const picture = decodedToken.picture || ''
-
-    // Forward to the Python server for session creation
     const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'https://alsydyabwalzhra.online'
+
+    // ─── If Firebase Admin SDK is available, verify the token locally first ──
+    // This gives us a verified email + uid before contacting the server.
+    let verifiedEmail = ''
+    let verifiedName = ''
+    let verifiedUid = ''
+    let picture = ''
+
+    if (isFirebaseAdminAvailable()) {
+      try {
+        const auth = getAdminAuth()
+        const decodedToken = await auth.verifyIdToken(idToken, true)
+        verifiedEmail = decodedToken.email || ''
+        verifiedName = decodedToken.name || decodedToken.email?.split('@')[0] || ''
+        verifiedUid = decodedToken.uid
+        picture = decodedToken.picture || ''
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'فشل التحقق من الرمز'
+        return NextResponse.json(
+          { ok: false, message: `فشل التحقق من رمز Google: ${msg}` },
+          { status: 401 }
+        )
+      }
+    }
+
+    // ─── Forward to the Python server for session creation ────────────────
+    // The server verifies the id_token itself (via Firebase identitytoolkit
+    // REST API) when Admin SDK is not used here, acting as the verification
+    // intermediary per the new architecture.
     const serverRes = await fetch(`${serverUrl}/api/web/firebase_auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id_token: idToken,
-        email,
-        display_name: name,
-        uid,
+        email: verifiedEmail,
+        display_name: verifiedName,
+        uid: verifiedUid,
         picture,
       }),
     })
@@ -42,9 +61,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         token: serverData.token,
-        user_id: serverData.user_id || uid,
-        username: serverData.username || name,
-        email: serverData.email || email,
+        user_id: serverData.user_id || verifiedUid,
+        username: serverData.username || verifiedName,
+        email: serverData.email || verifiedEmail,
         role: serverData.role || 'user',
         permanent_code: serverData.permanent_code,
         expires_at: serverData.expires_at,

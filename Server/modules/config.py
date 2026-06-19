@@ -94,6 +94,10 @@ MAX_BATCH_AGE = 600  # 10 minutes
 # ─── CORS ─────────────────────────────────────────────────────
 CORS_ORIGINS = [
     f"https://{SERVER_DOMAIN}",
+    f"https://www.{SERVER_DOMAIN}",
+    "http://localhost:8080",
+    "http://localhost:3001",
+    "http://localhost:3000",  # local dev (sandbox)
     "http://localhost:8443",
 ]
 
