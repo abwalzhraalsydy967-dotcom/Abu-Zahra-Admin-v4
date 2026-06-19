@@ -2586,3 +2586,43 @@ Stage Summary:
 - ميزتان جديدتان: عارض الملفات المطلوبة + تجديد الكود
 - 3 param mismatches أُصلحت
 - البناء عبر GitHub Actions قيد التشغيل
+
+---
+Task ID: 6-bcd
+Agent: Streaming Fixer
+Task: إصلاح نظام البث — إطارات الصوت + توثيق WebRTC + عارض الصوت
+
+Work Log:
+- Read /home/z/my-project/worklog.md (project context)
+- Read Server/modules/api_handlers.py lines 1200-1600 (streaming endpoints, ws_stream, ws_stream_viewer, ws_webrtc_signaling)
+- Read Server/modules/store.py — confirmed `latest_frames: Dict[str, dict]` and `stream_connections: Dict[str, dict]`
+- Read Android-App/.../AudioStreamService.kt lines 560-620 — confirmed `onAudioFrameEncoded` sends `{type:"audio", stream_id, timestamp, source, size, data: base64}`
+- Read Android-App/.../WebRTCClient.kt — confirmed class is never instantiated anywhere in the app (grep across Android-App only matches the file itself)
+- Read src/components/dashboard/streaming-viewer.tsx in full
+- Verified commands.py registers both `start_audio_stream` and `stop_audio_stream`; CommandExecutor.kt dispatches them to StreamExecutor
+
+Files modified:
+- Server/modules/api_handlers.py
+    • Added `elif msg_type == 'audio':` branch in `ws_stream` (line 1465) — stores base64 AAC chunks under `store.latest_frames["{device_id}:audio"]` and forwards to viewers
+    • Expanded docstring on `ws_webrtc_signaling` (line 1545) to note it is currently unwired and to describe the active base64-over-WebSocket pipeline
+- Android-App/.../WebRTCClient.kt
+    • Replaced top-of-file KDoc with a clear NOTE explaining the class is not currently instantiated and documenting the active streaming path (ScreenStreamService/CameraStreamService/AudioStreamService → ws_stream → latest_frames → web polling)
+- src/components/dashboard/streaming-viewer.tsx
+    • Added `Mic` icon import
+    • Extended `StreamType` union with `'audio'`
+    • Added an `audio` entry to `STREAM_TYPES` (start_audio_stream / stop_audio_stream, skipJpegLoop=true)
+    • `pollFrame` now fetches with `type=audio` when streamType is audio; does not try to set frameUrl for audio
+    • `handleStartWith` skips `jpegStreamStart` for audio (server-side record_audio loop would be wrong for a continuous stream) and uses a 3s poll interval instead of 2s
+    • Stream viewer area now renders an honest "🎙️ البث الصوتي جارٍ..." pulsing-mic indicator when streamType is audio (rather than trying to feed AAC chunks to an <img>), with a note that the final recording will be available in the Files tab
+    • Help text adapts to audio vs video streams
+
+Stage Summary:
+- Bug 1 fix: audio frames are now stored under `latest_frames["{device_id}:audio"]` and forwarded to connected viewers in real time, instead of being silently dropped by `ws_stream`
+- Bug 2: `api_stream_frame` already supports any `?type=` value via `key = f"{device_id}:{stream_type}"`; with Bug 1 fixed, `?type=audio` now returns a real frame. No code change needed — verified by reading lines 1202-1220
+- Bug 3: WebRTC dead-end documented in both client (WebRTCClient.kt KDoc) and server (`ws_webrtc_signaling` docstring). Code kept as scaffolding for a future WebRTC wiring
+- Step 5: web audio viewer implemented as an honest "recording in progress" indicator with pulsing mic animation and Files-tab hint. AAC chunks cannot be played directly in an <audio> element without an ADTS/muxing layer, so the indicator avoids pretending to play audio it cannot play
+- Verification results:
+    • `python3 -m py_compile Server/modules/api_handlers.py` → PY_COMPILE_OK
+    • `bun run lint` → 0 errors under /home/z/my-project/src/ (only 2 pre-existing <img> warnings in command-results.tsx and file-viewer.tsx, neither file was modified); streaming-viewer.tsx has no lint issues
+    • `curl -s -o /dev/null -w '%{http_code}' http://localhost:3000` → 200
+    • `grep -n "type == 'audio'" Server/modules/api_handlers.py` → 1465: elif msg_type == 'audio':

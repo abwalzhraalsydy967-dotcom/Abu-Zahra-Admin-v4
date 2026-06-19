@@ -14,12 +14,27 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * WebRTCClient - WebRTC client for real-time streaming
- * Handles signaling, peer connection management, and media streaming
- * 
- * Note: This is a lightweight WebRTC signaling client that works with a WebRTC server.
- * For full WebRTC support, you would typically use the official Google WebRTC library.
- * This implementation uses WebSocket for signaling and can be extended for full WebRTC.
+ * WebRTCClient - WebRTC client for real-time streaming.
+ *
+ * NOTE (2024): This class is NOT currently wired up. It is never instantiated
+ * anywhere in the Android app and the server's ``ws_webrtc_signaling``
+ * endpoint has no client connecting to it. It is retained as scaffolding so
+ * a future WebRTC-based streaming path can be wired up without rewriting the
+ * signaling layer.
+ *
+ * The ACTIVE streaming path used today is base64-over-WebSocket:
+ *
+ *   - ScreenStreamService  → ws_stream (type="frame", base64 JPEG/H.264)
+ *   - CameraStreamService  → ws_stream (type="frame", base64 JPEG/H.264)
+ *   - AudioStreamService   → ws_stream (type="audio", base64 AAC chunks)
+ *
+ * These services are managed by ``StreamManager`` and reach the server via
+ * the ``/ws/stream?device_id=X&stream_id=Y`` endpoint, where frames are
+ * stored in ``store.latest_frames`` for the web viewer to poll.
+ *
+ * For full WebRTC support, you would typically use the official Google
+ * WebRTC library. This implementation uses WebSocket for signaling and can
+ * be extended for full WebRTC.
  */
 class WebRTCClient(
     private val context: Context,
