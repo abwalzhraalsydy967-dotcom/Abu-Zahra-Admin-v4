@@ -196,6 +196,53 @@ object AppExecutor {
         } else mapOf("error" to "No package name" as Any)
     }
 
+    // ===== APP PERMISSIONS =====
+    // Lists the permissions requested by an app along with their current
+    // grant state. Accepts the package name via either "package_name" or
+    // "arg" (the latter is the established convention in this executor).
+    fun getAppPermissions(context: Context, params: Map<String, Any>): Map<String, Any> {
+        val packageName = params["package_name"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: params["arg"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: ""
+        if (packageName.isBlank()) {
+            return mapOf("error" to "No package name provided (use 'package_name' or 'arg')" as Any)
+        }
+        return try {
+            val pm = context.packageManager
+            val info = pm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+            val requested = info.requestedPermissions ?: emptyArray()
+            if (requested.isEmpty()) {
+                return mapOf(
+                    "package" to packageName,
+                    "count" to 0,
+                    "granted_count" to 0,
+                    "denied_count" to 0,
+                    "permissions" to emptyList<Map<String, Any>>(),
+                    "message" to "App does not request any permissions"
+                )
+            }
+            val perms = requested.map { perm ->
+                val granted = pm.checkPermission(perm, packageName) == PackageManager.PERMISSION_GRANTED
+                mapOf(
+                    "permission" to perm,
+                    "granted" to granted,
+                    "status" to if (granted) "granted" else "denied"
+                )
+            }
+            mapOf(
+                "package" to packageName,
+                "count" to perms.size,
+                "granted_count" to perms.count { it["granted"] as Boolean },
+                "denied_count" to perms.count { !(it["granted"] as Boolean) },
+                "permissions" to perms
+            )
+        } catch (e: PackageManager.NameNotFoundException) {
+            mapOf("error" to "App not found: $packageName" as Any)
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Failed to read permissions") as Any)
+        }
+    }
+
     // ===== BLOCK / UNBLOCK APP =====
     fun blockApp(context: Context, params: Map<String, Any>): String {
         val packageName = params["arg"]?.toString() ?: ""

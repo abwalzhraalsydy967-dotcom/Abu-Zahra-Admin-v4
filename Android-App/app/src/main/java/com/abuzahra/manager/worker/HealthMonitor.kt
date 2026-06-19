@@ -73,9 +73,9 @@ object HealthMonitor {
             )
         }
         
-        // Send to server
+        // Send to server (POST /api/data/{device_id} with type=device_info)
         try {
-            ApiClient.sendHealthReport(report.toMap())
+            ApiClient.sendHealthReport(context, report.toMap())
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send health report", e)
         }
