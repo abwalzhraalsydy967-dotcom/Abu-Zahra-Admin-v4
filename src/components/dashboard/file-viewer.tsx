@@ -365,7 +365,7 @@ export default function FileViewer({ devices, filterDeviceId }: Props) {
                       const IconNow = kindIcon(kindNow)
                       const expires = formatExpiresIn(file.expires_at)
                       const devName =
-                        deviceNameMap.current[file.device_id] || file.device_id
+                        deviceNameMap[file.device_id] || file.device_id
                       return (
                         <div
                           key={file.id}
