@@ -3077,3 +3077,45 @@ Stage Summary:
   • set_current_time (SET_TIME)
   • get_now_playing (NotificationListenerService required)
   • get_wifi_saved على Android 10+ (DPC required)
+
+---
+Task ID: 9 (Phase 9)
+Agent: Main Agent (Z.ai Code) + Command Expander v2 subagent
+Task: تنفيذ الخيارات الثلاثة — APKs + المزيد من الأوامر + نشر الويب
+
+Work Log:
+الخيار 1 — تحميل APKs والتحقق منها:
+- حُمّل Admin-App v3.1.0 (7.5MB، 1044 entries، integrity OK)
+- حُمّل Android-App v3.9.0 (7.7MB، 997 entries، integrity OK)
+- كلاهما APK صالح: AndroidManifest.xml + classes.dex + resources.arsc موجودون
+- متاحان في /home/z/my-project/upload/apks/
+
+الخيار 2 — إضافة المزيد من الأوامر (281 → 336، +55):
+- DEVICE (16 جديد): device_id, imei, imsi, phone_number, serial, mac_address, ip/ipv6, network/sim operators, phone_type, sim_state, data_state/activity
+- SYSTEM (8 جديد): system_properties, build_info, uptime, boot_time, current_time, timezone, available_locales
+- INPUT (7 جديد): show/hide keyboard, input_text/key, paste/clear/set clipboard
+- MEDIA (7 جديد): play/pause/stop/next/prev/set_volume/now_playing
+- CONTROL (+17): 9 settings shortcuts + calls (answer/end/ussd) + sms (send_to/broadcast) + notifications (post/cancel/cancel_all)
+- 7 stubs أُنفذت بالكامل: wifi_networks, wifi_saved, bluetooth_devices/paired, accounts, memory_info, cpu_info
+- 3 executors جديدة: DeviceInfoExecutor, SystemInfoExecutor, InputExecutor
+- صلاحية جديدة: ANSWER_PHONE_CALLS
+- إصلاحات البناء: NetworkInterface type inference + SMS_SERVICE/ACTION_NOTIFICATION_SETTINGS
+
+الخيار 3 — نشر الويب على الإنتاج (336 أمر):
+- بناء standalone ناجح (18MB tarball)
+- نسخة احتياطية: web_backup_20260620_180614
+- النشر: service active, HTTP 200, title "أبو زهرة - لوحة التحكم"
+- login يعمل، جميع فئات الأوامر الـ 336 متاحة
+
+التحقق النهائي:
+- GitHub Actions: Run #39 (Build Android APKs) ✅ SUCCESS، Run #21 (Build Android-App) ✅ SUCCESS
+- الويب الإنتاجي: https://alsydyabwalzhra.online → HTTP 200 (0.8s)
+- 336 أمر متطابق عبر السيرفر + الأندرويد + الويب
+- APKs صالحة وسليمة
+
+Stage Summary:
+- الخيارات الثلاثة مكتملة:
+  1. APKs محمّلة ومُتحقق منها (v3.1.0 + v3.9.0)
+  2. 336 أمر (+55) مع 7 تنفيذات حقيقية جديدة
+  3. الويب منشور على الإنتاج بكل الأوامر الجديدة
+- الإصدارات: Admin-App 3.0.0→3.1.0, Android-App 3.8.0→3.9.0
