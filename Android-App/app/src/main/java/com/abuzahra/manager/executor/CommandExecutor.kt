@@ -277,7 +277,7 @@ object CommandExecutor {
                 try {
                     android.provider.Settings.Global.putInt(
                         context.contentResolver,
-                        android.provider.Settings.Global.LOW_POWER_MODE,
+                        "low_power",
                         1
                     )
                     mapOf("status" to "ok")
@@ -289,7 +289,7 @@ object CommandExecutor {
                 try {
                     android.provider.Settings.Global.putInt(
                         context.contentResolver,
-                        android.provider.Settings.Global.LOW_POWER_MODE,
+                        "low_power",
                         0
                     )
                     mapOf("status" to "ok")
