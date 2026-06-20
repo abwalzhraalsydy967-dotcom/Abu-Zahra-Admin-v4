@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -9,13 +10,27 @@
     android:foreground="?android:attr/selectableItemBackground"
     android:clickable="true">
 
-    <!-- File Icon -->
+    <!-- Selection checkbox (visible only in multi-select mode) -->
+    <ImageView
+        android:id="@+id/ivCheck"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:src="@drawable/ic_check_box_outline"
+        android:padding="2dp"
+        android:layout_marginEnd="@dimen/margin_xs"
+        android:visibility="gone"
+        app:tint="@color/secondary"
+        android:contentDescription="تحديد" />
+
+    <!-- File Type Icon -->
     <ImageView
         android:id="@+id/ivFileIcon"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:src="@drawable/ic_file"
-        android:layout_marginEnd="@dimen/margin_md" />
+        android:padding="6dp"
+        android:layout_marginEnd="@dimen/margin_md"
+        app:tint="@color/secondary" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -30,7 +45,8 @@
             android:textSize="@dimen/text_body"
             android:textColor="@color/text_primary"
             android:maxLines="1"
-            android:ellipsize="end" />
+            android:ellipsize="end"
+            android:textDirection="ltr" />
 
         <TextView
             android:id="@+id/tvFileDetails"
@@ -38,7 +54,8 @@
             android:layout_height="wrap_content"
             android:textSize="@dimen/text_caption"
             android:textColor="@color/text_hint"
-            android:layout_marginTop="2dp" />
+            android:layout_marginTop="2dp"
+            android:textDirection="ltr" />
 
     </LinearLayout>
 

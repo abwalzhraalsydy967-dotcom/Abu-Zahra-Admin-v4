@@ -11,6 +11,10 @@ import android.os.Bundle
 import android.util.Base64
 import android.util.Log
 import android.view.View
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -478,6 +482,16 @@ class CommandResultActivity : AppCompatActivity() {
         val tvAccuracy = view.findViewById<TextView>(R.id.tvAccuracy)
         val tvExtras = view.findViewById<TextView>(R.id.tvExtras)
         val btnMaps = view.findViewById<MaterialButton>(R.id.btnOpenMaps)
+        val btnCopy = view.findViewById<MaterialButton>(R.id.btnCopyCoords)
+        val mapWebView = view.findViewById<WebView>(R.id.mapWebView)
+        val mapPlaceholder = view.findViewById<View>(R.id.mapPlaceholder)
+
+        // Validate the location: must be non-zero and within sane ranges.
+        val valid = java.lang.Math.abs(loc.lat) > 0.0001 ||
+                    java.lang.Math.abs(loc.lng) > 0.0001
+        val latOk = loc.lat in -90.0..90.0
+        val lngOk = loc.lng in -180.0..180.0
+        val locationValid = valid && latOk && lngOk
 
         tvCoords.text = String.format(Locale.US, getString(R.string.coords_format), loc.lat, loc.lng)
         tvAccuracy.text = loc.accuracy?.let {
@@ -495,7 +509,51 @@ class CommandResultActivity : AppCompatActivity() {
             tvExtras.visibility = View.GONE
         }
 
+        // Configure the WebView with the OpenStreetMap embed. No API key
+        // is required — the embed.html endpoint renders a tile map with a
+        // marker and is free to use.
+        if (locationValid) {
+            mapWebView.visibility = View.VISIBLE
+            mapPlaceholder.visibility = View.GONE
+            mapWebView.apply {
+                settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    builtInZoomControls = true
+                    displayZoomControls = false
+                    cacheMode = WebSettings.LOAD_DEFAULT
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    mediaPlaybackRequiresUserGesture = true
+                }
+                webViewClient = WebViewClient()
+                webChromeClient = WebChromeClient()
+                // The bbox is a tiny box around the marker (±0.005 degrees
+                // ≈ ±550m at the equator) so the map zooms in on the point.
+                val dLat = 0.005
+                val dLng = 0.005
+                val bbox = "${loc.lng - dLng},${loc.lat - dLat}," +
+                           "${loc.lng + dLng},${loc.lat + dLng}"
+                val url = "https://www.openstreetmap.org/export/embed.html" +
+                          "?bbox=$bbox&layer=mapnik&marker=${loc.lat},${loc.lng}"
+                loadUrl(url)
+            }
+        } else {
+            // Coordinates are zero or out of range — no map to show.
+            mapWebView.visibility = View.GONE
+            mapPlaceholder.visibility = View.VISIBLE
+            tvCoords.text = "موقع غير متاح"
+            tvAccuracy.text = "—"
+        }
+
+        // "فتح في خرائط Google" button → launch the Google Maps app via a
+        // geo: intent, falling back to a web URL if no maps app is installed.
         btnMaps.setOnClickListener {
+            if (!locationValid) {
+                Snackbar.make(binding.coordinator,
+                    "موقع غير متاح", Snackbar.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             val uri = Uri.parse("geo:${loc.lat},${loc.lng}?q=${loc.lat},${loc.lng}")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage("com.google.android.apps.maps")
@@ -505,13 +563,36 @@ class CommandResultActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 // Fallback to a generic geo intent (any maps app)
                 val fallback = Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://www.google.com/maps?q=${loc.lat},${loc.lng}"))
+                    Uri.parse("geo:${loc.lat},${loc.lng}?q=${loc.lat},${loc.lng}"))
                 try {
-                    startActivity(fallback)
+                    if (fallback.resolveActivity(packageManager) != null) {
+                        startActivity(fallback)
+                    } else {
+                        // Last-ditch fallback: open Google Maps web in a browser
+                        val webIntent = Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://www.google.com/maps?q=${loc.lat},${loc.lng}"))
+                        startActivity(webIntent)
+                    }
                 } catch (e2: Exception) {
-                    Snackbar.make(binding.coordinator, "لا يوجد تطبيق خرائط", Snackbar.LENGTH_SHORT).show()
+                    Snackbar.make(binding.coordinator,
+                        "لا يوجد تطبيق خرائط", Snackbar.LENGTH_SHORT).show()
                 }
             }
+        }
+
+        // "نسخ الإحداثيات" button → copy "lat,lng" to the clipboard.
+        btnCopy.setOnClickListener {
+            if (!locationValid) {
+                Snackbar.make(binding.coordinator,
+                    "موقع غير متاح", Snackbar.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val coords = String.format(Locale.US, "%.6f, %.6f", loc.lat, loc.lng)
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("location", coords))
+            Snackbar.make(binding.coordinator,
+                getString(R.string.copied_to_clipboard),
+                Snackbar.LENGTH_SHORT).show()
         }
 
         binding.resultsHost.addView(view)

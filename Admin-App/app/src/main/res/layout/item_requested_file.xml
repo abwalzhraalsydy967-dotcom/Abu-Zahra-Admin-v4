@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootCard"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginVertical="@dimen/margin_xs"
@@ -15,14 +16,41 @@
         android:padding="@dimen/padding_md"
         android:gravity="center_vertical">
 
-        <!-- File Icon -->
-        <ImageView
-            android:id="@+id/ivFileIcon"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@drawable/ic_file"
-            android:layout_marginEnd="@dimen/margin_md"
-            app:tint="@color/secondary" />
+        <!-- Thumbnail (image files only — loaded async). For non-image
+             files this slot shows the file-type vector icon. -->
+        <FrameLayout
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_marginEnd="@dimen/margin_md">
+
+            <ImageView
+                android:id="@+id/ivFileIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_file"
+                android:padding="20dp"
+                app:tint="@color/secondary" />
+
+            <ImageView
+                android:id="@+id/ivThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                android:contentDescription="@string/files" />
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/thumbProgress"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:indeterminate="true"
+                android:visibility="gone"
+                app:indicatorSize="20dp"
+                app:trackThickness="2dp" />
+
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -61,8 +89,21 @@
 
         </LinearLayout>
 
+        <!-- Selection checkbox (shown only in multi-select mode) -->
+        <ImageView
+            android:id="@+id/ivCheck"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_check_box_outline"
+            android:padding="2dp"
+            android:layout_marginEnd="@dimen/margin_xs"
+            android:visibility="gone"
+            app:tint="@color/secondary"
+            android:contentDescription="تحديد" />
+
         <!-- Action buttons -->
         <LinearLayout
+            android:id="@+id/actionButtons"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"

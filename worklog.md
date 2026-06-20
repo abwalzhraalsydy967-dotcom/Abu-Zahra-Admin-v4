@@ -3119,3 +3119,218 @@ Stage Summary:
   2. 336 أمر (+55) مع 7 تنفيذات حقيقية جديدة
   3. الويب منشور على الإنتاج بكل الأوامر الجديدة
 - الإصدارات: Admin-App 3.0.0→3.1.0, Android-App 3.8.0→3.9.0
+
+---
+Task ID: 10-A
+Agent: Features Adder
+Task: عارض الخرائط للموقع + مدير ملفات محسّن
+
+Work Log:
+
+ملفات مقروءة (للفهم):
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/CommandResultActivity.kt
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/CommandResultParser.kt
+- Admin-App/app/src/main/res/layout/view_location_result.xml (الأصلي)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/FilesActivity.kt (الأصلي)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFilesActivity.kt (الأصلي)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/FileListAdapter.kt (الأصلي)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFileAdapter.kt (الأصلي)
+- Admin-App/app/src/main/res/layout/{activity_files,activity_requested_files,item_file,item_requested_file}.xml (الأصلية)
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiService.kt
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiClient.kt
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/model/RemoteFile.kt
+- Admin-App/app/src/main/java/com/abuzahra/admin/util/Preferences.kt
+- Admin-App/app/src/main/AndroidManifest.xml
+- Admin-App/app/src/main/res/values/strings.xml + dimens.xml + colors.xml
+- Admin-App/app/src/main/res/drawable/ic_file.xml + ic_folder.xml (للنمط)
+- agent-ctx/8-B-results-viewer-builder.md (سياق المرحلة 8)
+
+ملفات منشأة (15):
+- Admin-App/app/src/main/java/com/abuzahra/admin/util/ImageLoader.kt (160 سطر)
+  • loadFileThumbnail(serverUrl, token, fileId, size=80) — يجلب /api/files/{id} مع Bearer + يفك Bitmap صغير مع inSampleSize
+  • loadFileFull(serverUrl, token, fileId) — للحجم الكامل (ImageViewerActivity)
+  • downloadToCache(serverUrl, token, fileId, destFile) — لتدفق الفيديو/الصوت إلى cache
+  • LruCache مدمج بمفتاح fileId:size، RGB_565 لخفض الذاكرة
+  • TrustManager متسامح للـ SSL الموقّعذاتياً (مثل باقي التطبيق)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/ImageViewerActivity.kt (143 سطر)
+  • ScaleGestureDetector للـ pinch-to-zoom (1x → 5x)
+  • Matrix + postTranslate للـ pan عند التكبير
+  • يحمل Bitmap كامل من ImageLoader.loadFileFull
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/VideoViewerActivity.kt (100 سطر)
+  • VideoView مدمج + downloadToCache أولاً (لأن VideoView لا يدعم headers)
+  • loop on completion = false، onPause → stopPlayback
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/AudioPlayerDialogFragment.kt (180 سطر)
+  • MediaPlayer + SeekBar + تشغيل/إيقاف + Handler لتحديث الموقع كل 250ms
+  • تحميل الملف إلى cache ثم prepareAsync
+- Admin-App/app/src/main/res/layout/activity_image_viewer.xml
+- Admin-App/app/src/main/res/layout/activity_video_viewer.xml
+- Admin-App/app/src/main/res/layout/dialog_audio_player.xml
+- Admin-App/app/src/main/res/layout/item_requested_file_grid.xml (شبكة 3 أعمدة، خلية 120dp)
+- Admin-App/app/src/main/res/layout/item_breadcrumb.xml (TextView قابل للنقر)
+- Admin-App/app/src/main/res/menu/menu_requested_files.xml (toggle_view, sort)
+- Admin-App/app/src/main/res/menu/menu_files.xml (sort, select_all)
+- Admin-App/app/src/main/res/values/ids.xml (action_download_selected, action_delete_selected)
+- Admin-App/app/src/main/res/drawable/ic_file_image.xml
+- Admin-App/app/src/main/res/drawable/ic_file_video.xml
+- Admin-App/app/src/main/res/drawable/ic_file_audio.xml
+- Admin-App/app/src/main/res/drawable/ic_file_apk.xml
+- Admin-App/app/src/main/res/drawable/ic_file_document.xml
+- Admin-App/app/src/main/res/drawable/ic_file_archive.xml
+- Admin-App/app/src/main/res/drawable/ic_file_play.xml
+- Admin-App/app/src/main/res/drawable/ic_apk.xml
+- Admin-App/app/src/main/res/drawable/ic_grid.xml
+- Admin-App/app/src/main/res/drawable/ic_list.xml
+- Admin-App/app/src/main/res/drawable/ic_check_box.xml
+- Admin-App/app/src/main/res/drawable/ic_check_box_outline.xml
+- Admin-App/app/src/main/res/drawable/ic_delete.xml
+- Admin-App/app/src/main/res/drawable/ic_select_all.xml
+- Admin-App/app/src/main/res/drawable/ic_sort.xml
+- Admin-App/app/src/main/res/drawable/ic_play.xml
+- Admin-App/app/src/main/res/drawable/ic_pause.xml
+- Admin-App/app/src/main/res/drawable/ic_chevron_left.xml + ic_chevron_right.xml
+
+ملفات معدّلة (8):
+- Admin-App/app/src/main/res/layout/view_location_result.xml
+  • إضافة WebView (id=mapWebView) — يعرض OpenStreetMap embed مع علامة
+  • إضافة LinearLayout placeholder (id=mapPlaceholder) — "موقع غير متاح"
+  • إضافة زر "نسخ الإحداثيات" (id=btnCopyCoords) بجانب زر "فتح في خرائط Google"
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/CommandResultActivity.kt (renderLocation)
+  • التحقق من صحة الإحداثيات (lat∈[-90,90], lng∈[-180,180], non-zero)
+  • تحميل https://www.openstreetmap.org/export/embed.html?bbox=...&layer=mapnik&marker=lat,lng
+  • إعدادات WebView: javaScriptEnabled=true, builtInZoomControls=true, WebViewClient + WebChromeClient
+  • زر خرائط Google → Intent(ACTION_VIEW, geo:lat,lng?q=lat,lng) مع 3 مستويات fallback
+  • زر نسخ → ClipboardManager مع Snackbar
+  • حالة "موقع غير متاح" عند إحداثيات صفرية/خاطئة
+  • استيرادات جديدة: WebChromeClient, WebSettings, WebView, WebViewClient
+- Admin-App/app/src/main/res/layout/item_requested_file.xml
+  • إضافة FrameLayout 80x80dp يحتوي على ivThumbnail (Image) + ivFileIcon (fallback) + thumbProgress (loading)
+  • إضافة ivCheck لتحديد متعدد (gone افتراضياً)
+  • إخفاء أزرار الإجراءات في وضع التحديد
+- Admin-App/app/src/main/res/layout/item_file.xml
+  • إضافة ivCheck لتحديد متعدد
+  • padding 6dp على ivFileIcon لأيقونات نوع الملف
+  • tvFileDetails يدعم LTR للإحداثيات/المسارات
+- Admin-App/app/src/main/res/layout/activity_requested_files.xml
+  • إضافة SearchView (TextInputLayout + EditText + TextWatcher)
+  • إضافة ChipGroup لفلترة النوع (All/Images/Videos/Audio/Files)
+  • إضافة قائمة menu_requested_files (toggle_view, sort)
+  • إعادة هيكلة لإظهار/إخفاء emptyState عند الفلترة
+- Admin-App/app/src/main/res/layout/activity_files.xml
+  • إضافة HorizontalScrollView + LinearLayout لـ breadcrumbs
+  • إضافة قائمة menu_files (sort, select_all)
+  • إبقاء tilPath و fabUpload و btnRequestedFiles كما هم
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFileAdapter.kt
+  • ViewMode enum (LIST/GRID) مع تبديل LayoutManager
+  • TypeFilter لا تُطبق هنا — تُطبق في Activity
+  • ListViewHolder + GridViewHolder معاً في نفس المحول
+  • تحميل المصغرات بشكل غير متزامن لـ IMAGE من نوع الملف
+  • وضع التحديد: long-press يدخل/يخرج، checkboxes تظهر، إخفاء أزرار الإجراءات
+  • selectAll / clearSelection / getSelectedIds
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/RequestedFilesActivity.kt
+  • onCreateOptionsMenu + onOptionsItemSelected: toggle_view (list↔grid 3-cols)، sort dialog
+  • TextWatcher على etSearch — فلترة فورية باسم الملف
+  • TypeFilter chips (ALL/IMAGES/VIDEOS/AUDIO/FILES) — chip واحد محدد
+  • SortMode (DATE/NAME/SIZE) — افتراضي DATE (newest first)
+  • openFile: photo/camera/screenshot → ImageViewerActivity، video → VideoViewerActivity، audio → AudioPlayerDialogFragment، file → ACTION_VIEW
+  • محافظة على التحميل وزر "فتح" بعد التحميل
+  • onBackPressed يخرج من وضع التحديد قبل الإغلاق
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/FileListAdapter.kt
+  • إضافة selectionMode + selectedPaths + toggleSelection + selectAll + clearSelection
+  • إضافة onLongClick + onSelectionToggle في constructor
+  • ivCheck يظهر في وضع التحديد فقط، ivDownload يختبئ
+  • أيقونات نوع الملف: image/video/audio/document/apk/archive/other بألوان متنوعة
+  • humanReadableSize: B/KB/MB/GB
+  • تمييز المجلدات أولاً في الترتيب
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/files/FilesActivity.kt
+  • ActionMode context bar مع "تحميل المحددد"
+  • onCreateOptionsMenu: sort + select_all
+  • SortMode (NAME/SIZE_DESC/DATE_DESC) — افتراضي NAME
+  • updateBreadcrumbs: شرائح قابلة للنقر + ">" فواصل + آخر شريحة بلون ثانوي
+  • downloadSelected: يجلب الملفات حديثاً من الخادم، يطابق بالـ path، يحمل الكل
+  • onBackPressed يخرج من وضع التحديد قبل الإغلاق
+- Admin-App/app/src/main/AndroidManifest.xml
+  • تسجيل .ui.files.ImageViewerActivity (exported=false, screenOrientation=behind)
+  • تسجيل .ui.files.VideoViewerActivity (exported=false, screenOrientation=landscape, configChanges)
+  • AudioPlayerDialogFragment لا يحتاج تسجيل (DialogFragment)
+- Admin-App/app/src/main/res/values/strings.xml
+  • إضافة ~35 سلسلة عربية جديدة للخريطة ومدير الملفات
+
+Stage Summary:
+
+══════════════════════════════════════════════════════════════════
+الميزة 1: عارض الخرائط للموقع
+══════════════════════════════════════════════════════════════════
+- WebView يحمل OpenStreetMap embed بدون API key
+- bbox ±0.005 درجة حول النقطة (≈±550m) + علامة marker
+- إعدادات: javaScriptEnabled, builtInZoomControls, WebViewClient (يفتح الروابط داخل التطبيق)
+- زر "فتح في خرائط Google" — geo: intent مع 3 مستويات fallback:
+  1. com.google.android.apps.maps (Google Maps app)
+  2. generic geo: intent (أي تطبيق خرائط)
+  3. https://www.google.com/maps?q=lat,lng (متصفح)
+- زر "نسخ الإحداثيات" — ClipboardManager + Snackbar تأكيد
+- حالة "موقع غير متاح" عند lat=0/lng=0 أو إحداثيات خارج النطاق
+
+══════════════════════════════════════════════════════════════════
+الميزة 2: مدير الملفات المحسّن
+══════════════════════════════════════════════════════════════════
+
+RequestedFilesActivity (الملفات المرفوعة):
+- تبديل قائمة ↔ شبكة (3 أعمدة) عبر زر في الـ toolbar
+- مصغرات (thumbnails) للصور — 80x80dp في القائمة، 120x120dp في الشبكة
+  • تُحمَّل من /api/files/{id} مع Bearer auth (OkHttp)
+  • LruCache مدمج بـ 1/8 من maxMemory
+  • inSampleSize + RGB_565 لتقليل استهلاك الذاكرة
+  • CancellationToken عند إعادة تدوير ViewHolder (تجنّب التحميل الزائد)
+  • CircularProgressIndicator أثناء التحميل
+  • fallback لأيقونة النوع عند فشل التحميل أو الملف غير صورة
+- شريط بحث فوري (TextWatcher) باسم الملف
+- رقائق فلترة النوع: الكل / صور / فيديو / صوت / ملفات
+- ترتيب: التاريخ (افتراضي) / الاسم / الحجم — عبر dialog
+- النقر على صورة → ImageViewerActivity (ملء الشاشة + pinch-zoom 1x-5x)
+- النقر على فيديو → VideoViewerActivity (VideoView + downloadToCache)
+- النقر على صوت → AudioPlayerDialogFragment (MediaPlayer + SeekBar + تشغيل/إيقاف)
+- النقر على ملفات أخرى → ACTION_VIEW عبر FileProvider
+- تحديد متعدد: long-press + checkboxes + شريط سياقي
+
+FilesActivity (متصفح ملفات الجهاز):
+- breadcrumbs قابلة للنقر في الأعلى (HorizontalScrollView)
+  • شرائح ">" فواصل، آخر شريحة بلون secondary + bold
+  • النقر ينتقل للمسار المُجمَّع
+  • auto-scroll لأقصى اليمين لإظهار أعمق شريحة
+- ترتيب: الاسم (افتراضي) / الحجم (الأكبر) / التاريخ (الأحدث) — عبر dialog
+- أيقونات نوع الملف بألوان متنوعة:
+  • folder (warning/citrus)
+  • image (secondary/emerald)
+  • video (info/sky)
+  • audio (secondary_variant/light-emerald)
+  • apk (warning)
+  • document (text_secondary)
+  • archive (pending_color/amber)
+  • other (text_hint)
+- أحجام مقروءة: B/KB/MB/GB
+- تحديد متعدد: long-press → ActionMode مع زر "تحميل المحددد"
+  • يجلب الملفات حديثاً من الخادم ويطابق بالـ path
+  • يحمّل الكل إلى /Download ويعرض عدّاد النجاح/الفشل
+- القوائم: sort + select_all في الـ toolbar
+
+══════════════════════════════════════════════════════════════════
+الأنشطة الجديدة
+══════════════════════════════════════════════════════════════════
+1. ImageViewerActivity — fullscreen + pinch-zoom (ScaleGestureDetector)
+2. VideoViewerActivity — fullscreen landscape + VideoView
+3. AudioPlayerDialogFragment — dialog + MediaPlayer + SeekBar
+4. ImageLoader — helper يدير المصغرات والحجم الكامل وتدفق الوسائط
+
+══════════════════════════════════════════════════════════════════
+التحقق
+══════════════════════════════════════════════════════════════════
+- mapWebView في view_location_result.xml: ✓ (line 78)
+- openstreetmap URL في CommandResultActivity.kt: ✓ (line 537)
+- ImageViewerActivity + VideoViewerActivity في AndroidManifest.xml: ✓ (lines 63, 69)
+- AudioPlayerDialogFragment لا يحتاج تسجيل (DialogFragment)
+- loadFileThumbnail: معرّف في ImageLoader.kt:78 + مستخدم في RequestedFileAdapter.kt:194,267
+- Kotlin braces balanced في كل 9 ملفات (CommandResultActivity, ImageLoader, ImageViewerActivity, VideoViewerActivity, AudioPlayerDialogFragment, RequestedFileAdapter, RequestedFilesActivity, FileListAdapter, FilesActivity): ✓
+- Kotlin parens balanced في كل ملف: ✓
+- XML well-formed (14 ملف): ✓
+- bun run lint | grep "^/home/z/my-project/src/" | wc -l = 2 (pre-existing <img> warnings only — لا أخطاء جديدة)
+

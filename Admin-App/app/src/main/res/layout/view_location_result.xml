@@ -14,6 +14,7 @@
         android:orientation="vertical"
         android:padding="@dimen/padding_md">
 
+        <!-- Coordinates + accuracy header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -66,15 +67,75 @@
             android:textDirection="ltr"
             android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnOpenMaps"
-            style="Widget.Material3.Button.TonalButton"
+        <!-- OpenStreetMap embed via WebView -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="@dimen/margin_sm"
-            android:text="@string/open_in_maps"
-            app:icon="@drawable/ic_location"
-            app:iconGravity="textStart" />
+            android:layout_height="240dp"
+            android:layout_marginTop="@dimen/margin_md"
+            android:background="@color/surface_variant">
+
+            <WebView
+                android:id="@+id/mapWebView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- Placeholder shown when location is invalid -->
+            <LinearLayout
+                android:id="@+id/mapPlaceholder"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/ic_location"
+                    android:alpha="0.4"
+                    app:tint="@color/text_hint" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="موقع غير متاح"
+                    android:textSize="@dimen/text_caption"
+                    android:textColor="@color/text_hint"
+                    android:layout_marginTop="@dimen/margin_sm" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <!-- Action buttons row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="@dimen/margin_sm">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnOpenMaps"
+                style="Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="@string/open_in_maps"
+                app:icon="@drawable/ic_location"
+                app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCopyCoords"
+                style="Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/margin_sm"
+                android:text="نسخ الإحداثيات"
+                app:icon="@drawable/ic_command"
+                app:iconGravity="textStart" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

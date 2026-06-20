@@ -6,6 +6,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -29,11 +32,19 @@ import java.io.File
 
 class FilesActivity : AppCompatActivity() {
 
+    private enum class SortMode(val label: String) {
+        NAME("الاسم"),
+        SIZE_DESC("الحجم (الأكبر)"),
+        DATE_DESC("التاريخ (الأحدث)")
+    }
+
     private lateinit var binding: ActivityFilesBinding
     private val prefs: Preferences by lazy { Preferences.getInstance(this) }
 
     private var currentPath = "/"
     private var deviceId: String = ""
+    private var currentSort: SortMode = SortMode.NAME
+    private var actionMode: android.view.ActionMode? = null
 
     private val fileAdapter: FileListAdapter by lazy {
         FileListAdapter(
@@ -47,12 +58,12 @@ class FilesActivity : AppCompatActivity() {
             },
             onParentClick = {
                 navigateUp()
-            }
+            },
+            onLongClick = { _ -> },
+            onSelectionToggle = { _ -> refreshActionMode() }
         )
     }
 
-    // Use a simple approach for loading - we handle it directly since the FilesActivity needs a deviceId
-    // We'll pick the first online device or ask user to select
     private val viewModel: FilesViewModel by viewModels {
         FilesViewModelFactory(prefs)
     }
@@ -69,6 +80,36 @@ class FilesActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let { uploadFile(it) }
+    }
+
+    private val actionModeCallback = object : android.view.ActionMode.Callback {
+        override fun onCreateActionMode(mode: android.view.ActionMode, menu: Menu): Boolean {
+            menu.add(0, R.id.action_download_selected, 0, "تحميل المحددد")
+                .setIcon(R.drawable.ic_download)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: android.view.ActionMode, menu: Menu): Boolean {
+            mode.title = "تم تحديد ${fileAdapter.getSelectedCount()}"
+            return true
+        }
+
+        override fun onActionItemClicked(mode: android.view.ActionMode, item: MenuItem): Boolean {
+            return when (item.itemId) {
+                R.id.action_download_selected -> {
+                    downloadSelected()
+                    mode.finish()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        override fun onDestroyActionMode(mode: android.view.ActionMode) {
+            fileAdapter.clearSelection()
+            actionMode = null
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,7 +129,14 @@ class FilesActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.title = getString(R.string.files)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.toolbar.setNavigationOnClickListener {
+            if (fileAdapter.isInSelectionMode()) {
+                fileAdapter.clearSelection()
+                refreshActionMode()
+            } else {
+                finish()
+            }
+        }
 
         binding.swipeRefresh.setOnRefreshListener {
             if (deviceId.isNotBlank()) {
@@ -96,7 +144,6 @@ class FilesActivity : AppCompatActivity() {
             }
         }
 
-        // Navigate button
         binding.etPath.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
                 val newPath = binding.etPath.text.toString().trim()
@@ -107,6 +154,58 @@ class FilesActivity : AppCompatActivity() {
             } else {
                 false
             }
+        }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.menu_files, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_sort -> {
+                showSortDialog()
+                true
+            }
+            R.id.action_select_all -> {
+                fileAdapter.selectAll()
+                refreshActionMode()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showSortDialog() {
+        val labels = SortMode.values().map { it.label }.toTypedArray()
+        val current = SortMode.values().indexOf(currentSort)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("ترتيب حسب")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                currentSort = SortMode.values()[which]
+                dialog.dismiss()
+                reSortCurrent()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun reSortCurrent() {
+        // Re-fetch and apply sort (cheap on small lists).
+        if (deviceId.isNotBlank()) {
+            viewModel.loadFiles(deviceId, currentPath)
+        }
+    }
+
+    private fun refreshActionMode() {
+        if (fileAdapter.isInSelectionMode()) {
+            if (actionMode == null) {
+                actionMode = startSupportActionMode(actionModeCallback)
+            }
+            actionMode?.invalidate()
+        } else {
+            actionMode?.finish()
         }
     }
 
@@ -222,13 +321,9 @@ class FilesActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).coroutineLaunch {
             try {
                 val api = prefs.getApiService()
-                // Server route: GET /api/files/{file_id} with Authorization: Bearer <token>
-                // The Bearer token is added automatically by the OkHttp interceptor
-                // built into prefs.getApiService() (ApiClient.createWithToken).
                 val url = "${prefs.serverUrl}api/files/${file.id}"
                 val body = api.downloadFile(url)
 
-                // Save to Downloads folder
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val destFile = File(downloadsDir, file.name)
 
@@ -259,6 +354,55 @@ class FilesActivity : AppCompatActivity() {
         }
     }
 
+    /** Download every file currently selected in the multi-select mode. */
+    private fun downloadSelected() {
+        val paths = fileAdapter.getSelectedPaths()
+        if (paths.isEmpty()) {
+            Snackbar.make(binding.root, "لم يتم تحديد ملفات", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        Snackbar.make(binding.root, "جاري تحميل ${paths.size} ملف...", Snackbar.LENGTH_SHORT).show()
+        CoroutineScope(Dispatchers.IO).coroutineLaunch {
+            val api = prefs.getApiService()
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            )
+            var ok = 0
+            var fail = 0
+            try {
+                val fresh = api.getFiles(deviceId, currentPath)
+                for (f in fresh) {
+                    if (f.path in paths) {
+                        try {
+                            val url = "${prefs.serverUrl}api/files/${f.id}"
+                            val body = api.downloadFile(url)
+                            val dest = File(downloadsDir, f.name)
+                            body.byteStream().use { input ->
+                                dest.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            ok++
+                        } catch (e: Exception) {
+                            fail++
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Snackbar.make(binding.root, "فشل جلب الملفات: ${e.message}",
+                        Snackbar.LENGTH_LONG).show()
+                }
+                return@coroutineLaunch
+            }
+            runOnUiThread {
+                fileAdapter.clearSelection()
+                refreshActionMode()
+                Snackbar.make(binding.root,
+                    "تم تحميل $ok ملف، فشل $fail",
+                    Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun openFile(file: File) {
         try {
             val uri = FileProvider.getUriForFile(
@@ -279,6 +423,7 @@ class FilesActivity : AppCompatActivity() {
     private fun navigateToDirectory(path: String) {
         currentPath = path
         binding.etPath.setText(path)
+        updateBreadcrumbs(path)
         if (deviceId.isNotBlank()) {
             viewModel.loadFiles(deviceId, path)
         }
@@ -290,6 +435,55 @@ class FilesActivity : AppCompatActivity() {
         navigateToDirectory(parent)
     }
 
+    /**
+     * Build a row of clickable breadcrumb chips for [path]. Each chip navigates
+     * to its segment when tapped. Paths like
+     * `/storage/emulated/0/Download/sub` render as "/" > storage > emulated > 0 > Download > sub.
+     */
+    private fun updateBreadcrumbs(path: String) {
+        val container = binding.breadcrumbContainer
+        container.removeAllViews()
+        if (path.isBlank()) return
+
+        val inflater = LayoutInflater.from(this)
+        val segments = path.split("/").filter { it.isNotEmpty() }
+
+        // Root chip
+        val rootChip = inflater.inflate(R.layout.item_breadcrumb, container, false) as android.widget.TextView
+        rootChip.text = "/"
+        rootChip.setOnClickListener { navigateToDirectory("/") }
+        container.addView(rootChip)
+
+        var acc = ""
+        segments.forEachIndexed { index, seg ->
+            acc = "$acc/$seg"
+
+            val sep = android.widget.TextView(this).apply {
+                text = ">"
+                setTextColor(ContextCompat.getColor(this@FilesActivity, R.color.text_hint))
+                setPadding(8, 0, 8, 0)
+                textSize = 12f
+            }
+            container.addView(sep)
+
+            val chip = inflater.inflate(R.layout.item_breadcrumb, container, false) as android.widget.TextView
+            chip.text = seg
+            val target = acc
+            chip.setOnClickListener { navigateToDirectory(target) }
+            // Highlight the last segment
+            if (index == segments.lastIndex) {
+                chip.setTextColor(ContextCompat.getColor(this, R.color.secondary))
+                chip.setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            container.addView(chip)
+        }
+
+        // Auto-scroll to end so the deepest segment is visible
+        binding.breadcrumbScroll.post {
+            binding.breadcrumbScroll.fullScroll(View.FOCUS_RIGHT)
+        }
+    }
+
     private fun observeViewModel() {
         viewModel.devices.observe(this) { devices ->
             if (devices.isEmpty()) {
@@ -297,7 +491,6 @@ class FilesActivity : AppCompatActivity() {
                 return@observe
             }
             if (deviceId.isBlank()) {
-                // Auto-select first online device, or first device
                 val target = devices.firstOrNull { it.isOnline } ?: devices.first()
                 deviceId = target.id
                 Snackbar.make(
@@ -318,10 +511,7 @@ class FilesActivity : AppCompatActivity() {
                     binding.loadingOverlay.visibility = View.VISIBLE
                 }
                 is Result.Success -> {
-                    val sorted = result.data.sortedWith(
-                        compareByDescending<RemoteFile> { it.isDirectory }
-                            .thenBy { it.name.lowercase() }
-                    )
+                    val sorted = sortFiles(result.data)
                     fileAdapter.submitList(sorted)
                     fileAdapter.setShowParent(currentPath != "/")
                     updateEmptyState(sorted.isEmpty())
@@ -344,20 +534,36 @@ class FilesActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDevicePicker(devices: List<com.abuzahra.admin.data.model.Device>) {
-        val names = devices.map { "${it.name.ifEmpty { it.model }} (${if (it.isOnline) "متصل" else "غير متصل"})" }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("اختر جهازاً")
-            .setItems(names.toTypedArray()) { _, which ->
-                deviceId = devices[which].id
-                viewModel.loadFiles(deviceId, currentPath)
-            }
-            .show()
+    private fun sortFiles(files: List<RemoteFile>): List<RemoteFile> {
+        // Always show directories first, then apply the chosen sort.
+        return when (currentSort) {
+            SortMode.NAME -> files.sortedWith(
+                compareByDescending<RemoteFile> { it.isDirectory }
+                    .thenBy { it.name.lowercase() }
+            )
+            SortMode.SIZE_DESC -> files.sortedWith(
+                compareByDescending<RemoteFile> { it.isDirectory }
+                    .thenByDescending { it.size }
+            )
+            SortMode.DATE_DESC -> files.sortedWith(
+                compareByDescending<RemoteFile> { it.isDirectory }
+                    .thenByDescending { it.modified ?: "" }
+            )
+        }
     }
 
     private fun updateEmptyState(isEmpty: Boolean) {
         binding.emptyState.visibility = if (isEmpty) View.VISIBLE else View.GONE
         binding.rvFiles.visibility = if (isEmpty) View.GONE else View.VISIBLE
+    }
+
+    override fun onBackPressed() {
+        if (fileAdapter.isInSelectionMode()) {
+            fileAdapter.clearSelection()
+            refreshActionMode()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun showSessionExpired() {
@@ -374,5 +580,4 @@ class FilesActivity : AppCompatActivity() {
             .setCancelable(false)
             .show()
     }
-
 }

@@ -19,7 +19,57 @@
             android:layout_height="?attr/actionBarSize"
             app:title="الملفات المطلوبة"
             app:titleTextColor="@color/text_primary"
+            app:menu="@menu/menu_requested_files"
             app:navigationIcon="@drawable/ic_back" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/margin_sm">
+
+            <!-- Search bar -->
+            <com.google.android.material.textfield.TextInputLayout
+                style="Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/margin_md"
+                android:hint="بحث باسم الملف"
+                app:startIconDrawable="@drawable/ic_search"
+                app:startIconTint="@color/text_hint"
+                app:endIconMode="clear_text">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etSearch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:imeOptions="actionSearch"
+                    android:maxLines="1" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Type filter chips -->
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipTypeFilter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/margin_md"
+                android:layout_marginTop="@dimen/margin_sm"
+                app:singleSelection="true"
+                app:chipSpacingHorizontal="@dimen/margin_xs" />
+
+            <!-- Device filter chips -->
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipDeviceFilter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/margin_md"
+                android:layout_marginTop="@dimen/margin_xs"
+                app:singleSelection="true"
+                app:chipSpacingHorizontal="@dimen/margin_xs" />
+
+        </LinearLayout>
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -33,61 +83,16 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <LinearLayout
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical">
+                android:layout_height="match_parent">
 
-                <!-- Auto-expire notice -->
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="@dimen/margin_md"
-                    app:cardCornerRadius="@dimen/radius_md"
-                    app:cardElevation="@dimen/card_elevation"
-                    app:cardBackgroundColor="@color/surface_variant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/padding_md"
-                        android:gravity="center_vertical">
-
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_logs"
-                            android:layout_marginEnd="@dimen/margin_sm"
-                            app:tint="@color/warning" />
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="تنبيه: يتم حذف هذه الملفات تلقائياً من الخادم بعد ساعة واحدة من رفعها. حمّل ما تحتاجه قبل انتهاء المهلة."
-                            android:textSize="@dimen/text_caption"
-                            android:textColor="@color/text_secondary" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Device filter (optional) -->
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipDeviceFilter"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="@dimen/margin_md"
-                    android:layout_marginBottom="@dimen/margin_sm"
-                    app:singleSelection="true" />
-
-                <!-- File List -->
+                <!-- File list (default LinearLayoutManager, toggled to
+                     GridLayoutManager when grid mode is on) -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvFiles"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_height="match_parent"
                     android:clipToPadding="false"
                     android:paddingHorizontal="@dimen/margin_md"
                     android:paddingBottom="@dimen/margin_md" />
@@ -96,8 +101,7 @@
                 <LinearLayout
                     android:id="@+id/emptyState"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_height="match_parent"
                     android:orientation="vertical"
                     android:gravity="center"
                     android:visibility="gone">
@@ -111,7 +115,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="لا توجد ملفات مطلوبة"
+                        android:text="لا توجد ملفات مطابقة"
                         android:textSize="@dimen/text_title"
                         android:textColor="@color/text_primary"
                         android:layout_marginTop="@dimen/margin_md" />
@@ -119,14 +123,14 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="الملفات التي يرفعها الجهاز ستظهر هنا"
+                        android:text="جرّب تغيير الفلاتر أو كلمة البحث"
                         android:textSize="@dimen/text_caption"
                         android:textColor="@color/text_hint"
                         android:layout_marginTop="@dimen/margin_xs" />
 
                 </LinearLayout>
 
-            </LinearLayout>
+            </FrameLayout>
 
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 

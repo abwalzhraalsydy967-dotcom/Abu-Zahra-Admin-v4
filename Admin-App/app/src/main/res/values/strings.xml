@@ -172,4 +172,41 @@
     <string name="call_unknown">غير معروفة</string>
     <string name="duration_format">المدة: %1$s</string>
     <string name="view_raw_json">عرض JSON الخام</string>
+
+    <!-- Map / location viewer -->
+    <string name="copy_coordinates">نسخ الإحداثيات</string>
+    <string name="location_unavailable">موقع غير متاح</string>
+    <string name="no_maps_app">لا يوجد تطبيق خرائط</string>
+
+    <!-- File Manager -->
+    <string name="requested_files">الملفات المطلوبة</string>
+    <string name="search_files_hint">بحث باسم الملف</string>
+    <string name="filter_all">الكل</string>
+    <string name="filter_images">صور</string>
+    <string name="filter_videos">فيديو</string>
+    <string name="filter_audio">صوت</string>
+    <string name="filter_files">ملفات</string>
+    <string name="sort_by">ترتيب حسب</string>
+    <string name="sort_date">التاريخ (الأحدث)</string>
+    <string name="sort_name">الاسم</string>
+    <string name="sort_size">الحجم (الأكبر)</string>
+    <string name="view_grid">شبكة</string>
+    <string name="view_list">قائمة</string>
+    <string name="download_selected">تحميل المحددد</string>
+    <string name="select_all">تحديد الكل</string>
+    <string name="selected_count">تم تحديد %1$d</string>
+    <string name="no_matching_files">لا توجد ملفات مطابقة</string>
+    <string name="no_matching_files_desc">جرّب تغيير الفلاتر أو كلمة البحث</string>
+    <string name="image_viewer">عارض الصور</string>
+    <string name="video_viewer">عارض الفيديو</string>
+    <string name="audio_player">المشغل الصوتي</string>
+    <string name="loading_image">جاري تحميل الصورة…</string>
+    <string name="loading_video">جاري تحميل الفيديو…</string>
+    <string name="loading_audio">جاري تحميل الصوت…</string>
+    <string name="load_image_failed">تعذر تحميل الصورة</string>
+    <string name="load_video_failed">تعذر تحميل الفيديو</string>
+    <string name="load_audio_failed">تعذر تحميل الصوت</string>
+    <string name="playback_failed">تعذر التشغيل</string>
+    <string name="breadcrumbs_root">/</string>
+    <string name="parent_dir">المجلد السابق</string>
 </resources>

@@ -19,7 +19,63 @@
             android:layout_height="?attr/actionBarSize"
             app:title="@string/files"
             app:titleTextColor="@color/text_primary"
+            app:menu="@menu/menu_files"
             app:navigationIcon="@drawable/ic_back" />
+
+        <!-- Breadcrumbs row: clickable path segments -->
+        <HorizontalScrollView
+            android:id="@+id/breadcrumbScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/breadcrumbContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/margin_md"
+                android:paddingVertical="@dimen/margin_xs"
+                android:gravity="center_vertical"
+                android:textDirection="ltr" />
+
+        </HorizontalScrollView>
+
+        <!-- Requested files entry: opens RequestedFilesActivity which lists
+             files uploaded by devices (photos, screenshots, recordings, ...)
+             that auto-expire on the server after 1 hour. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRequestedFiles"
+            style="Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/margin_md"
+            android:layout_marginBottom="@dimen/margin_sm"
+            android:text="الملفات المطلوبة"
+            app:icon="@drawable/ic_folder"
+            app:iconGravity="textStart" />
+
+        <!-- Manual path editor (still useful for jumping to a known path) -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilPath"
+            style="Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/margin_md"
+            android:layout_marginBottom="@dimen/margin_sm"
+            app:startIconDrawable="@drawable/ic_folder"
+            app:startIconTint="@color/text_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:text="/"
+                android:textDirection="ltr" />
+
+        </com.google.android.material.textfield.TextInputLayout>
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -33,59 +89,24 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <LinearLayout
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical">
-
-                <!-- Requested files entry: opens RequestedFilesActivity which lists
-                     files uploaded by devices (photos, screenshots, recordings, ...)
-                     that auto-expire on the server after 1 hour. -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnRequestedFiles"
-                    style="Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="@dimen/margin_md"
-                    android:text="الملفات المطلوبة"
-                    app:icon="@drawable/ic_folder"
-                    app:iconGravity="textStart" />
-
-                <!-- Current Path -->
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/tilPath"
-                    style="Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="@dimen/margin_md"
-                    app:startIconDrawable="@drawable/ic_folder"
-                    app:startIconTint="@color/text_hint">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="textUri"
-                        android:text="/"
-                        android:textDirection="ltr" />
-
-                </com.google.android.material.textfield.TextInputLayout>
+                android:layout_height="match_parent">
 
                 <!-- File List -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvFiles"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_height="match_parent"
                     android:clipToPadding="false"
-                    android:paddingHorizontal="@dimen/margin_md" />
+                    android:paddingHorizontal="@dimen/margin_md"
+                    android:paddingBottom="@dimen/margin_md" />
 
                 <!-- Empty State -->
                 <LinearLayout
                     android:id="@+id/emptyState"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_height="match_parent"
                     android:orientation="vertical"
                     android:gravity="center"
                     android:visibility="gone">
@@ -106,7 +127,7 @@
 
                 </LinearLayout>
 
-            </LinearLayout>
+            </FrameLayout>
 
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 

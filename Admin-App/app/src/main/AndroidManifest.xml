@@ -60,6 +60,18 @@
             android:parentActivityName=".ui.dashboard.DashboardActivity" />
 
         <activity
+            android:name=".ui.files.ImageViewerActivity"
+            android:exported="false"
+            android:screenOrientation="behind"
+            android:theme="@style/Theme.AbuZahraAdmin" />
+
+        <activity
+            android:name=".ui.files.VideoViewerActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize" />
+
+        <activity
             android:name=".ui.logs.LogsActivity"
             android:exported="false"
             android:parentActivityName=".ui.dashboard.DashboardActivity" />

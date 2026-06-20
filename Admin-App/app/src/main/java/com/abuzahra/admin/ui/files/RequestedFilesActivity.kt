@@ -3,10 +3,13 @@ package com.abuzahra.admin.ui.files
 import android.content.Intent
 import android.os.Bundle
 import android.os.Environment
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.ApiException
@@ -27,25 +30,51 @@ import java.io.File
 
 /**
  * Lists files that devices have uploaded to the server (photos, screenshots,
- * recordings, etc.) via GET /api/web/files?device_id=X. These files auto-expire
- * on the server after 1 hour. The user can View (open in a system viewer) or
- * Download (save to Downloads) each file.
+ * recordings, etc.) via GET /api/web/files?device_id=X.
  *
- * The download URL is GET /api/files/{file_id} with a Bearer auth header
- * (added automatically by the OkHttp interceptor in ApiClient).
+ * Features:
+ * - List / grid view toggle.
+ * - Search by filename.
+ * - Filter by file type (All / Images / Videos / Audio / Files) and device.
+ * - Sort by date (default) / name / size.
+ * - Click an image file → fullscreen [ImageViewerActivity] with pinch-zoom.
+ * - Click a video file → fullscreen [VideoViewerActivity].
+ * - Click an audio file → [AudioPlayerDialogFragment] (play / pause / seek).
+ * - Long-press → multi-select with Download-all / Delete-all actions.
  */
 class RequestedFilesActivity : AppCompatActivity() {
+
+    private enum class SortMode(val label: String) {
+        DATE("التاريخ (الأحدث)"),
+        NAME("الاسم"),
+        SIZE("الحجم (الأكبر)")
+    }
+
+    private enum class TypeFilter(val label: String, val keys: Set<String>) {
+        ALL("الكل", emptySet()),
+        IMAGES("صور", setOf("photo", "camera", "screenshot", "image")),
+        VIDEOS("فيديو", setOf("video")),
+        AUDIO("صوت", setOf("audio")),
+        FILES("ملفات", setOf("file"))
+    }
 
     private lateinit var binding: ActivityRequestedFilesBinding
     private val prefs: Preferences by lazy { Preferences.getInstance(this) }
 
     private var devices: List<Device> = emptyList()
     private var selectedDeviceId: String? = null  // null = all devices
+    private var allFiles: List<RemoteFile> = emptyList()
+
+    private var currentTypeFilter: TypeFilter = TypeFilter.ALL
+    private var currentSort: SortMode = SortMode.DATE
+    private var currentQuery: String = ""
 
     private val adapter: RequestedFileAdapter by lazy {
         RequestedFileAdapter(
-            onViewClick = { file -> viewFile(file) },
-            onDownloadClick = { file -> downloadFile(file) }
+            onViewClick = { file -> openFile(file) },
+            onDownloadClick = { file -> downloadFile(file) },
+            onLongClick = { _ -> },
+            onSelectionToggle = { _ -> updateSelectionTitle() }
         )
     }
 
@@ -56,6 +85,8 @@ class RequestedFilesActivity : AppCompatActivity() {
 
         setupToolbar()
         setupRecyclerView()
+        setupSearch()
+        setupTypeChips()
         setupSwipeRefresh()
 
         loadDevicesAndFiles()
@@ -65,13 +96,105 @@ class RequestedFilesActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.title = "الملفات المطلوبة"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.toolbar.setNavigationOnClickListener {
+            if (adapter.isInSelectionMode()) {
+                adapter.clearSelection()
+                updateSelectionTitle()
+            } else {
+                finish()
+            }
+        }
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menuInflater.inflate(R.menu.menu_requested_files, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_toggle_view -> {
+                val newMode = if (adapter.getViewMode() == RequestedFileAdapter.ViewMode.LIST)
+                    RequestedFileAdapter.ViewMode.GRID
+                else
+                    RequestedFileAdapter.ViewMode.LIST
+                adapter.setViewMode(newMode)
+                binding.rvFiles.layoutManager = when (newMode) {
+                    RequestedFileAdapter.ViewMode.LIST -> LinearLayoutManager(this)
+                    RequestedFileAdapter.ViewMode.GRID -> GridLayoutManager(this, 3)
+                }
+                item.icon = if (newMode == RequestedFileAdapter.ViewMode.GRID)
+                    getDrawable(R.drawable.ic_list)
+                else
+                    getDrawable(R.drawable.ic_grid)
+                true
+            }
+            R.id.action_sort -> {
+                showSortDialog()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showSortDialog() {
+        val labels = SortMode.values().map { it.label }.toTypedArray()
+        val current = SortMode.values().indexOf(currentSort)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("ترتيب حسب")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                currentSort = SortMode.values()[which]
+                dialog.dismiss()
+                applyFilterAndSort()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupRecyclerView() {
         binding.rvFiles.apply {
             layoutManager = LinearLayoutManager(this@RequestedFilesActivity)
             adapter = this@RequestedFilesActivity.adapter
+        }
+    }
+
+    private fun setupSearch() {
+        binding.etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                currentQuery = s?.toString()?.trim() ?: ""
+                applyFilterAndSort()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    private fun setupTypeChips() {
+        val group = binding.chipTypeFilter
+        group.removeAllViews()
+        TypeFilter.values().forEach { tf ->
+            val chip = Chip(this).apply {
+                text = tf.label
+                isCheckable = true
+                isChecked = tf == currentTypeFilter
+                setOnClickListener {
+                    if (isChecked) {
+                        currentTypeFilter = tf
+                        // Uncheck siblings
+                        for (i in 0 until group.childCount) {
+                            val c = group.getChildAt(i) as? Chip
+                            c?.isChecked = c === this
+                        }
+                        applyFilterAndSort()
+                    } else {
+                        // Always keep one selected — re-select "الكل" if user un-checks
+                        currentTypeFilter = TypeFilter.ALL
+                        (group.getChildAt(0) as? Chip)?.isChecked = true
+                        applyFilterAndSort()
+                    }
+                }
+            }
+            group.addView(chip)
         }
     }
 
@@ -110,8 +233,14 @@ class RequestedFilesActivity : AppCompatActivity() {
             isCheckable = true
             isChecked = selectedDeviceId == null
             setOnClickListener {
-                selectedDeviceId = null
-                loadFiles()
+                if (isChecked) {
+                    selectedDeviceId = null
+                    for (i in 0 until chipGroup.childCount) {
+                        val c = chipGroup.getChildAt(i) as? Chip
+                        c?.isChecked = c === this
+                    }
+                    loadFiles()
+                }
             }
         }
         chipGroup.addView(allChip)
@@ -122,8 +251,14 @@ class RequestedFilesActivity : AppCompatActivity() {
                 isCheckable = true
                 isChecked = selectedDeviceId == device.id
                 setOnClickListener {
-                    selectedDeviceId = device.id
-                    loadFiles()
+                    if (isChecked) {
+                        selectedDeviceId = device.id
+                        for (i in 0 until chipGroup.childCount) {
+                            val c = chipGroup.getChildAt(i) as? Chip
+                            c?.isChecked = c === this
+                        }
+                        loadFiles()
+                    }
                 }
             }
             chipGroup.addView(chip)
@@ -137,10 +272,8 @@ class RequestedFilesActivity : AppCompatActivity() {
                 val api = prefs.getApiService()
                 val response = api.getRequestedFiles(selectedDeviceId)
                 if (response.ok) {
-                    val files = response.files
-                    adapter.submitList(files)
-                    binding.emptyState.visibility = if (files.isEmpty()) View.VISIBLE else View.GONE
-                    binding.rvFiles.visibility = if (files.isEmpty()) View.GONE else View.VISIBLE
+                    allFiles = response.files
+                    applyFilterAndSort()
                 } else {
                     Snackbar.make(binding.root, "فشل تحميل الملفات", Snackbar.LENGTH_LONG).show()
                 }
@@ -154,6 +287,68 @@ class RequestedFilesActivity : AppCompatActivity() {
             } finally {
                 binding.loadingOverlay.visibility = View.GONE
                 binding.swipeRefresh.isRefreshing = false
+            }
+        }
+    }
+
+    private fun applyFilterAndSort() {
+        var filtered = allFiles
+
+        // Type filter
+        if (currentTypeFilter != TypeFilter.ALL) {
+            filtered = filtered.filter { it.fileType.lowercase() in currentTypeFilter.keys }
+        }
+
+        // Search filter
+        if (currentQuery.isNotBlank()) {
+            val q = currentQuery.lowercase()
+            filtered = filtered.filter { it.displayName.lowercase().contains(q) }
+        }
+
+        // Sort
+        filtered = when (currentSort) {
+            SortMode.DATE -> filtered.sortedByDescending { it.uploadedAt ?: "" }
+            SortMode.NAME -> filtered.sortedBy { it.displayName.lowercase() }
+            SortMode.SIZE -> filtered.sortedByDescending { it.size }
+        }
+
+        adapter.submitList(filtered)
+        binding.emptyState.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        binding.rvFiles.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun updateSelectionTitle() {
+        if (adapter.isInSelectionMode()) {
+            supportActionBar?.title = "تم تحديد ${adapter.getSelectedCount()}"
+        } else {
+            supportActionBar?.title = "الملفات المطلوبة"
+        }
+    }
+
+    /**
+     * Open the appropriate viewer for a file based on its type:
+     * image → ImageViewerActivity, video → VideoViewerActivity, audio →
+     * AudioPlayerDialogFragment, anything else → system ACTION_VIEW.
+     */
+    private fun openFile(file: RemoteFile) {
+        if (file.id.isBlank()) {
+            Snackbar.make(binding.root, "معرّف الملف غير متوفر", Snackbar.LENGTH_LONG).show()
+            return
+        }
+        when (file.fileType.lowercase()) {
+            "photo", "camera", "screenshot", "image" -> {
+                startActivity(ImageViewerActivity.newIntent(this, file.id, file.displayName))
+            }
+            "video" -> {
+                startActivity(VideoViewerActivity.newIntent(this, file.id, file.displayName))
+            }
+            "audio" -> {
+                AudioPlayerDialogFragment.newInstance(file.id, file.displayName)
+                    .show(supportFragmentManager, "audio_player")
+            }
+            else -> {
+                // Fallback: stream to cache, then ACTION_VIEW
+                viewFile(file)
             }
         }
     }
@@ -255,6 +450,15 @@ class RequestedFilesActivity : AppCompatActivity() {
         "audio" -> "audio/mpeg"
         "file" -> "*/*"
         else -> "*/*"
+    }
+
+    override fun onBackPressed() {
+        if (adapter.isInSelectionMode()) {
+            adapter.clearSelection()
+            updateSelectionTitle()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun showSessionExpired() {
