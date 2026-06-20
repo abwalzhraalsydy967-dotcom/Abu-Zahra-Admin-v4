@@ -392,6 +392,26 @@ class DeviceDetailActivity : AppCompatActivity() {
             }
         }
 
+        // When a command is sent successfully AND it's a DATA-retrieval
+        // command (sms, contacts, calls, location, screenshot, …),
+        // route the user to the CommandResultActivity so they can see the
+        // actual result instead of just the "تم إرسال الأمر بنجاح" toast.
+        viewModel.commandSent.observe(this) { sent ->
+            if (sent == null) return@observe
+            // Reset the live data so we don't re-launch on configuration change.
+            viewModel.clearCommandSent()
+            if (CommandDefinitions.isDataRetrievalCommand(sent.commandKey)) {
+                val device = viewModel.device.value
+                startActivity(CommandResultActivity.newIntent(
+                    context = this,
+                    deviceId = viewModel.deviceId(),
+                    commandId = sent.commandId,
+                    commandKey = sent.commandKey,
+                    deviceName = device?.name ?: device?.model ?: ""
+                ))
+            }
+        }
+
         // Debug log observer
         viewModel.debugLogs.observe(this) { logs ->
             updateDebugLog(logs)

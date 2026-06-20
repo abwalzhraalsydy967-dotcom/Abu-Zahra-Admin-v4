@@ -10,7 +10,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.SendCommandRequest
+import com.abuzahra.admin.data.model.CommandDefinitions
 import com.abuzahra.admin.databinding.ActivityDataBinding
+import com.abuzahra.admin.ui.device.CommandResultActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.launch
@@ -160,18 +162,39 @@ class DataActivity : AppCompatActivity() {
                 val api = Preferences.getInstance(this@DataActivity).getApiService()
                 val response = api.sendCommand(selectedDeviceId, SendCommandRequest(command))
                 if (response.ok) {
-                    addLog("✅ تم إرسال [$command] بنجاح")
+                    addLog("✅ تم إرسال [$command] بنجاح (id: ${response.command_id})")
                 } else {
                     addLog("❌ فشل [$command]: ${response.message}")
                 }
-                MaterialAlertDialogBuilder(this@DataActivity)
-                    .setTitle(name)
-                    .setMessage(
-                        if (response.ok) "✅ تم إرسال الطلب بنجاح. سيتم تحديث البيانات قريباً.\n\nالأمر: $command"
-                        else "❌ فشل: ${response.message}\n\nالأمر: $command"
-                    )
-                    .setPositiveButton("حسناً", null)
-                    .show()
+                // If this is a DATA-retrieval command, route the user
+                // directly to the result viewer so they actually SEE the
+                // result instead of just getting a "تم الإرسال" toast.
+                if (response.ok && response.command_id.isNotEmpty() &&
+                    CommandDefinitions.isDataRetrievalCommand(command)) {
+                    MaterialAlertDialogBuilder(this@DataActivity)
+                        .setTitle(name)
+                        .setMessage("✅ تم إرسال الطلب. سيتم الآن فتح عارض النتائج.")
+                        .setPositiveButton("فتح النتائج") { _, _ ->
+                            startActivity(CommandResultActivity.newIntent(
+                                context = this@DataActivity,
+                                deviceId = selectedDeviceId,
+                                commandId = response.command_id,
+                                commandKey = command,
+                                deviceName = selectedDeviceName
+                            ))
+                        }
+                        .setNegativeButton("إغلاق", null)
+                        .show()
+                } else {
+                    MaterialAlertDialogBuilder(this@DataActivity)
+                        .setTitle(name)
+                        .setMessage(
+                            if (response.ok) "✅ تم إرسال الطلب بنجاح.\n\nالأمر: $command"
+                            else "❌ فشل: ${response.message}\n\nالأمر: $command"
+                        )
+                        .setPositiveButton("حسناً", null)
+                        .show()
+                }
             } catch (e: SocketTimeoutException) {
                 addLog("❌ مهلة الاتصال")
                 showError("انتهت مهلة الاتصال بالخادم")

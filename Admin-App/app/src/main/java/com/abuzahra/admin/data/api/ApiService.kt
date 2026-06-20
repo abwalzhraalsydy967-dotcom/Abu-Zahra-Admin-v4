@@ -28,6 +28,17 @@ interface ApiService {
     // ── Commands ──────────────────────────────────────────────────
     suspend fun sendCommand(deviceId: String, request: SendCommandRequest): CommandResponse
 
+    /**
+     * Fetch a single command's current state by polling /api/web/commands?device_id=X.
+     * Used by StreamingActivity to wait for the device's start_*_stream command
+     * to complete and return its result (which contains the stream_id).
+     *
+     * Note: the server's /api/web/commands endpoint filters OUT pending/sent
+     * commands, so this will only return a non-null Command once the device
+     * has executed the command and submitted its result.
+     */
+    suspend fun getCommand(deviceId: String, commandId: String): Command?
+
     // ── Link Code ─────────────────────────────────────────────────
     suspend fun getLinkCode(): String
 
@@ -68,8 +79,24 @@ data class CommandResponse(
     val status: String = "",
     val message: String = "",
     val command_id: String = "",
-    val result: String? = null
-)
+    val result: String? = null,
+    /**
+     * Server returns the full queued command object under the "command" key:
+     * {"ok": true, "command": {id, device_id, command, params, status, created_at, ...}}.
+     * We capture it here so callers can read command_id (= command.id) and
+     * route DATA-retrieval commands to the result viewer.
+     */
+    val command: Command? = null
+) {
+    /**
+     * The server returns the command id nested under `command.id`, NOT at the
+     * top level. Older code paths still read `command_id` directly, so we
+     * expose this derived property that prefers the nested value but falls
+     * back to the legacy top-level field.
+     */
+    val effectiveCommandId: String
+        get() = command?.id?.takeIf { it.isNotEmpty() } ?: command_id
+}
 
 data class DevicesEnvelope(
     val ok: Boolean = true,

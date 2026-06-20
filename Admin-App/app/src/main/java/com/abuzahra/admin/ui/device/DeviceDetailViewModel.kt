@@ -32,6 +32,16 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
     private val _commandResult = MutableLiveData<Result<String>>()
     val commandResult: MutableLiveData<Result<String>> = _commandResult
 
+    /**
+     * Emitted after a sendCommand call succeeds with a command_id. Contains
+     * the command_key + command_id so DeviceDetailActivity can decide whether
+     * to launch CommandResultActivity (for DATA-retrieval commands) or just
+     * show a toast (for ACTION commands).
+     */
+    data class SentCommand(val commandKey: String, val commandId: String)
+    private val _commandSent = MutableLiveData<SentCommand?>()
+    val commandSent: MutableLiveData<SentCommand?> = _commandSent
+
     private val _currentCategory = MutableLiveData(CommandDefinitions.Category.DATA)
     val currentCategory: MutableLiveData<CommandDefinitions.Category> = _currentCategory
 
@@ -40,6 +50,12 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
     val debugLogs: MutableLiveData<MutableList<String>> = _debugLogs
 
     private var deviceId: String = ""
+
+    /**
+     * Read-only accessor used by DeviceDetailActivity to launch the
+     * CommandResultActivity with the correct device_id.
+     */
+    fun deviceId(): String = deviceId
 
     // ─── Debug logging ──────────────────────────────────────────
 
@@ -168,10 +184,16 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
 
                 if (response.ok) {
                     logSuccess("✅ تم إرسال الأمر بنجاح: $commandKey")
-                    if (response.command_id.isNotEmpty()) {
-                        logInfo("   معرف الأمر: ${response.command_id}")
+                    val cmdId = response.effectiveCommandId
+                    if (cmdId.isNotEmpty()) {
+                        logInfo("   معرف الأمر: $cmdId")
                     }
                     _commandResult.postValue(Result.Success("تم إرسال الأمر بنجاح: $commandKey"))
+                    // Emit the sent-command event so DeviceDetailActivity
+                    // can route DATA-retrieval commands to the result viewer.
+                    if (cmdId.isNotEmpty()) {
+                        _commandSent.postValue(SentCommand(commandKey, cmdId))
+                    }
                     loadCommandHistory()
                 } else {
                     val msg = response.message.ifEmpty { "فشل إرسال الأمر" }
@@ -245,5 +267,13 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
             is ApiException -> "$operation: ${e.message}"
             else -> "$operation: ${e.javaClass.simpleName}: ${e.message}"
         }
+    }
+
+    /**
+     * Clear the one-shot [commandSent] event so the activity doesn't
+     * re-launch CommandResultActivity on a configuration change.
+     */
+    fun clearCommandSent() {
+        _commandSent.postValue(null)
     }
 }

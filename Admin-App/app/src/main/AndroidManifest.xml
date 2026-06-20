@@ -45,6 +45,11 @@
             android:parentActivityName=".ui.dashboard.DashboardActivity" />
 
         <activity
+            android:name=".ui.device.CommandResultActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.device.DeviceDetailActivity" />
+
+        <activity
             android:name=".ui.files.FilesActivity"
             android:exported="false"
             android:parentActivityName=".ui.dashboard.DashboardActivity" />

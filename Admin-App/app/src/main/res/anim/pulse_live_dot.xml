@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Alpha blink for the LIVE red dot. -->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="600"
+    android:fromAlpha="1.0"
+    android:toAlpha="0.2"
+    android:repeatMode="reverse"
+    android:repeatCount="infinite"
+    android:interpolator="@android:interpolator/accelerate_decelerate" />

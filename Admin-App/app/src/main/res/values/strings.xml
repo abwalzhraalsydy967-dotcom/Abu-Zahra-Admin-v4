@@ -139,4 +139,37 @@
     <string name="users">المستخدمين</string>
     <string name="confirm_password">تأكيد كلمة المرور</string>
     <string name="register">إنشاء الحساب</string>
+
+    <!-- Command Result Viewer -->
+    <string name="command_result_title">نتيجة الأمر</string>
+    <string name="sent_at">وقت الإرسال</string>
+    <string name="completed_at">وقت الإكمال</string>
+    <string name="duration">المدة</string>
+    <string name="refresh">تحديث</string>
+    <string name="copy">نسخ</string>
+    <string name="loading_result">جاري انتظار النتيجة…</string>
+    <string name="polling_hint">يتم التحقق من النتيجة كل ثانيتين</string>
+    <string name="open_in_maps">فتح في الخرائط</string>
+    <string name="no_result_data">لا توجد بيانات في النتيجة</string>
+    <string name="result_failed">فشل تنفيذ الأمر على الجهاز</string>
+    <string name="result_pending">الأمر قيد التنفيذ على الجهاز…</string>
+    <string name="copied_raw_result">تم نسخ النتيجة الخام</string>
+    <string name="empty_result">النتيجة فارغة</string>
+    <string name="result_not_found">لم يتم العثور على الأمر</string>
+    <string name="polling_timeout">انتهت مهلة الانتظار — استمر في التحديث يدوياً</string>
+    <string name="copy_raw">نسخ النتيجة الخام</string>
+    <string name="items_count">%1$d عنصر</string>
+    <string name="coords_format">الإحداثيات: %1$.6f, %2$.6f</string>
+    <string name="accuracy_format">الدقة: ±%.0f متر</string>
+    <string name="battery_pct">المستوى: %1$d%%</string>
+    <string name="charging_yes">قيد الشحن</string>
+    <string name="charging_no">ليس قيد الشحن</string>
+    <string name="raw_result_label">النتيجة الخام:</string>
+    <string name="call_incoming">واردة</string>
+    <string name="call_outgoing">صادرة</string>
+    <string name="call_missed">فائتة</string>
+    <string name="call_rejected">مرفوضة</string>
+    <string name="call_unknown">غير معروفة</string>
+    <string name="duration_format">المدة: %1$s</string>
+    <string name="view_raw_json">عرض JSON الخام</string>
 </resources>

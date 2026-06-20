@@ -23,50 +23,52 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
-        android:padding="16dp">
+        android:padding="12dp">
 
         <!-- Stream Type -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="نوع البث"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textColor="@color/text_secondary"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="6dp" />
 
         <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupStreamType"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:singleSelection="true">
+            android:layout_marginBottom="12dp"
+            app:singleSelection="true"
+            app:singleLine="false">
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipScreen"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="بث الشاشة" />
+                android:text="🖥️ الشاشة" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipFrontCamera"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="الكاميرا الأمامية" />
+                android:text="📷 الأمامية" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipBackCamera"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="الكاميرا الخلفية" />
+                android:text="📷 الخلفية" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipAudio"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="بث الصوت" />
+                android:text="🎙️ الصوت" />
 
         </com.google.android.material.chip.ChipGroup>
 
@@ -75,36 +77,44 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="الجودة"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textColor="@color/text_secondary"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="6dp" />
 
         <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupQuality"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="12dp"
             app:singleSelection="true">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipQualityHigh"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="عالية" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chipQualityMedium"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="متوسطة" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipQualityLow"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="منخفضة" />
+                android:text="480p" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityMedium"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="720p" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityHigh"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1080p" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityUltra"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1440p" />
 
         </com.google.android.material.chip.ChipGroup>
 
@@ -114,7 +124,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="8dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnStartStream"
@@ -122,8 +132,8 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="بدء البث" />
+                android:layout_marginEnd="6dp"
+                android:text="▶ بدء البث" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnStopStream"
@@ -131,56 +141,329 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:text="إيقاف البث"
-                android:backgroundTint="@color/error" />
+                android:layout_marginStart="6dp"
+                android:text="⏹ إيقاف"
+                android:enabled="false"
+                android:backgroundTint="@color/error"
+                android:textColor="@color/on_error" />
 
         </LinearLayout>
 
-        <!-- Status -->
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="wrap_content"
+        <!-- Status row: state text + LIVE badge -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="جاهز للبث"
-            android:textSize="14sp"
-            android:textColor="@color/text_secondary"
-            android:layout_marginBottom="12dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
 
-        <!-- Progress -->
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="جاهز للبث"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary" />
+
+            <FrameLayout
+                android:id="@+id/liveBadgeContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_live_badge"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp">
+
+                    <View
+                        android:id="@+id/liveDot"
+                        android:layout_width="7dp"
+                        android:layout_height="7dp"
+                        android:background="@drawable/dot_live_red" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:text="مباشر"
+                        android:textColor="#FFFFFF"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+            </FrameLayout>
+
+        </LinearLayout>
+
+        <!-- Progress bar (only shown while connecting / waiting for first frame) -->
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/progressBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:indeterminate="true"
             android:visibility="gone"
-            android:layout_marginBottom="12dp"
+            android:layout_marginBottom="8dp"
+            app:indicatorColor="@color/secondary"
             app:trackColor="@android:color/transparent" />
 
-        <!-- Stream Image -->
+        <!-- Stream viewport -->
         <FrameLayout
+            android:id="@+id/streamViewport"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="#1A1A1A">
+            android:background="#000000"
+            android:foregroundGravity="center">
 
+            <!-- SurfaceView for H264 hardware-decoded video.
+                 Always visible (kept behind overlays) so the Surface stays
+                 alive across IDLE→CONNECTING→LIVE transitions and the
+                 MediaCodec decoder can be bound as soon as it's created. -->
+            <SurfaceView
+                android:id="@+id/surfaceView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="visible" />
+
+            <!-- ImageView fallback for JPEG frames (kept for backwards compat / future use) -->
             <ImageView
                 android:id="@+id/imageView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="fitCenter"
-                android:contentDescription="بث مباشر" />
+                android:contentDescription="بث مباشر"
+                android:visibility="gone" />
 
+            <!-- Connecting overlay -->
+            <LinearLayout
+                android:id="@+id/connectingOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="24dp"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/connectingSpinner"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:indeterminateTint="@color/secondary"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/tvConnectingText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="جاري الاقتران..."
+                    android:textColor="@color/secondary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvConnectingHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="يتم تشغيل خدمة البث على الجهاز"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <!-- Audio active overlay (pulsing mic) -->
+            <LinearLayout
+                android:id="@+id/audioOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="24dp"
+                android:visibility="gone">
+
+                <FrameLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp">
+
+                    <View
+                        android:id="@+id/audioPulseRing1"
+                        android:layout_width="80dp"
+                        android:layout_height="80dp"
+                        android:background="@drawable/dot_audio_pulse" />
+
+                    <View
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_audio_mic" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="🎙️"
+                        android:textSize="28sp" />
+
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/tvAudioText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔴 البث الصوتي جارٍ"
+                    android:textColor="#FF6B6B"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvAudioHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="يُرسل الجهاز إطارات الصوت (AAC) عبر WebSocket"
+                    android:textColor="@color/text_hint"
+                    android:textSize="11sp"
+                    android:gravity="center" />
+
+            </LinearLayout>
+
+            <!-- Idle / stopped overlay -->
+            <LinearLayout
+                android:id="@+id/idleOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="24dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📡"
+                    android:textSize="48sp"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="البث متوقف"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="اختر نوع البث واضغط «بدء البث»"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <!-- Stats overlay (top-right): LIVE badge + FPS, latency, resolution -->
+            <LinearLayout
+                android:id="@+id/statsOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_margin="8dp"
+                android:orientation="vertical"
+                android:background="#B3000000"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="6dp"
+                android:visibility="gone">
+
+                <!-- LIVE badge (red, top-right corner of the viewport) -->
+                <LinearLayout
+                    android:id="@+id/viewportLiveBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <View
+                        android:layout_width="7dp"
+                        android:layout_height="7dp"
+                        android:layout_marginEnd="5dp"
+                        android:background="@drawable/dot_live_red" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="LIVE"
+                        android:textColor="#FF6B6B"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:fontFamily="monospace" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvFps"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:text="FPS: --" />
+
+                <TextView
+                    android:id="@+id/tvLatency"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#A8FFC8"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginTop="2dp"
+                    android:text="Latency: -- ms" />
+
+                <TextView
+                    android:id="@+id/tvResolution"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginTop="2dp"
+                    android:text="-- × --" />
+
+                <TextView
+                    android:id="@+id/tvFrameCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#A8A8FF"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginTop="2dp"
+                    android:text="Frames: 0" />
+
+            </LinearLayout>
+
+            <!-- Bottom info bar: codec / source -->
             <TextView
                 android:id="@+id/tvFrameInfo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="bottom|end"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="8dp"
                 android:background="#80000000"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp"
                 android:textColor="#FFFFFF"
-                android:textSize="11sp"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
                 android:visibility="gone" />
 
         </FrameLayout>

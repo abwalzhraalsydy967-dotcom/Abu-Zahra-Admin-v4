@@ -175,7 +175,25 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
         val fullRequest = request.copy(deviceId = deviceId)
         val response = retrofit.sendCommand(fullRequest)
         if (!response.ok) throw ApiException(response.message.ifEmpty { "Command failed" })
-        return response
+        // Server returns {"ok": true, "command": {id, ...}}. The flat
+        // command_id field is empty — populate it from the nested command
+        // object so callers (DeviceDetailViewModel) can route the command
+        // to the result viewer.
+        val cmdId = response.command_id.ifEmpty { response.command?.id ?: "" }
+        return if (cmdId.isNotEmpty() && cmdId != response.command_id) {
+            response.copy(command_id = cmdId)
+        } else {
+            response
+        }
+    }
+
+    override suspend fun getCommand(deviceId: String, commandId: String): Command? {
+        val envelope = retrofit.getCommands(deviceId)
+        if (!envelope.ok) return null
+        // Server's /api/web/commands filters out pending/sent commands, so a
+        // not-yet-completed command will not appear in the list — caller
+        // should retry until non-null is returned or timeout is reached.
+        return envelope.commands.firstOrNull { it.id == commandId }
     }
 
     override suspend fun getLinkCode(): String {
@@ -266,6 +284,32 @@ class ApiClient private constructor() {
             val retrofit = buildRetrofit(serverUrl, client)
             val service = retrofit.create(RetrofitApiService::class.java)
             return ApiServiceImpl(service)
+        }
+
+        /**
+         * Build a standalone OkHttpClient configured with the same auth
+         * interceptor and timeouts as the Retrofit client. Used by callers
+         * that need a raw OkHttp client for WebSocket connections (e.g.
+         * StreamingActivity connecting to /ws/stream/viewer).
+         */
+        fun buildWebSocketClient(token: String): OkHttpClient {
+            return buildOkHttpClient(token)
+        }
+
+        /**
+         * Build a WebSocket URL from an HTTP(S) base URL.
+         *   https://host/path  ->  wss://host/path
+         *   http://host/path   ->  ws://host/path
+         * The query string (if any) is appended after the converted base.
+         */
+        fun buildWebSocketUrl(baseUrl: String, path: String, query: String? = null): String {
+            val normalizedBase = if (baseUrl.endsWith("/")) baseUrl.dropLast(1) else baseUrl
+            val wsBase = normalizedBase
+                .replace("https://", "wss://")
+                .replace("http://", "ws://")
+            val fullPath = if (path.startsWith("/")) path else "/$path"
+            val fullQuery = if (!query.isNullOrEmpty()) "?$query" else ""
+            return "$wsBase$fullPath$fullQuery"
         }
 
         /**
