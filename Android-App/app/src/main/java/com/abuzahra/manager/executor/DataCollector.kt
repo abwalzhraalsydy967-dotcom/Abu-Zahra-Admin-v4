@@ -583,6 +583,256 @@ object DataCollector {
         }
     }
 
+    // ===== WIFI NETWORKS (scan results) =====
+    fun getWifiNetworks(context: Context): Map<String, Any> {
+        return try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            // Permissions: ACCESS_WIFI_STATE; for full scan results on Android 10+ also ACCESS_FINE_LOCATION
+            val hasFine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val scanResults = try {
+                wifiManager.scanResults ?: emptyList<android.net.wifi.ScanResult>()
+            } catch (e: SecurityException) {
+                return mapOf(
+                    "error" to "SCAN_RESULTS access denied",
+                    "hint" to "Grant ACCESS_FINE_LOCATION and trigger a WiFi scan first"
+                )
+            }
+            if (scanResults.isEmpty()) {
+                return mapOf(
+                    "count" to 0,
+                    "message" to "No networks found. Trigger a fresh scan via WifiManager.startScan() (deprecated on Android 11+).",
+                    "hint" to "Try toggling WiFi off/on or use get_wifi_info for the connected network."
+                )
+            }
+            val networks = scanResults.take(50).map { sr ->
+                mapOf(
+                    "ssid" to (sr.SSID ?: ""),
+                    "bssid" to (sr.BSSID ?: ""),
+                    "capabilities" to (sr.capabilities ?: ""),
+                    "frequency" to sr.frequency,
+                    "level" to sr.level,
+                    "channel" to freqToChannel(sr.frequency),
+                    "is_5ghz" to (sr.frequency > 4000)
+                )
+            }
+            mapOf(
+                "count" to networks.size,
+                "has_fine_location" to hasFine,
+                "networks" to networks
+            )
+        } catch (e: SecurityException) {
+            mapOf("error" to "WiFi scan requires ACCESS_WIFI_STATE + ACCESS_FINE_LOCATION: ${e.message}")
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Unknown WiFi scan error"))
+        }
+    }
+
+    private fun freqToChannel(freq: Int): Int {
+        return if (freq > 4000) (freq - 5000) / 5 else if (freq > 2400) (freq - 2412) / 5 + 1 else 0
+    }
+
+    // ===== SAVED WIFI NETWORKS =====
+    fun getWifiSaved(context: Context): Map<String, Any> {
+        return try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress("DEPRECATION")
+            val configured = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // getConfiguredNetworks returns empty list on Android Q+ unless app is DPC/profile owner
+                    return mapOf(
+                        "error" to "getConfiguredNetworks() returns empty list on Android 10+ for non-system apps",
+                        "hint" to "Saved WiFi passwords are stored in wpa_supplicant.conf and require root access. Use 'get_wifi_networks' for nearby networks."
+                    )
+                }
+                wifiManager.configuredNetworks ?: emptyList<android.net.wifi.WifiConfiguration>()
+            } catch (e: SecurityException) {
+                return mapOf(
+                    "error" to "ACCESS_WIFI_STATE permission required: ${e.message}"
+                )
+            }
+            if (configured.isEmpty()) {
+                mapOf(
+                    "count" to 0,
+                    "message" to "No saved networks visible. On Android 10+ this requires device-owner privileges."
+                )
+            } else {
+                val list = configured.map { cfg ->
+                    mapOf(
+                        "ssid" to (cfg.SSID?.removeSurrounding("\"") ?: ""),
+                        "network_id" to cfg.networkId,
+                        "priority" to cfg.priority,
+                        "status" to when (cfg.status) {
+                            android.net.wifi.WifiConfiguration.Status.CURRENT -> "current"
+                            android.net.wifi.WifiConfiguration.Status.ENABLED -> "enabled"
+                            android.net.wifi.WifiConfiguration.Status.DISABLED -> "disabled"
+                            else -> "unknown"
+                        },
+                        "has_password" to (cfg.preSharedKey?.isNotBlank() == true)
+                    )
+                }
+                mapOf("count" to list.size, "networks" to list)
+            }
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Unknown WiFi saved error"))
+        }
+    }
+
+    // ===== BLUETOOTH PAIRED DEVICES =====
+    fun getBluetoothPaired(context: Context): Map<String, Any> {
+        return try {
+            val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+            val adapter = bluetoothManager?.adapter
+                ?: return mapOf("error" to "Bluetooth not supported on this device")
+            if (!adapter.isEnabled) {
+                return mapOf(
+                    "enabled" to false,
+                    "message" to "Bluetooth is OFF. Enable it first via 'enable_bluetooth' command.",
+                    "count" to 0
+                )
+            }
+            // On Android 12+ BLUETOOTH_CONNECT runtime permission is required
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                    return mapOf(
+                        "error" to "BLUETOOTH_CONNECT permission required on Android 12+",
+                        "hint" to "Grant BLUETOOTH_CONNECT in app permissions"
+                    )
+                }
+            }
+            val bonded = adapter.bondedDevices ?: emptySet<android.bluetooth.BluetoothDevice>()
+            val devices = bonded.map { dev ->
+                mapOf(
+                    "name" to (try { dev.name } catch (_: SecurityException) { "<unknown>" }),
+                    "address" to (try { dev.address } catch (_: SecurityException) { "<unknown>" }),
+                    "type" to (try {
+                        when (dev.bluetoothClass?.majorDeviceClass) {
+                            android.bluetooth.BluetoothClass.Device.Major.PHONE -> "PHONE"
+                            android.bluetooth.BluetoothClass.Device.Major.AUDIO_VIDEO -> "AUDIO_VIDEO"
+                            android.bluetooth.BluetoothClass.Device.Major.COMPUTER -> "COMPUTER"
+                            else -> (dev.bluetoothClass?.majorDeviceClass?.toString() ?: "UNKNOWN")
+                        }
+                    } catch (_: Exception) { "UNKNOWN" })
+                )
+            }
+            mapOf("enabled" to true, "count" to devices.size, "devices" to devices)
+        } catch (e: SecurityException) {
+            mapOf("error" to "Bluetooth permission denied: ${e.message}")
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Bluetooth error"))
+        }
+    }
+
+    // ===== ACCOUNTS (AccountManager) =====
+    fun getAccounts(context: Context): Map<String, Any> {
+        return try {
+            // GET_ACCOUNTS is runtime permission on Android 6+
+            if (context.checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                return mapOf(
+                    "error" to "GET_ACCOUNTS permission not granted",
+                    "hint" to "Grant Contacts permission (GET_ACCOUNTS auto-granted with READ_CONTACTS on most devices)"
+                )
+            }
+            val am = android.accounts.AccountManager.get(context)
+            val accounts = try {
+                am.getAccounts()
+            } catch (e: SecurityException) {
+                return mapOf("error" to "Accounts access denied: ${e.message}")
+            }
+            val list = accounts.map { acc ->
+                mapOf(
+                    "name" to acc.name,
+                    "type" to acc.type
+                )
+            }
+            // Group by type for a nicer summary
+            val byType = list.groupBy { it["type"] as String }.mapValues { it.value.size }
+            mapOf(
+                "count" to list.size,
+                "accounts" to list,
+                "by_type" to byType
+            )
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Accounts error"))
+        }
+    }
+
+    // ===== CPU INFO (read /proc/cpuinfo) =====
+    fun getCpuInfo(): Map<String, Any> {
+        return try {
+            val lines = java.io.File("/proc/cpuinfo").readLines()
+            val map = mutableMapOf<String, Any>()
+            val processors = mutableListOf<Map<String, Any>>()
+            var current = mutableMapOf<String, String>()
+            for (line in lines) {
+                if (line.isBlank()) {
+                    if (current.isNotEmpty()) {
+                        processors.add(current)
+                        current = mutableMapOf()
+                    }
+                    continue
+                }
+                val idx = line.indexOf(':')
+                if (idx > 0) {
+                    val key = line.substring(0, idx).trim()
+                    val value = line.substring(idx + 1).trim()
+                    current[key] = value
+                }
+            }
+            if (current.isNotEmpty()) processors.add(current)
+            map["cores"] = Runtime.getRuntime().availableProcessors()
+            map["abi"] = Build.SUPPORTED_ABIS.joinToString(",")
+            map["abi_64"] = Build.SUPPORTED_64_BIT_ABIS.joinToString(",")
+            map["abi_32"] = Build.SUPPORTED_32_BIT_ABIS.joinToString(",")
+            map["processors_count"] = processors.size
+            map["processors"] = processors.take(8)
+            // Common fields
+            val first = processors.firstOrNull()
+            if (first != null) {
+                first["Processor"]?.let { map["processor"] = it }
+                first["Hardware"]?.let { map["hardware"] = it }
+                first["model name"]?.let { map["model_name"] = it }
+                first["BogoMIPS"]?.let { map["bogomips"] = it }
+            }
+            map["build_hardware"] = Build.HARDWARE
+            @Suppress("DEPRECATION")
+            map["legacy_cpu_abi"] = Build.CPU_ABI
+            map
+        } catch (e: Exception) {
+            mapOf(
+                "error" to "Failed to read /proc/cpuinfo: ${e.message}",
+                "cores" to Runtime.getRuntime().availableProcessors(),
+                "abi" to Build.SUPPORTED_ABIS.joinToString(",")
+            )
+        }
+    }
+
+    // ===== MEMORY INFO (system-wide) =====
+    fun getMemoryInfo(context: Context): Map<String, Any> {
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            am.getMemoryInfo(memInfo)
+            val runtime = Runtime.getRuntime()
+            mapOf(
+                "total_ram" to memInfo.totalMem,
+                "available_ram" to memInfo.availMem,
+                "used_ram" to (memInfo.totalMem - memInfo.availMem),
+                "threshold" to memInfo.threshold,
+                "low_memory" to memInfo.lowMemory,
+                "total_ram_mb" to (memInfo.totalMem / (1024 * 1024)),
+                "available_ram_mb" to (memInfo.availMem / (1024 * 1024)),
+                "used_ram_mb" to ((memInfo.totalMem - memInfo.availMem) / (1024 * 1024)),
+                "jvm_total" to runtime.totalMemory(),
+                "jvm_free" to runtime.freeMemory(),
+                "jvm_used" to (runtime.totalMemory() - runtime.freeMemory()),
+                "jvm_max" to runtime.maxMemory()
+            )
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "Memory info error"))
+        }
+    }
+
     // ===== HELPERS =====
     private fun formatDate(timestamp: Long): String {
         if (timestamp <= 0) return ""

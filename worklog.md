@@ -3003,3 +3003,77 @@ Stage Summary:
   2. عرض النتائج: polling + parser + 7 واجهات عرض ✅
   3. مئات الأوامر: 281 أمر (من 116) + صلاحيات كاملة ✅
 - APKs جاهزة للتحميل من GitHub Actions
+
+---
+Task ID: 9-A
+Agent: Command Expander v2
+Task: تنفيذ الأوامر الـ stubbed + إضافة 50+ أمر جديد (330+ إجمالي)
+
+Work Log:
+- قرأت Phase 8 من worklog.md + الحالة الحالية (281 أمر، ~95 stubbed)
+- قرأت Server/modules/commands.py + CommandExecutor.kt + DataCollector.kt + ControlExecutor.kt + AppExecutor.kt + FileExecutor.kt + CommandDefinitions.kt + src/lib/commands.ts
+- أنشأت ملفين جديدين:
+  • Android-App/.../executor/DeviceInfoExecutor.kt (284 سطر) — 16 أمر معلومات جهاز (IMEI/IMSI/serial/MAC/IP/IPv6/operators/phone_type/sim_state/data_state/data_activity)
+  • Android-App/.../executor/SystemInfoExecutor.kt (370 سطر) — أوامر النظام + الإعدادات + المكالمات + SMS + الإشعارات + الوسائط
+  • Android-App/.../executor/InputExecutor.kt (172 سطر) — 7 أوامر إدخال/لوحة مففاتيح/حافظة
+- وسّعت DataCollector.kt بـ 6 دوال حقيقية:
+  • getWifiNetworks() — WifiManager.scanResults() مع channel/5GHz detection
+  • getWifiSaved() — getConfiguredNetworks() مع fallback صريح لـ Android 10+
+  • getBluetoothPaired() — BluetoothAdapter.bondedDevices() + BLUETOOTH_CONNECT guard
+  • getAccounts() — AccountManager.getAccounts() مع GET_ACCOUNTS runtime check
+  • getCpuInfo() — قراءة /proc/cpuinfo كاملة (processor/Hardware/BogoMIPS)
+  • getMemoryInfo() — ActivityManager.MemoryInfo للـ RAM الكلي/المتبقي + JVM heap
+- أضفت دالتين مساعدتين إلى MyAccessibilityService.kt:
+  • pasteIntoFocusedNode() — ACTION_PASTE في الحقل المركّز
+  • performGlobalKey(keyCode) — honest "not supported" (AccessibilityService لا يحقن keycodes)
+- حدّثت CommandExecutor.kt:
+  • استبدلت 7 stubs بأطراف حقيقية من DataCollector
+  • أضفت 55 معالج جديد (16 device + 8 system + 7 input + 7 media + 17 control)
+- أضفت صلاحية ANSWER_PHONE_CALLS إلى AndroidManifest.xml
+- حدّثت Server/modules/commands.py:
+  • 55 أمر جديد في COMMAND_REGISTRY (16 device + 8 system + 7 input + 7 media + 17 control)
+  • 4 فئات جديدة في CMD_CATEGORIES: device/input/media/system
+- حدّثت Admin-App/.../CommandDefinitions.kt:
+  • 4 enum categories جديدة: DEVICE/INPUT/MEDIA/SYSTEM
+  • 55 CommandDef جديد موزّعة على الفئات
+- حدّثت src/lib/commands.ts:
+  • 4 category objects جديدة: device/input/media/system
+  • 55 إدخال جديد مع paramFields للأوامر التي تحتاج مدخلات (send_ussd/send_sms_to/send_sms_broadcast/post_notification/cancel_notification/input_text/input_key/set_clipboard_text/set_media_volume)
+- التحقق:
+  • grep '"cmd":' Server/modules/commands.py → 336 (من 281 → +55)
+  • grep 'CommandDef(' Admin-App CommandDefinitions.kt → 336 entries + 1 class decl = 337
+  • grep 'cmd:' src/lib/commands.ts → 336 commands + 1 interface decl = 337
+  • parity كامل: registry - TS - Admin = empty sets (336 = 336 = 336)
+  • python3 -m py_compile Server/modules/commands.py → OK
+  • balanced braces/parens في كل ملفات Kotlin الجديدة والمعدّلة (DataCollector.kt, CommandExecutor.kt, DeviceInfoExecutor.kt, InputExecutor.kt, SystemInfoExecutor.kt, MyAccessibilityService.kt, CommandDefinitions.kt) — كلها OK
+  • bun run lint: 0 أخطاء في src/lib/commands.ts؛ الأخطاء المتبقية في src/components/ (2 pre-existing <img> warnings في command-results.tsx و file-viewer.tsx)
+
+Stage Summary:
+- Stubs حُوّلت إلى تطبيقات حقيقية (7):
+  1. get_wifi_networks — WifiManager.scanResults() مع channel/5GHz/capabilities
+  2. get_wifi_saved — getConfiguredNetworks() (مع fallback صريح لـ Android 10+: يتطلب DPC)
+  3. get_bluetooth_devices — BluetoothAdapter.bondedDevices()
+  4. get_bluetooth_paired — نفس implementation (paired devices)
+  5. get_accounts — AccountManager.getAccounts() + grouping by_type
+  6. get_memory_info — ActivityManager.MemoryInfo (system RAM total/avail + JVM heap)
+  7. get_cpu_info — قراءة /proc/cpuinfo كاملة
+- أوامر جديدة تمت إضافتها: 55 أمر في 4 فئات جديدة + توسيع فئة control
+  • DEVICE (16): get_device_id, get_imei, get_imsi, get_phone_number, get_serial, get_mac_address, get_ip_address, get_ipv6_address, get_network_operator, get_sim_operator, get_sim_country, get_network_country, get_phone_type, get_sim_state, get_data_state, get_data_activity
+  • SYSTEM (8): get_system_properties, get_build_info, get_uptime, get_boot_time, get_current_time, set_current_time, get_timezone, get_available_locales
+  • INPUT (7): show_keyboard, hide_keyboard, input_text, input_key, paste_clipboard, clear_clipboard, set_clipboard_text
+  • MEDIA (7): play_media, pause_media, stop_media, next_track, previous_track, set_media_volume, get_now_playing
+  • CONTROL additions (17): open_settings/open_wifi_settings/open_bluetooth_settings/open_location_settings/open_app_settings/open_security_settings/open_developer_options/open_accessibility_settings/open_notification_settings + answer_call/end_call/send_ussd + send_sms_to/send_sms_broadcast + post_notification/cancel_notification/cancel_all_notifications
+- إجمالي الأوامر: 281 → 336 (+55)
+  • registry: 336 = TS: 336 = Admin-App: 336 (parity كامل)
+- التطبيقات الحقيقية تستخدم APIs عامة (لا تحتاج root):
+  • WifiManager, BluetoothAdapter, AccountManager, ActivityManager.MemoryInfo, /proc/cpuinfo
+  • TelephonyManager (للـ IMEI/IMSI/serial: يرجع honest error على Android 10+)
+  • AudioManager.dispatchMediaKeyEvent (للوسائط)
+  • TelecomManager.endCall() (يحتاج MODIFY_PHONE_STATE — يرجع SecurityException صريح)
+  • Settings.ACTION_* (لإعدادات shortcuts)
+- الأخطاء الصريحة ("honest errors") لما لا يمكن تنفيذه بدون root/system-signature:
+  • IMEI/IMSI على Android 10+ (READ_PRIVILEGED_PHONE_STATE)
+  • answer_call (MODIFY_PHONE_STATE)
+  • set_current_time (SET_TIME)
+  • get_now_playing (NotificationListenerService required)
+  • get_wifi_saved على Android 10+ (DPC required)

