@@ -177,7 +177,7 @@ object DeviceInfoExecutor {
             var mac = "02:00:00:00:00:00"
             var source = "WifiManager placeholder (Android 6+ restriction)"
             try {
-                val interfaces = NetworkInterface.getNetworkInterfaces() ?: emptyList()
+                val interfaces: List<NetworkInterface> = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
                 for (nif in interfaces) {
                     if (!nif.isUp || nif.isLoopback) continue
                     val raw = nif.hardwareAddress ?: continue
@@ -203,7 +203,7 @@ object DeviceInfoExecutor {
         return try {
             var ip = ""
             var interfaceName = ""
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: emptyList()
+            val interfaces: List<NetworkInterface> = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
             for (nif in interfaces) {
                 if (!nif.isUp || nif.isLoopback) continue
                 for (addr in nif.inetAddresses) {
@@ -244,7 +244,7 @@ object DeviceInfoExecutor {
         return try {
             var ip = ""
             var interfaceName = ""
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: emptyList()
+            val interfaces: List<NetworkInterface> = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
             for (nif in interfaces) {
                 if (!nif.isUp || nif.isLoopback) continue
                 for (addr in nif.inetAddresses) {

@@ -253,7 +253,7 @@ object SystemInfoExecutor {
     fun openSecuritySettings(context: Context) = openActivity(context, Settings.ACTION_SECURITY_SETTINGS, "Security Settings")
     fun openDeveloperOptions(context: Context) = openActivity(context, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, "Developer Options")
     fun openAccessibilitySettings(context: Context) = openActivity(context, Settings.ACTION_ACCESSIBILITY_SETTINGS, "Accessibility Settings")
-    fun openNotificationSettings(context: Context) = openActivity(context, Settings.ACTION_NOTIFICATION_SETTINGS, "Notification Settings")
+    fun openNotificationSettings(context: Context) = openActivity(context, android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS, "Notification Settings")
 
     // ===== CALLS =====
     fun answerCall(context: Context): Map<String, Any> {
@@ -327,7 +327,7 @@ object SystemInfoExecutor {
         if (number.isBlank()) return mapOf("error" to "number param required")
         if (message.isBlank()) return mapOf("error" to "message param required")
         return try {
-            val sm = context.getSystemService(Context.SMS_SERVICE) as? android.telephony.SmsManager
+            val sm = context.getSystemService("sms") as? android.telephony.SmsManager
                 ?: return mapOf("error" to "SmsManager unavailable")
             val parts = sm.divideMessage(message)
             if (parts.size == 1) {
@@ -355,7 +355,7 @@ object SystemInfoExecutor {
         if (message.isBlank()) return mapOf("error" to "message param required")
         if (numbers.size > 50) return mapOf("error" to "Max 50 recipients per broadcast")
         return try {
-            val sm = context.getSystemService(Context.SMS_SERVICE) as? android.telephony.SmsManager
+            val sm = context.getSystemService("sms") as? android.telephony.SmsManager
                 ?: return mapOf("error" to "SmsManager unavailable")
             var sent = 0
             val failed = mutableListOf<String>()
