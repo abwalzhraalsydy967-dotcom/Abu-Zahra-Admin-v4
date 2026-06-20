@@ -124,7 +124,7 @@ class RequestedFileAdapter(
         init {
             binding.root.setOnClickListener {
                 val pos = bindingAdapterPosition
-                if (pos == RecyclerView.NO_POSITION || pos >= currentList.size) return@click
+                if (pos == RecyclerView.NO_POSITION || pos >= currentList.size) return@setOnClickListener
                 val f = getItem(pos)
                 if (selectionMode) {
                     onSelectionToggle(f)
@@ -236,7 +236,7 @@ class RequestedFileAdapter(
         init {
             binding.root.setOnClickListener {
                 val pos = bindingAdapterPosition
-                if (pos == RecyclerView.NO_POSITION || pos >= currentList.size) return@click
+                if (pos == RecyclerView.NO_POSITION || pos >= currentList.size) return@setOnClickListener
                 val f = getItem(pos)
                 if (selectionMode) {
                     onSelectionToggle(f)

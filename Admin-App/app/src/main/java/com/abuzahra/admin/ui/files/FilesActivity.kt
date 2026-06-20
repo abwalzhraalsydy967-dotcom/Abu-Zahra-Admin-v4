@@ -45,7 +45,7 @@ class FilesActivity : AppCompatActivity() {
     private var currentPath = "/"
     private var deviceId: String = ""
     private var currentSort: SortMode = SortMode.NAME
-    private var actionMode: android.view.ActionMode? = null
+    private var actionMode: androidx.appcompat.view.ActionMode? = null
 
     /** Most recent server response for the current directory, unfiltered. */
     private var rawFiles: List<RemoteFile> = emptyList()
@@ -90,20 +90,20 @@ class FilesActivity : AppCompatActivity() {
         uri?.let { uploadFile(it) }
     }
 
-    private val actionModeCallback = object : android.view.ActionMode.Callback {
-        override fun onCreateActionMode(mode: android.view.ActionMode, menu: Menu): Boolean {
+    private val actionModeCallback = object : androidx.appcompat.view.ActionMode.Callback {
+        override fun onCreateActionMode(mode: androidx.appcompat.view.ActionMode, menu: Menu): Boolean {
             menu.add(0, R.id.action_download_selected, 0, "تحميل المحددد")
                 .setIcon(R.drawable.ic_download)
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             return true
         }
 
-        override fun onPrepareActionMode(mode: android.view.ActionMode, menu: Menu): Boolean {
+        override fun onPrepareActionMode(mode: androidx.appcompat.view.ActionMode, menu: Menu): Boolean {
             mode.title = "تم تحديد ${fileAdapter.getSelectedCount()}"
             return true
         }
 
-        override fun onActionItemClicked(mode: android.view.ActionMode, item: MenuItem): Boolean {
+        override fun onActionItemClicked(mode: androidx.appcompat.view.ActionMode, item: MenuItem): Boolean {
             return when (item.itemId) {
                 R.id.action_download_selected -> {
                     downloadSelected()
@@ -114,7 +114,7 @@ class FilesActivity : AppCompatActivity() {
             }
         }
 
-        override fun onDestroyActionMode(mode: android.view.ActionMode) {
+        override fun onDestroyActionMode(mode: androidx.appcompat.view.ActionMode) {
             fileAdapter.clearSelection()
             actionMode = null
         }
