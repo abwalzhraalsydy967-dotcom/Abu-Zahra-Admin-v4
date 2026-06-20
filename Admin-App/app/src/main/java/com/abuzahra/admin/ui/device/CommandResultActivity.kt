@@ -637,13 +637,13 @@ class CommandResultActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderRawJson(text: String) {
+    private fun renderRawJson(jsonText: String) {
         val tv = TextView(this).apply {
             setTextColor(ContextCompat.getColor(this@CommandResultActivity, R.color.text_primary))
             textSize = 12f
             typeface = android.graphics.Typeface.MONOSPACE
             setPadding(32, 32, 32, 32)
-            text = text
+            text = jsonText
             textDirection = View.TEXT_DIRECTION_LTR
             setBackgroundResource(R.color.surface)
             setLineSpacing(2f, 1f)
