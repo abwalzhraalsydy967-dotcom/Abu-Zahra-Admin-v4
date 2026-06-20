@@ -6,15 +6,18 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Outline
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -480,9 +483,12 @@ class CommandResultActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.view_location_result, null, false)
         val tvCoords = view.findViewById<TextView>(R.id.tvCoords)
         val tvAccuracy = view.findViewById<TextView>(R.id.tvAccuracy)
+        val tvAltitude = view.findViewById<TextView>(R.id.tvAltitude)
         val tvExtras = view.findViewById<TextView>(R.id.tvExtras)
         val btnMaps = view.findViewById<MaterialButton>(R.id.btnOpenMaps)
+        val btnOsm = view.findViewById<MaterialButton>(R.id.btnOpenOsm)
         val btnCopy = view.findViewById<MaterialButton>(R.id.btnCopyCoords)
+        val mapFrame = view.findViewById<FrameLayout>(R.id.mapFrame)
         val mapWebView = view.findViewById<WebView>(R.id.mapWebView)
         val mapPlaceholder = view.findViewById<View>(R.id.mapPlaceholder)
 
@@ -498,9 +504,33 @@ class CommandResultActivity : AppCompatActivity() {
             String.format(Locale.US, getString(R.string.accuracy_format), it)
         } ?: "—"
 
-        if (loc.extras.isNotEmpty()) {
+        // Extract altitude / speed / bearing from the extras map (if present)
+        // and surface them in a dedicated line so the user can see them at a
+        // glance without scanning the raw extras dump.
+        val alt = loc.extras["altitude"]?.toDoubleOrNull()
+            ?: loc.extras["alt"]?.toDoubleOrNull()
+        val speed = loc.extras["speed"]?.toDoubleOrNull()
+        val bearing = loc.extras["bearing"]?.toDoubleOrNull()
+            ?: loc.extras["heading"]?.toDoubleOrNull()
+        if (alt != null || speed != null || bearing != null) {
+            val parts = mutableListOf<String>()
+            if (alt != null) parts.add(String.format(Locale.US,
+                getString(R.string.altitude_format), alt))
+            if (speed != null) parts.add("السرعة: ${"%.1f".format(Locale.US, speed)} م/ث")
+            if (bearing != null) parts.add("الاتجاه: ${"%.0f".format(Locale.US, bearing)}°")
+            tvAltitude.text = parts.joinToString("  •  ")
+            tvAltitude.visibility = View.VISIBLE
+        } else {
+            tvAltitude.visibility = View.GONE
+        }
+
+        // Show any remaining extras (provider, timestamp, etc.) that weren't
+        // promoted to the altitude/speed/bearing line.
+        val promotedKeys = setOf("altitude", "alt", "speed", "bearing", "heading")
+        val remaining = loc.extras.filterKeys { it.lowercase() !in promotedKeys }
+        if (remaining.isNotEmpty()) {
             val sb = StringBuilder()
-            for ((k, v) in loc.extras) {
+            for ((k, v) in remaining) {
                 sb.append("$k: $v\n")
             }
             tvExtras.text = sb.toString().trimEnd('\n')
@@ -509,9 +539,21 @@ class CommandResultActivity : AppCompatActivity() {
             tvExtras.visibility = View.GONE
         }
 
+        // Round the WebView's corners via a ViewOutlineProvider. The FrameLayout
+        // already has a rounded background drawable; clipToOutline ensures the
+        // WebView and placeholder are clipped to that rounded rectangle.
+        val cornerRadius = resources.getDimension(R.dimen.radius_md)
+        mapFrame.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, cornerRadius)
+            }
+        }
+        mapFrame.clipToOutline = true
+
         // Configure the WebView with the OpenStreetMap embed. No API key
         // is required — the embed.html endpoint renders a tile map with a
-        // marker and is free to use.
+        // marker and is free to use. The bbox is a small box (±0.01° ≈ ±1.1km
+        // at the equator) around the marker so the map zooms in on the point.
         if (locationValid) {
             mapWebView.visibility = View.VISIBLE
             mapPlaceholder.visibility = View.GONE
@@ -528,30 +570,32 @@ class CommandResultActivity : AppCompatActivity() {
                 }
                 webViewClient = WebViewClient()
                 webChromeClient = WebChromeClient()
-                // The bbox is a tiny box around the marker (±0.005 degrees
-                // ≈ ±550m at the equator) so the map zooms in on the point.
-                val dLat = 0.005
-                val dLng = 0.005
-                val bbox = "${loc.lng - dLng},${loc.lat - dLat}," +
-                           "${loc.lng + dLng},${loc.lat + dLng}"
+                val dLat = 0.01
+                val dLng = 0.01
+                // %2C is the URL-encoded comma; OpenStreetMap's embed endpoint
+                // expects bbox=minLng,minLat,maxLng,maxLat and marker=lat,lng.
+                val bbox = "${loc.lng - dLng}%2C${loc.lat - dLat}%2C" +
+                           "${loc.lng + dLng}%2C${loc.lat + dLat}"
                 val url = "https://www.openstreetmap.org/export/embed.html" +
-                          "?bbox=$bbox&layer=mapnik&marker=${loc.lat},${loc.lng}"
+                          "?bbox=$bbox&layer=mapnik&marker=${loc.lat}%2C${loc.lng}"
                 loadUrl(url)
             }
         } else {
             // Coordinates are zero or out of range — no map to show.
             mapWebView.visibility = View.GONE
             mapPlaceholder.visibility = View.VISIBLE
-            tvCoords.text = "موقع غير متاح"
-            tvAccuracy.text = "—"
+            tvCoords.text = getString(R.string.location_unavailable)
+            tvAccuracy.text = getString(R.string.location_invalid_hint)
+            tvAltitude.visibility = View.GONE
+            tvExtras.visibility = View.GONE
         }
 
-        // "فتح في خرائط Google" button → launch the Google Maps app via a
+        // "خرائط Google" button → launch the Google Maps app via a
         // geo: intent, falling back to a web URL if no maps app is installed.
         btnMaps.setOnClickListener {
             if (!locationValid) {
                 Snackbar.make(binding.coordinator,
-                    "موقع غير متاح", Snackbar.LENGTH_SHORT).show()
+                    getString(R.string.location_unavailable), Snackbar.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val uri = Uri.parse("geo:${loc.lat},${loc.lng}?q=${loc.lat},${loc.lng}")
@@ -575,8 +619,26 @@ class CommandResultActivity : AppCompatActivity() {
                     }
                 } catch (e2: Exception) {
                     Snackbar.make(binding.coordinator,
-                        "لا يوجد تطبيق خرائط", Snackbar.LENGTH_SHORT).show()
+                        getString(R.string.no_maps_app), Snackbar.LENGTH_SHORT).show()
                 }
+            }
+        }
+
+        // "OpenStreetMap" button → open the OpenStreetMap site in a browser
+        // at the same coordinates (uses the mlat/mlon marker query params).
+        btnOsm.setOnClickListener {
+            if (!locationValid) {
+                Snackbar.make(binding.coordinator,
+                    getString(R.string.location_unavailable), Snackbar.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val osmUrl = "https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=16/${loc.lat}/${loc.lng}"
+            val osmIntent = Intent(Intent.ACTION_VIEW, Uri.parse(osmUrl))
+            try {
+                startActivity(osmIntent)
+            } catch (e: Exception) {
+                Snackbar.make(binding.coordinator,
+                    getString(R.string.no_maps_app), Snackbar.LENGTH_SHORT).show()
             }
         }
 
@@ -584,7 +646,7 @@ class CommandResultActivity : AppCompatActivity() {
         btnCopy.setOnClickListener {
             if (!locationValid) {
                 Snackbar.make(binding.coordinator,
-                    "موقع غير متاح", Snackbar.LENGTH_SHORT).show()
+                    getString(R.string.location_unavailable), Snackbar.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val coords = String.format(Locale.US, "%.6f, %.6f", loc.lat, loc.lng)

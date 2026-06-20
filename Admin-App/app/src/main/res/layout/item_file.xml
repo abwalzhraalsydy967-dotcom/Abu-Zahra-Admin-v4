@@ -44,6 +44,7 @@
             android:layout_height="wrap_content"
             android:textSize="@dimen/text_body"
             android:textColor="@color/text_primary"
+            android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end"
             android:textDirection="ltr" />
@@ -58,6 +59,51 @@
             android:textDirection="ltr" />
 
     </LinearLayout>
+
+    <!--
+        Thumbnail slot (48dp). Shown only for image/video files that have a
+        server-side file id (i.e. downloadable files in the requested-files
+        list or files in the device filesystem browser whose server response
+        included an `id`). When no thumbnail is available the slot is hidden
+        and the leading file-type icon alone identifies the file.
+    -->
+    <FrameLayout
+        android:id="@+id/thumbSlot"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="@dimen/margin_xs"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/ivThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:background="@color/surface_variant"
+            android:contentDescription="@string/files" />
+
+        <!-- Small play badge overlay for video thumbnails. -->
+        <ImageView
+            android:id="@+id/ivPlayBadge"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_file_play"
+            android:alpha="0.9"
+            android:visibility="gone"
+            app:tint="@color/on_primary" />
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/thumbProgress"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            android:visibility="gone"
+            app:indicatorSize="18dp"
+            app:trackThickness="2dp" />
+
+    </FrameLayout>
 
     <!-- Download Button -->
     <ImageView

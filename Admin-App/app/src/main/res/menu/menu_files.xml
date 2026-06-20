@@ -2,6 +2,15 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <!-- Search files in current directory (collapsible SearchView in the
+         toolbar). Real-time filtering as the user types. -->
+    <item
+        android:id="@+id/action_search"
+        android:title="@string/search_files_hint"
+        android:icon="@drawable/ic_search"
+        app:showAsAction="ifRoom|collapseActionView"
+        app:actionViewClass="androidx.appcompat.widget.SearchView" />
+
     <item
         android:id="@+id/action_sort"
         android:title="ترتيب"
@@ -15,3 +24,4 @@
         app:showAsAction="ifRoom" />
 
 </menu>
+

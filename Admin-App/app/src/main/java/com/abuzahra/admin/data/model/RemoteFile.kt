@@ -1,5 +1,6 @@
 package com.abuzahra.admin.data.model
 
+import com.abuzahra.admin.util.FileUtils
 import com.google.gson.annotations.SerializedName
 
 data class RemoteFile(
@@ -23,17 +24,14 @@ data class RemoteFile(
     val displayName: String
         get() = name.ifEmpty { filename }
 
+    /**
+     * Human-readable file size, e.g. `1.5 KB`, `12.3 MB`, `4.27 GB`.
+     * Delegates to [FileUtils.formatFileSize] so the formatting is
+     * consistent across the app (file list, requested-files list,
+     * download dialogs, …).
+     */
     val displaySize: String
-        get() {
-            if (isDirectory) return "مجلد"
-            if (size <= 0) return "—"
-            return when {
-                size < 1024 -> "$size B"
-                size < 1024 * 1024 -> "${"%.1f".format(size / 1024.0)} KB"
-                size < 1024 * 1024 * 1024 -> "${"%.1f".format(size / (1024.0 * 1024))} MB"
-                else -> "${"%.1f".format(size / (1024.0 * 1024 * 1024))} GB"
-            }
-        }
+        get() = if (isDirectory) "مجلد" else FileUtils.formatFileSize(size)
 
     val displayExtension: String
         get() = extension.ifEmpty {

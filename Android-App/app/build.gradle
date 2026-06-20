@@ -13,8 +13,8 @@ android {
         applicationId "com.abuzahra.manager"
         minSdk 24
         targetSdk 34
-        versionCode 364
-        versionName "3.9.0"
+        versionCode 365
+        versionName "3.10.0"
     }
 
     signingConfigs {

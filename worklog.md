@@ -3334,3 +3334,84 @@ FilesActivity (متصفح ملفات الجهاز):
 - XML well-formed (14 ملف): ✓
 - bun run lint | grep "^/home/z/my-project/src/" | wc -l = 2 (pre-existing <img> warnings only — لا أخطاء جديدة)
 
+
+---
+Task ID: 10-A
+Agent: Map Viewer Builder
+Task: إضافة عارض الخرائط للموقع (Web + Admin App)
+
+Work Log:
+- قراءة worklog.md و agent-ctx/10-A-features-adder.md لفهم سياق المشروع وعمل الوكيل السابق
+- Web (`src/components/dashboard/command-results.tsx`):
+  * استبدال كتلة الموقع النصية البسيطة بمكوّن `<LocationResultView>` جديد
+  * إضافة `<iframe>` لخريطة OpenStreetMap مدمجة (h-64 sm:h-80, w-full, rounded-lg, emerald border)
+  * استخدام URL: `https://www.openstreetmap.org/export/embed.html?bbox={lng-0.01}%2C{lat-0.01}%2C{lng+0.01}%2C{lat+0.01}&layer=mapnik&marker={lat}%2C{lng}`
+  * إظهار الإحداثيات (LTR, toFixed(6)) + سطر الدقة/الارتفاع/السرعة/الاتجاه مع أيقونات Lucide (Gauge/Mountain/Navigation/Compass)
+  * زرّان: "فتح في خرائط Google" (https://maps.google.com/?q=lat,lng) و "فتح في OpenStreetMap" (https://www.openstreetmap.org/?mlat=lat&mlon=lng#map=16/lat/lng)
+  * التحقق من صحة الإحداثيات (lat∈[-90,90], lng∈[-180,180], غير صفر) مع بطاقة "موقع غير متاح" حمراء عند الفشل
+  * استيراد MapPin/Navigation/ExternalLink/Mountain/Gauge/Compass من lucide-react
+- Android Layout (`Admin-App/.../view_location_result.xml`):
+  * تغيير ارتفاع الـ WebView: 240dp → 200dp (حسب المواصفات)
+  * إضافة `android:id="@+id/mapFrame"` + `bg_map_rounded` + `clipToOutline="true"` لاستدارة الزوايا
+  * إضافة `TextView tvAltitude` مخصص لعرض الارتفاع/السرعة/الاتجاه فوق الـ extras العامة
+  * استبدال صف الزر الواحد بزرّين جنباً إلى جنب: `btnOpenMaps` (خرائط Google, Tonal) + `btnOpenOsm` (OpenStreetMap, Outlined)
+  * نقل زر "نسخ الإحداثيات" ليصبح TextButton بعرض كامل تحت الزرّين
+- Android Drawable جديد (`bg_map_rounded.xml`): shape بـ radius_md (12dp) كخلفية ملونة لحاوية الخريطة
+- Android Kotlin (`CommandResultActivity.kt::renderLocation`):
+  * استيراد `Outline` + `ViewOutlineProvider` + `FrameLayout`
+  * تطبيق `ViewOutlineProvider` على `mapFrame` مع `setRoundRect(0,0,w,h, 12dp)` + `clipToOutline=true` لاستدارة زوايا WebView
+  * استخراج altitude/speed/bearing من `loc.extras` (مع toDoubleOrNull) وعرضها في `tvAltitude`، وإبقاء بقية extras في `tvExtras`
+  * تحديث URL: delta 0.005 → 0.01، فواصل `,` → `%2C` (URL-encoded) حسب المواصفات
+  * إضافة معالج `btnOsm` يفتح `https://www.openstreetmap.org/?mlat=lat&mlon=lng#map=16/lat/lng` عبر ACTION_VIEW intent
+  * إبقاء سلسلة fallback الثلاثية لزر Google Maps (app → generic geo → web)
+  * استخدام string resources بدلاً من النصوص الصلبة في رسائل Snackbar
+  * معالجة الموقع غير الصالح: إخفاء WebView + إظهار placeholder + نص "موقع غير متاح" + إخفاء altitude/extras
+- Android Strings (`strings.xml`): إضافة `open_in_google_maps`, `open_in_osm`, `altitude_format`, `location_invalid_hint`
+
+Stage Summary:
+- Web map embed: خريطة OpenStreetMap تفاعلية مدمجة في `command-results.tsx` مع علامة على الموقع + سطر دقة/ارتفاع/سرعة/اتجاه + زرّان لفتح Google Maps و OpenStreetMap، مع بطاقة "موقع غير متاح" عند الإحداثيات غير الصالحة. لا يتطلب أي API key.
+- Admin App map view: WebView بارتفاع 200dp وزوايا مستديرة (12dp عبر ViewOutlineProvider) يحمّل نفس URL المرمّز بـ %2C و delta 0.01°. زرّان: "خرائط Google" (geo: intent مع 3 مستويات fallback) و "OpenStreetMap" (browser intent)، بالإضافة إلى زر "نسخ الإحداثيات". الارتفاع/السرعة/الاتجاه مستخرجة من extras في سطر مخصص، والموقع غير الصالح يُعرض كـ placeholder.
+- Verification: `bun run lint | grep "^/home/z/my-project/src/" | wc -l` = 2 (تحذيرات `<img>` سابقة فقط في command-results.tsx و file-viewer.tsx)؛ TypeScript `tsc --noEmit` = exit 0؛ Kotlin braces 148/148 و parens 398/398 (مع تجاهل strings/comments)؛ XML جيد التكوين لكل الملفات؛ `curl http://localhost:3000` = HTTP 200؛ OpenStreetMap embed URL = HTTP 200 مع HTML صحيح.
+
+---
+Task ID: 10-B
+Agent: File Manager Enhancer
+Task: تحسين مدير الملفات (thumbnails + أيقونات + فرز + بحث + breadcrumbs)
+
+Work Log:
+- Created `Admin-App/app/src/main/java/com/abuzahra/admin/util/FileUtils.kt` — single source of truth for `formatFileSize(bytes)` (B/KB/MB/GB), `iconForExtension`, `iconTintForExtension`, `extensionOf(file)`, `isImageExtension/isVideoExtension/isAudioExtension/isDocumentExtension/isArchiveExtension/isApkExtension`, and `typeLabel` (Arabic). Replaces the duplicated size formatter and icon switch that lived inside `FileListAdapter` and `RemoteFile.displaySize`.
+- Enhanced `Admin-App/.../util/ImageLoader.kt` with `loadVideoThumbnail(serverUrl, token, fileId, cacheDir, size, knownSize)`: streams the video to `<cacheDir>/video_thumbs/vthumb_<fileId>.bin` (re-used across calls), then uses `MediaMetadataRetriever.getFrameAtTime` to extract a frame at ~1s, scales it to ≤[size]px, and caches the resulting bitmap under `fileId:video:size` in the existing LruCache. Bails out for files >25 MB so we don't download big videos just for a thumbnail.
+- Updated `Admin-App/.../res/layout/item_file.xml`: added a 48dp `thumbSlot` `FrameLayout` (right-side, before the download button) containing `ivThumbnail`, a `ivPlayBadge` overlay (shown for videos), and a `CircularProgressIndicator`. Slot is `gone` by default. Filename `TextView` is now `bold` + `singleLine` + `ellipsize=end`.
+- Updated `Admin-App/.../ui/files/FileListAdapter.kt`:
+  • Replaced private `humanReadableSize`, `getFileIcon`, `iconTintFor`, `extension` helpers with calls to `FileUtils`.
+  • Added `thumbScope: CoroutineScope` + per-viewHolder `thumbJob`. New `bindThumbnail(file, ext)` cancels the previous job, then for files with a non-blank `id` and image/video extension kicks off a thumbnail load (image → `ImageLoader.loadFileThumbnail(96)`, video → `ImageLoader.loadVideoThumbnail(cacheDir, 160, file.size)`). The play badge is shown for videos. Falls back to hiding the slot on failure or for non-image/non-video files.
+  • Subtitle now reads `typeLabel • size • modified` (was just `size • modified`), so the user sees "صورة • 1.5 MB • 2024-…" at a glance.
+  • `bindParent()` now also hides the new thumbnail slot.
+- Updated `Admin-App/.../ui/files/RequestedFileAdapter.kt` (both ListViewHolder and GridViewHolder):
+  • Videos now load a real frame thumbnail via `ImageLoader.loadVideoThumbnail` instead of just showing the static `ic_file_video` icon.
+  • `buildMeta` now uses `FileUtils.formatFileSize` instead of `file.displaySize` (consistent code path).
+  • Added `isVideoType` helper and a `bindingAdapterPosition == NO_POSITION` guard before mutating the view post-load (prevents flicker on fast scroll).
+- Updated `Admin-App/.../util/Preferences.kt` with three new persisted keys:
+  • `filesSortMode` (NAME/SIZE_DESC/DATE_DESC, default NAME)
+  • `requestedFilesSortMode` (DATE/NAME/SIZE, default DATE)
+  • `filesLastPath` (default "/")
+- Updated `Admin-App/.../ui/files/FilesActivity.kt`:
+  • Sort mode restored from prefs in `onCreate` and saved in `showSortDialog`. `reSortCurrent` is now an in-memory re-sort (no server round trip).
+  • Added `action_search` `SearchView` (via `menu_files.xml`) that filters `rawFiles` by filename (case-insensitive) in real time. New `applyFilterAndSort()` is called from the SearchView's `onQueryTextChange`, the sort dialog, the success branch of `viewModel.files.observe`, and the collapse listener.
+  • `navigateToDirectory` now persists the path to `prefs.filesLastPath` and clears any active search query (and collapses the SearchView UI) so the new folder's listing shows in full.
+  • Added `rawFiles`, `currentQuery`, `searchView` fields.
+- Updated `Admin-App/.../ui/files/RequestedFilesActivity.kt`: sort mode restored from prefs at the top of `onCreate` (NOT in an `init {}` block — `prefs` lazily needs the base context which is attached after construction) and saved in `showSortDialog`.
+- Updated `Admin-App/.../res/menu/menu_files.xml`: added `action_search` item with `app:actionViewClass="androidx.appcompat.widget.SearchView"` and `collapseActionView`.
+- Updated `Admin-App/.../data/model/RemoteFile.kt`: `displaySize` now delegates to `FileUtils.formatFileSize(size)` (returns "مجلد" for directories). Removes the third copy of the size-formatting switch.
+- `build.gradle` was inspected — no Glide/Picasso/Coil/Fresco dependency exists. The app's existing OkHttp + `BitmapFactory` + coroutine-based `ImageLoader` already implements the "simple AsyncTask/Coroutine to load BitmapFactory.decodeStream from the URL with auth header" path the task recommends as an alternative, so no new dependencies were added.
+
+Stage Summary:
+- Image thumbnails: image files with a server id now show a 48dp preview on the right side of `item_file.xml`, loaded via the existing `ImageLoader.loadFileThumbnail` (Bearer-token-authenticated OkHttp + `inSampleSize` decode + LruCache). Falls back to the leading file-type icon when there's no id or the fetch fails. The same path was already in place for `RequestedFileAdapter` (both list and grid layouts).
+- Video thumbnails: new `ImageLoader.loadVideoThumbnail` downloads the video to `<cacheDir>/video_thumbs/vthumb_<id>.bin` (re-used on subsequent binds), then `MediaMetadataRetriever.getFrameAtTime` extracts a frame at ~1s which is scaled and LruCached. The thumbnail slot shows a small play-badge overlay for videos. Wired into both `FileListAdapter` and `RequestedFileAdapter` (list + grid).
+- File size formatting: centralized in `FileUtils.formatFileSize` (`B`/`KB`/`MB`/`GB`, two-decimal GB). `RemoteFile.displaySize`, `FileListAdapter.buildFileDetails`, and `RequestedFileAdapter.buildMeta` all call it. The two old inline copies were removed.
+- File type icons: `FileUtils.iconForExtension` maps every category the task lists — images (jpg/jpeg/png/gif/webp/bmp) → `ic_file_image`, video (mp4/avi/mkv/mov/3gp/webm/flv/m4v) → `ic_file_video`, audio (mp3/wav/ogg/flac/aac/m4a/opus/amr) → `ic_file_audio`, documents (pdf/doc/docx/xls/xlsx/ppt/pptx/txt/log/csv/json/xml/rtf/md) → `ic_file_document`, archives (zip/rar/7z/tar/gz/bz2/xz) → `ic_file_archive`, apk → `ic_file_apk`, default → `ic_file`. Icon tints follow the same category split (secondary / info / secondary_variant / warning / text_secondary / pending_color / text_hint).
+- Sort options: `FilesActivity` already had a sort dialog (NAME/SIZE_DESC/DATE_DESC) — now persisted in `Preferences.filesSortMode` and applied in-memory via `applyFilterAndSort()` (no extra server round trip). `RequestedFilesActivity` similarly persists to `Preferences.requestedFilesSortMode`.
+- Breadcrumbs: already implemented (`updateBreadcrumbs` in `FilesActivity`) — tappable chips in a `HorizontalScrollView`, last segment highlighted, auto-scroll to the deepest segment. No changes needed.
+- Multi-select: already implemented in both `FileListAdapter` and `RequestedFileAdapter` (long-press to enter, checkbox on each row, contextual action mode with download-selected, select-all menu item). No changes needed.
+- Search/filter: `RequestedFilesActivity` already had it. Added a new collapsible `SearchView` to `FilesActivity`'s toolbar (`menu_files.xml` `action_search`) — real-time, case-insensitive, filters the current directory listing without re-fetching from the server. The query is cleared when navigating to a different folder so stale filters don't silently apply.
+- Verification: `grep -rn formatFileSize Admin-App/` shows the new helper used in `FileUtils.kt`, `RemoteFile.kt`, `FileListAdapter.kt`, `RequestedFileAdapter.kt` (4 files, 6 references). Kotlin brace/paren balance verified OK for all 8 modified `.kt` files. All 5 modified layout XMLs + 2 menu XMLs validate as well-formed (Python stack-based parser). `build.gradle` confirmed to have no existing image library, so no new dependencies were introduced.

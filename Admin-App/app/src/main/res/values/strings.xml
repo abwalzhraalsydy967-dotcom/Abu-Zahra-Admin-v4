@@ -177,6 +177,10 @@
     <string name="copy_coordinates">نسخ الإحداثيات</string>
     <string name="location_unavailable">موقع غير متاح</string>
     <string name="no_maps_app">لا يوجد تطبيق خرائط</string>
+    <string name="open_in_google_maps">خرائط Google</string>
+    <string name="open_in_osm">OpenStreetMap</string>
+    <string name="altitude_format">الارتفاع: %.0f م</string>
+    <string name="location_invalid_hint">الإحداثيات المستلمة غير صالحة أو فارغة</string>
 
     <!-- File Manager -->
     <string name="requested_files">الملفات المطلوبة</string>

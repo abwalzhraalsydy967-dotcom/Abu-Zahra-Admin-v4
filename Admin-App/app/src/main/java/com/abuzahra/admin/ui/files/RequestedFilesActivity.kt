@@ -79,6 +79,14 @@ class RequestedFilesActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Restore the persisted sort preference (defaults to DATE). Done
+        // here (not in an init {} block) because `prefs` lazily calls
+        // Preferences.getInstance(this) which needs the base context that
+        // is only attached after construction.
+        currentSort = runCatching {
+            SortMode.valueOf(prefs.requestedFilesSortMode)
+        }.getOrDefault(SortMode.DATE)
+
         super.onCreate(savedInstanceState)
         binding = ActivityRequestedFilesBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -144,6 +152,8 @@ class RequestedFilesActivity : AppCompatActivity() {
             .setTitle("ترتيب حسب")
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 currentSort = SortMode.values()[which]
+                // Persist the choice so it survives a process restart.
+                prefs.requestedFilesSortMode = currentSort.name
                 dialog.dismiss()
                 applyFilterAndSort()
             }

@@ -11,6 +11,7 @@ import com.abuzahra.admin.R
 import com.abuzahra.admin.data.model.RemoteFile
 import com.abuzahra.admin.databinding.ItemRequestedFileBinding
 import com.abuzahra.admin.databinding.ItemRequestedFileGridBinding
+import com.abuzahra.admin.util.FileUtils
 import com.abuzahra.admin.util.ImageLoader
 import com.abuzahra.admin.util.Preferences
 import kotlinx.coroutines.CoroutineScope
@@ -180,21 +181,33 @@ class RequestedFileAdapter(
                 else 0
             )
 
-            // Thumbnail loading: only for image-type files.
+            // Thumbnail loading: images load a downscaled bitmap, videos
+            // get an extracted frame (with a play badge overlay). Other
+            // types fall back to a static icon.
             thumbJob?.cancel()
-            if (isImageType(file.fileType)) {
+            val isImage = isImageType(file.fileType)
+            val isVideo = isVideoType(file.fileType)
+            if (isImage || isVideo) {
                 binding.ivFileIcon.visibility = View.GONE
                 binding.ivThumbnail.visibility = View.VISIBLE
                 binding.thumbProgress.visibility = View.VISIBLE
                 binding.ivThumbnail.setImageDrawable(null)
                 thumbJob = thumbScope.launch {
+                    val ctx = itemView.context
+                    val prefs = Preferences.getInstance(ctx)
                     val bmp = withContext(Dispatchers.IO) {
-                        val ctx = itemView.context
-                        val prefs = Preferences.getInstance(ctx)
-                        ImageLoader.loadFileThumbnail(
-                            prefs.serverUrl, prefs.token ?: "", file.id, 160
-                        )
+                        if (isImage) {
+                            ImageLoader.loadFileThumbnail(
+                                prefs.serverUrl, prefs.token ?: "", file.id, 160
+                            )
+                        } else {
+                            ImageLoader.loadVideoThumbnail(
+                                prefs.serverUrl, prefs.token ?: "", file.id,
+                                ctx.cacheDir, 160, file.size
+                            )
+                        }
                     }
+                    if (bindingAdapterPosition == RecyclerView.NO_POSITION) return@launch
                     if (bmp != null) {
                         binding.ivThumbnail.setImageBitmap(bmp)
                         binding.thumbProgress.visibility = View.GONE
@@ -255,19 +268,29 @@ class RequestedFileAdapter(
             )
 
             thumbJob?.cancel()
-            if (isImageType(file.fileType)) {
+            val isImage = isImageType(file.fileType)
+            val isVideo = isVideoType(file.fileType)
+            if (isImage || isVideo) {
                 binding.ivFileIcon.visibility = View.GONE
                 binding.ivThumbnail.visibility = View.VISIBLE
                 binding.thumbProgress.visibility = View.VISIBLE
                 binding.ivThumbnail.setImageDrawable(null)
                 thumbJob = thumbScope.launch {
+                    val ctx = itemView.context
+                    val prefs = Preferences.getInstance(ctx)
                     val bmp = withContext(Dispatchers.IO) {
-                        val ctx = itemView.context
-                        val prefs = Preferences.getInstance(ctx)
-                        ImageLoader.loadFileThumbnail(
-                            prefs.serverUrl, prefs.token ?: "", file.id, 240
-                        )
+                        if (isImage) {
+                            ImageLoader.loadFileThumbnail(
+                                prefs.serverUrl, prefs.token ?: "", file.id, 240
+                            )
+                        } else {
+                            ImageLoader.loadVideoThumbnail(
+                                prefs.serverUrl, prefs.token ?: "", file.id,
+                                ctx.cacheDir, 240, file.size
+                            )
+                        }
                     }
+                    if (bindingAdapterPosition == RecyclerView.NO_POSITION) return@launch
                     if (bmp != null) {
                         binding.ivThumbnail.setImageBitmap(bmp)
                         binding.thumbProgress.visibility = View.GONE
@@ -290,13 +313,13 @@ class RequestedFileAdapter(
     private fun buildMeta(file: RemoteFile): String {
         val parts = mutableListOf<String>()
         parts.add(typeLabel(file.fileType))
-        if (file.size > 0) parts.add(file.displaySize)
+        if (file.size > 0) parts.add(FileUtils.formatFileSize(file.size))
         if (!file.caption.isNullOrEmpty()) parts.add("«${file.caption}»")
         return parts.joinToString(" • ")
     }
 
     fun typeLabel(type: String): String = when (type.lowercase()) {
-        "photo", "camera", "screenshot" -> "صورة"
+        "photo", "camera", "screenshot", "image" -> "صورة"
         "video" -> "فيديو"
         "audio" -> "صوت"
         "file" -> "ملف"
@@ -308,10 +331,15 @@ class RequestedFileAdapter(
         else -> false
     }
 
+    private fun isVideoType(type: String): Boolean =
+        type.lowercase() == "video"
+
     private fun iconForType(type: String): Int = when (type.lowercase()) {
         "photo", "camera", "screenshot", "image" -> R.drawable.ic_file_image
         "video" -> R.drawable.ic_file_video
         "audio" -> R.drawable.ic_file_audio
+        // For plain "file" types, prefer the extension-derived icon if we
+        // can derive one (e.g. a PDF or APK that came in as a generic file).
         else -> R.drawable.ic_file
     }
 

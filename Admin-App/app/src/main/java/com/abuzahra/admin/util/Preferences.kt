@@ -19,6 +19,14 @@ class Preferences(context: Context) {
         private const val KEY_EVENT_NOTIF = "notif_events"
         private const val KEY_DARK_MODE = "dark_mode"
 
+        // File manager — persisted sort mode (NAME / SIZE_DESC / DATE_DESC).
+        // Defaults to NAME so the directory listing reads naturally.
+        private const val KEY_FILES_SORT_MODE = "files_sort_mode"
+        // Requested files activity sort mode (DATE / NAME / SIZE).
+        private const val KEY_REQUESTED_FILES_SORT_MODE = "requested_files_sort_mode"
+        // Last-browsed directory in FilesActivity — restored on next open.
+        private const val KEY_FILES_LAST_PATH = "files_last_path"
+
         @Volatile
         private var instance: Preferences? = null
 
@@ -92,6 +100,31 @@ class Preferences(context: Context) {
     var userId: String?
         get() = prefs.getString("user_id", null)
         set(value) = prefs.edit().putString("user_id", value).apply()
+
+    /**
+     * Sort mode used by [com.abuzahra.admin.ui.files.FilesActivity] when
+     * browsing the device filesystem. Stored as the enum name so we can
+     * resiliently add new sort modes without format migrations.
+     */
+    var filesSortMode: String
+        get() = prefs.getString(KEY_FILES_SORT_MODE, "NAME") ?: "NAME"
+        set(value) = prefs.edit().putString(KEY_FILES_SORT_MODE, value).apply()
+
+    /**
+     * Sort mode used by [com.abuzahra.admin.ui.files.RequestedFilesActivity].
+     * Defaults to DATE (newest first) which matches the prior behaviour.
+     */
+    var requestedFilesSortMode: String
+        get() = prefs.getString(KEY_REQUESTED_FILES_SORT_MODE, "DATE") ?: "DATE"
+        set(value) = prefs.edit().putString(KEY_REQUESTED_FILES_SORT_MODE, value).apply()
+
+    /**
+     * Last-browsed directory in the file manager. Restored on next open so
+     * the admin picks up where they left off (e.g. mid-investigation).
+     */
+    var filesLastPath: String
+        get() = prefs.getString(KEY_FILES_LAST_PATH, "/") ?: "/"
+        set(value) = prefs.edit().putString(KEY_FILES_LAST_PATH, value).apply()
 
     fun getPermanentCodeOrEmpty(): String {
         return permanentCode ?: ""

@@ -13,6 +13,12 @@ import {
   ChevronUp,
   Inbox,
   Terminal,
+  MapPin,
+  Navigation,
+  ExternalLink,
+  Mountain,
+  Gauge,
+  Compass,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -179,26 +185,11 @@ function renderResultContent(result: unknown): ReactNode {
 
   if (parsed.kind === 'object') {
     const obj = parsed.data
-    // Special: location with lat/lng
+    // Special: location with lat/lng → render interactive map
     const hasLat = 'lat' in obj || 'latitude' in obj
     const hasLng = 'lng' in obj || 'lon' in obj || 'longitude' in obj
     if (hasLat && hasLng) {
-      const lat = (obj.lat ?? obj.latitude) as unknown
-      const lng = (obj.lng ?? obj.lon ?? obj.longitude) as unknown
-      return (
-        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-1">
-          <p className="text-emerald-300 font-medium">📍 الموقع الجغرافي</p>
-          <p className="text-slate-200 font-mono" dir="ltr">
-            {String(lat)}, {String(lng)}
-          </p>
-          {'accuracy' in obj && (
-            <p className="text-slate-400">الدقة: ~{String(obj.accuracy)} متر</p>
-          )}
-          {'address' in obj && (
-            <p className="text-slate-300">العنوان: {String(obj.address)}</p>
-          )}
-        </div>
-      )
+      return <LocationResultView data={obj} />
     }
     const entries = Object.entries(obj)
     if (entries.length === 0) {
@@ -231,6 +222,144 @@ function renderResultContent(result: unknown): ReactNode {
     >
       {String(parsed.data)}
     </pre>
+  )
+}
+
+/* ─── Location result with embedded map ──────────────── */
+function toNumber(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return Number.isFinite(n) ? n : null
+}
+
+function LocationResultView({ data }: { data: Record<string, unknown> }) {
+  const rawLat = data.lat ?? data.latitude
+  const rawLng = data.lng ?? data.lon ?? data.longitude
+  const lat = toNumber(rawLat)
+  const lng = toNumber(rawLng)
+
+  const accuracy = toNumber(data.accuracy ?? data.acc)
+  const altitude = toNumber(data.altitude ?? data.alt)
+  const speed = toNumber(data.speed)
+  const bearing = toNumber(data.bearing ?? data.heading)
+
+  const address =
+    typeof data.address === 'string' && data.address.trim()
+      ? data.address
+      : null
+
+  // Validate coordinates: must be within sane ranges and non-zero.
+  const latOk = lat !== null && lat >= -90 && lat <= 90
+  const lngOk = lng !== null && lng >= -180 && lng <= 180
+  const notZero =
+    lat !== null && lng !== null && (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001)
+  const valid = latOk && lngOk && notZero
+
+  if (!valid) {
+    return (
+      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs space-y-1">
+        <p className="text-red-300 font-medium flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5" />
+          موقع غير متاح
+        </p>
+        <p className="text-slate-400">
+          الإحداثيات المستلمة غير صالحة أو فارغة
+        </p>
+        {lat !== null && lng !== null && (
+          <p className="text-slate-500 font-mono" dir="ltr">
+            {lat}, {lng}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // OpenStreetMap embed — bbox = (minLng, minLat, maxLng, maxLat) with ±0.01° pad
+  const dLat = 0.01
+  const dLng = 0.01
+  const bbox = `${lng - dLng}%2C${lat - dLat}%2C${lng + dLng}%2C${lat + dLat}`
+  const embedSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat}%2C${lng}`
+  const osmLink = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`
+  const googleLink = `https://maps.google.com/?q=${lat},${lng}`
+
+  return (
+    <div className="space-y-3">
+      {/* Embedded map */}
+      <div className="relative w-full h-64 sm:h-80 rounded-lg overflow-hidden border border-emerald-500/30 bg-slate-900">
+        <iframe
+          title="موقع الجهاز"
+          src={embedSrc}
+          className="w-full h-full"
+          style={{ border: 0 }}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
+      </div>
+
+      {/* Coordinates + meta */}
+      <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-2">
+        <div className="flex items-center gap-1.5 text-emerald-300 font-medium">
+          <MapPin className="w-3.5 h-3.5" />
+          الموقع الجغرافي
+        </div>
+        <p className="text-slate-200 font-mono text-sm" dir="ltr">
+          {lat.toFixed(6)}, {lng.toFixed(6)}
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-400">
+          {accuracy !== null && (
+            <span className="inline-flex items-center gap-1">
+              <Gauge className="w-3 h-3" />
+              الدقة: ±{accuracy.toFixed(0)} متر
+            </span>
+          )}
+          {altitude !== null && (
+            <span className="inline-flex items-center gap-1">
+              <Mountain className="w-3 h-3" />
+              الارتفاع: {altitude.toFixed(0)} م
+            </span>
+          )}
+          {speed !== null && (
+            <span className="inline-flex items-center gap-1">
+              <Navigation className="w-3 h-3" />
+              السرعة: {speed.toFixed(1)} م/ث
+            </span>
+          )}
+          {bearing !== null && (
+            <span className="inline-flex items-center gap-1">
+              <Compass className="w-3 h-3" />
+              الاتجاه: {bearing.toFixed(0)}°
+            </span>
+          )}
+        </div>
+        {address && (
+          <p className="text-slate-300" dir="auto">
+            العنوان: {address}
+          </p>
+        )}
+      </div>
+
+      {/* Open in external maps */}
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={googleLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          فتح في خرائط Google
+        </a>
+        <a
+          href={osmLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-700/40 text-slate-200 border border-slate-600/40 hover:bg-slate-700/60 transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          فتح في OpenStreetMap
+        </a>
+      </div>
+    </div>
   )
 }
 

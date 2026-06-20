@@ -56,6 +56,17 @@
 
         </LinearLayout>
 
+        <!-- Altitude / speed / bearing row (shown only if at least one is present) -->
+        <TextView
+            android:id="@+id/tvAltitude"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/text_small"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="@dimen/margin_sm"
+            android:textDirection="ltr"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/tvExtras"
             android:layout_width="match_parent"
@@ -67,12 +78,14 @@
             android:textDirection="ltr"
             android:visibility="gone" />
 
-        <!-- OpenStreetMap embed via WebView -->
+        <!-- OpenStreetMap embed via WebView (200dp, rounded corners) -->
         <FrameLayout
+            android:id="@+id/mapFrame"
             android:layout_width="match_parent"
-            android:layout_height="240dp"
+            android:layout_height="200dp"
             android:layout_marginTop="@dimen/margin_md"
-            android:background="@color/surface_variant">
+            android:background="@drawable/bg_map_rounded"
+            android:clipToOutline="true">
 
             <WebView
                 android:id="@+id/mapWebView"
@@ -120,22 +133,33 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="@string/open_in_maps"
+                android:text="@string/open_in_google_maps"
                 app:icon="@drawable/ic_location"
                 app:iconGravity="textStart" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCopyCoords"
+                android:id="@+id/btnOpenOsm"
                 style="Widget.Material3.Button.OutlinedButton"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
                 android:layout_marginStart="@dimen/margin_sm"
-                android:text="نسخ الإحداثيات"
+                android:text="@string/open_in_osm"
                 app:icon="@drawable/ic_command"
                 app:iconGravity="textStart" />
 
         </LinearLayout>
+
+        <!-- Copy coordinates button (full width, secondary) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCopyCoords"
+            style="Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="@dimen/margin_xs"
+            android:text="@string/copy_coordinates"
+            app:icon="@drawable/ic_command"
+            app:iconGravity="textStart" />
 
     </LinearLayout>
 

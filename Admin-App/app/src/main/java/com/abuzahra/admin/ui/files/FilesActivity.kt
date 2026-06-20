@@ -13,6 +13,7 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -45,6 +46,13 @@ class FilesActivity : AppCompatActivity() {
     private var deviceId: String = ""
     private var currentSort: SortMode = SortMode.NAME
     private var actionMode: android.view.ActionMode? = null
+
+    /** Most recent server response for the current directory, unfiltered. */
+    private var rawFiles: List<RemoteFile> = emptyList()
+    /** Active search query (lowercase) or "" for no filter. */
+    private var currentQuery: String = ""
+    /** The SearchView widget so we can clear it from code. */
+    private var searchView: SearchView? = null
 
     private val fileAdapter: FileListAdapter by lazy {
         FileListAdapter(
@@ -117,6 +125,10 @@ class FilesActivity : AppCompatActivity() {
         binding = ActivityFilesBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Restore the persisted sort mode (defaults to NAME).
+        currentSort = runCatching { SortMode.valueOf(prefs.filesSortMode) }
+            .getOrDefault(SortMode.NAME)
+
         setupToolbar()
         setupRecyclerView()
         setupFab()
@@ -159,6 +171,34 @@ class FilesActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.menu_files, menu)
+        // Wire up the SearchView for real-time filtering of the current
+        // directory. We capture a reference so we can clear it when the
+        // user navigates to a different folder.
+        val searchItem = menu?.findItem(R.id.action_search)
+        searchView = searchItem?.actionView as? SearchView
+        searchView?.apply {
+            queryHint = getString(R.string.search_files_hint)
+            // Keep the query across configuration changes but clear it on
+            // fresh open of the search panel so the user starts clean.
+            setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+                override fun onQueryTextSubmit(query: String?): Boolean = false
+                override fun onQueryTextChange(newText: String?): Boolean {
+                    currentQuery = newText?.trim()?.lowercase() ?: ""
+                    applyFilterAndSort()
+                    return true
+                }
+            })
+            // When the search panel closes, make sure we drop any active
+            // filter so the full listing is shown again.
+            searchItem?.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
+                override fun onMenuItemActionExpand(item: MenuItem): Boolean = true
+                override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
+                    currentQuery = ""
+                    applyFilterAndSort()
+                    return true
+                }
+            })
+        }
         return true
     }
 
@@ -184,18 +224,20 @@ class FilesActivity : AppCompatActivity() {
             .setTitle("ترتيب حسب")
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 currentSort = SortMode.values()[which]
+                // Persist so the user's choice survives a process restart.
+                prefs.filesSortMode = currentSort.name
                 dialog.dismiss()
-                reSortCurrent()
+                applyFilterAndSort()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
     private fun reSortCurrent() {
-        // Re-fetch and apply sort (cheap on small lists).
-        if (deviceId.isNotBlank()) {
-            viewModel.loadFiles(deviceId, currentPath)
-        }
+        // Re-fetch from the server (cheap on small lists) — kept for
+        // compatibility with older callers; applyFilterAndSort handles
+        // the in-memory re-sort without a network round trip.
+        applyFilterAndSort()
     }
 
     private fun refreshActionMode() {
@@ -422,8 +464,20 @@ class FilesActivity : AppCompatActivity() {
 
     private fun navigateToDirectory(path: String) {
         currentPath = path
+        // Remember where the user left off so they pick up here next open.
+        prefs.filesLastPath = path
         binding.etPath.setText(path)
         updateBreadcrumbs(path)
+        // Clear any active search query so the new folder's listing is shown
+        // in full — otherwise the previous filter would silently apply to
+        // the new (and probably smaller) result set.
+        if (currentQuery.isNotBlank()) {
+            currentQuery = ""
+            searchView?.let { sv ->
+                sv.setQuery("", false)
+                sv.isIconified = true
+            }
+        }
         if (deviceId.isNotBlank()) {
             viewModel.loadFiles(deviceId, path)
         }
@@ -511,10 +565,9 @@ class FilesActivity : AppCompatActivity() {
                     binding.loadingOverlay.visibility = View.VISIBLE
                 }
                 is Result.Success -> {
-                    val sorted = sortFiles(result.data)
-                    fileAdapter.submitList(sorted)
+                    rawFiles = result.data
+                    applyFilterAndSort()
                     fileAdapter.setShowParent(currentPath != "/")
-                    updateEmptyState(sorted.isEmpty())
                 }
                 is Result.Error -> {
                     if (result.code == 401) {
@@ -528,10 +581,25 @@ class FilesActivity : AppCompatActivity() {
                             viewModel.loadFiles(deviceId, currentPath)
                         }.show()
                     }
+                    rawFiles = emptyList()
                     updateEmptyState(true)
                 }
             }
         }
+    }
+
+    /**
+     * Apply the active search query (if any) and the current sort mode to
+     * [rawFiles], then push the result into the adapter. Called whenever
+     * the user types in the SearchView, changes the sort mode, or the
+     * server returns a fresh listing for the current directory.
+     */
+    private fun applyFilterAndSort() {
+        val filtered = if (currentQuery.isBlank()) rawFiles
+                       else rawFiles.filter { it.name.lowercase().contains(currentQuery) }
+        val sorted = sortFiles(filtered)
+        fileAdapter.submitList(sorted)
+        updateEmptyState(sorted.isEmpty())
     }
 
     private fun sortFiles(files: List<RemoteFile>): List<RemoteFile> {

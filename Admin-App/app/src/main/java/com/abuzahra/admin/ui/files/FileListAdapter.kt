@@ -10,6 +10,14 @@ import androidx.recyclerview.widget.RecyclerView
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.model.RemoteFile
 import com.abuzahra.admin.databinding.ItemFileBinding
+import com.abuzahra.admin.util.FileUtils
+import com.abuzahra.admin.util.ImageLoader
+import com.abuzahra.admin.util.Preferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FileListAdapter(
     private val onFileClick: (RemoteFile) -> Unit,
@@ -22,6 +30,7 @@ class FileListAdapter(
     private var showParent = false
     private var selectionMode = false
     private val selectedPaths: MutableSet<String> = mutableSetOf()
+    private val thumbScope: CoroutineScope = CoroutineScope(Dispatchers.Main)
 
     fun setShowParent(show: Boolean) {
         val oldShow = showParent
@@ -95,6 +104,8 @@ class FileListAdapter(
         private val viewType: Int
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var thumbJob: Job? = null
+
         init {
             binding.root.setOnClickListener {
                 val pos = bindingAdapterPosition
@@ -146,17 +157,19 @@ class FileListAdapter(
         fun bind(file: RemoteFile) {
             binding.tvFileName.text = file.name
 
-            val icon = if (file.isDirectory) {
-                R.drawable.ic_folder
-            } else {
-                getFileIcon(file.extension, file.name)
-            }
+            val ext = FileUtils.extensionOf(file)
+            val icon = if (file.isDirectory) R.drawable.ic_folder
+                       else FileUtils.iconForExtension(ext)
             binding.ivFileIcon.setImageResource(icon)
             binding.ivFileIcon.setColorFilter(
-                ContextCompat.getColor(itemView.context, iconTintFor(file))
+                ContextCompat.getColor(
+                    itemView.context,
+                    if (file.isDirectory) R.color.warning
+                    else FileUtils.iconTintForExtension(ext)
+                )
             )
 
-            binding.tvFileDetails.text = buildFileDetails(file)
+            binding.tvFileDetails.text = buildFileDetails(file, ext)
 
             binding.ivDownload.visibility = if (file.isDirectory || selectionMode) {
                 View.GONE
@@ -171,73 +184,90 @@ class FileListAdapter(
                 if (selected) R.drawable.ic_check_box
                 else R.drawable.ic_check_box_outline
             )
+
+            // Thumbnail slot — only for non-directory files that have a
+            // server-side id (so we have a URL to fetch from). For images
+            // we load a downscaled bitmap; for videos we extract a frame;
+            // for everything else we leave the slot hidden and rely on the
+            // leading file-type icon.
+            bindThumbnail(file, ext)
         }
 
-        private fun buildFileDetails(file: RemoteFile): String {
+        /**
+         * Load (or reset) the right-hand thumbnail slot for [file].
+         *
+         * Image files → [ImageLoader.loadFileThumbnail].
+         * Video files → [ImageLoader.loadVideoThumbnail] (downloads once,
+         * caches, extracts a frame, overlays a play badge).
+         * Other files (or files with no server id) → slot hidden.
+         *
+         * The previous thumbnail job (if any) is cancelled before kicking
+         * off a new one so scrolling doesn't bleed bitmaps into the wrong
+         * row.
+         */
+        private fun bindThumbnail(file: RemoteFile, ext: String) {
+            thumbJob?.cancel()
+            val slot = binding.thumbSlot
+            val isImage = !file.isDirectory && file.id.isNotBlank() && FileUtils.isImageExtension(ext)
+            val isVideo = !file.isDirectory && file.id.isNotBlank() && FileUtils.isVideoExtension(ext)
+            if (!isImage && !isVideo) {
+                slot.visibility = View.GONE
+                return
+            }
+            slot.visibility = View.VISIBLE
+            binding.ivThumbnail.setImageDrawable(null)
+            binding.thumbProgress.visibility = View.VISIBLE
+            binding.ivPlayBadge.visibility = if (isVideo) View.VISIBLE else View.GONE
+
+            val ctx = itemView.context
+            val prefs = Preferences.getInstance(ctx)
+            val serverUrl = prefs.serverUrl
+            val token = prefs.token ?: ""
+
+            thumbJob = thumbScope.launch {
+                val bmp = withContext(Dispatchers.IO) {
+                    if (isImage) {
+                        ImageLoader.loadFileThumbnail(serverUrl, token, file.id, 96)
+                    } else {
+                        ImageLoader.loadVideoThumbnail(
+                            serverUrl, token, file.id, ctx.cacheDir, 160, file.size
+                        )
+                    }
+                }
+                // Guard against the view being recycled before the load
+                // finishes — bindingAdapterPosition is the safe check.
+                if (bindingAdapterPosition == RecyclerView.NO_POSITION) return@launch
+                if (bmp != null) {
+                    binding.ivThumbnail.setImageBitmap(bmp)
+                    binding.thumbProgress.visibility = View.GONE
+                } else {
+                    // Hide the slot on failure — fall back to the icon.
+                    slot.visibility = View.GONE
+                }
+            }
+        }
+
+        private fun buildFileDetails(file: RemoteFile, ext: String): String {
             if (file.isDirectory) return "مجلد"
             val parts = mutableListOf<String>()
-            if (file.size > 0) parts.add(humanReadableSize(file.size))
+            // Always show the type label first (صورة / فيديو / صوت / ...)
+            parts.add(FileUtils.typeLabel(ext))
+            if (file.size > 0) parts.add(FileUtils.formatFileSize(file.size))
             if (!file.modified.isNullOrEmpty()) parts.add(file.modified)
             return parts.joinToString("  •  ")
         }
 
-        private fun humanReadableSize(bytes: Long): String {
-            if (bytes <= 0) return "—"
-            return when {
-                bytes < 1024 -> "$bytes B"
-                bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-                bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
-                else -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
-            }
-        }
-
-        private fun iconTintFor(file: RemoteFile): Int {
-            return if (file.isDirectory) R.color.warning
-            else when (extension(file).lowercase()) {
-                "jpg", "jpeg", "png", "gif", "bmp", "webp" -> R.color.secondary
-                "mp4", "avi", "mkv", "mov", "3gp" -> R.color.info
-                "mp3", "wav", "ogg", "flac", "aac" -> R.color.secondary_variant
-                "apk" -> R.color.warning
-                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "log", "csv" -> R.color.text_secondary
-                "zip", "rar", "7z", "tar", "gz" -> R.color.pending_color
-                else -> R.color.text_hint
-            }
-        }
-
-        private fun extension(file: RemoteFile): String {
-            return file.extension.ifEmpty {
-                val lastDot = file.name.lastIndexOf('.')
-                if (lastDot >= 0 && lastDot < file.name.length - 1) file.name.substring(lastDot + 1)
-                else ""
-            }
-        }
-
         fun bindParent() {
+            thumbJob?.cancel()
             binding.tvFileName.text = ".."
             binding.ivFileIcon.setImageResource(R.drawable.ic_folder)
             binding.ivFileIcon.setColorFilter(
                 ContextCompat.getColor(itemView.context, R.color.warning)
             )
-            binding.tvFileDetails.text = "المجلد السابق"
+            binding.tvFileDetails.text = itemView.context.getString(R.string.parent_dir)
             binding.ivDownload.visibility = View.GONE
             binding.ivCheck.visibility = View.GONE
-        }
-
-        private fun getFileIcon(extension: String, name: String): Int {
-            val ext = extension.ifEmpty {
-                val lastDot = name.lastIndexOf('.')
-                if (lastDot >= 0 && lastDot < name.length - 1) name.substring(lastDot + 1) else ""
-            }
-            return when (ext.lowercase()) {
-                "jpg", "jpeg", "png", "gif", "bmp", "webp" -> R.drawable.ic_file_image
-                "mp4", "avi", "mkv", "mov", "3gp" -> R.drawable.ic_file_video
-                "mp3", "wav", "ogg", "flac", "aac" -> R.drawable.ic_file_audio
-                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-                "txt", "log", "csv", "json", "xml" -> R.drawable.ic_file_document
-                "apk" -> R.drawable.ic_file_apk
-                "zip", "rar", "7z", "tar", "gz" -> R.drawable.ic_file_archive
-                else -> R.drawable.ic_file
-            }
+            binding.thumbSlot.visibility = View.GONE
         }
     }
 
