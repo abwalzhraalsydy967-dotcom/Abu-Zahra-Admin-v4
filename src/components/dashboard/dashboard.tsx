@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Smartphone,
@@ -350,12 +351,17 @@ export default function Dashboard() {
       const res = await api.sendCommand(device.id, cmd, params)
       if (res.ok) {
         addLog('success', `تم إرسال الأمر بنجاح: ${cmd}`, res.message || '')
+        toast.success(`تم إرسال الأمر: ${cmd}`, { description: 'سيظهر في تبويب النتائج' })
+        // Auto-navigate to results tab so user sees the result
+        setActiveView('results')
       } else {
         addLog('error', `فشل إرسال الأمر: ${cmd}`, res.message || 'خطأ من الخادم')
+        toast.error(`فشل إرسال الأمر: ${cmd}`, { description: res.message || 'خطأ من الخادم' })
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'خطأ غير معروف'
       addLog('error', `خطأ في إرسال الأمر: ${cmd}`, msg)
+      toast.error(`خطأ في إرسال الأمر: ${cmd}`, { description: msg })
     } finally {
       setCommandLoading(null)
     }

