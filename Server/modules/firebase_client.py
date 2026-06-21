@@ -27,10 +27,18 @@ async def init_session():
         )
 
 def _headers():
-    h = {"Content-Type": "application/json"}
+    """Content-Type header only. Firebase RTDB REST auth must be a ?auth= query parameter (see _auth_url)."""
+    return {"Content-Type": "application/json"}
+
+def _auth_url(path: str) -> str:
+    """Build a Firebase RTDB REST URL with the DB secret as ?auth= query param."""
+    if path == "." or not path:
+        url = f"{FIREBASE_RTDB_URL}/.json"
+    else:
+        url = f"{FIREBASE_RTDB_URL}/{path}.json"
     if FIREBASE_DB_SECRET:
-        h["auth"] = FIREBASE_DB_SECRET
-    return h
+        url += f"?auth={FIREBASE_DB_SECRET}"
+    return url
 
 def validate_id(id_str: str, name: str = "ID") -> str:
     """Sanitize Firebase path IDs to prevent injection."""
@@ -42,7 +50,7 @@ async def check_connectivity() -> bool:
     global firebase_connected
     try:
         await init_session()
-        async with _firebase_session.get(f"{FIREBASE_RTDB_URL}/.json", headers=_headers()) as resp:
+        async with _firebase_session.get(_auth_url("."), headers=_headers()) as resp:
             firebase_connected = resp.status == 200
             if firebase_connected:
                 logger.info("Firebase connected")
@@ -60,8 +68,7 @@ async def get(path: str) -> any:
         return None
     try:
         await init_session()
-        url = f"{FIREBASE_RTDB_URL}/{path}.json"
-        async with _firebase_session.get(url, headers=_headers()) as resp:
+        async with _firebase_session.get(_auth_url(path), headers=_headers()) as resp:
             if resp.status == 200:
                 return await resp.json()
             return None
@@ -73,12 +80,11 @@ async def set(path: str, data: any) -> bool:
     """SET (PUT) data in Firebase. If data is None, deletes the path."""
     try:
         await init_session()
-        url = f"{FIREBASE_RTDB_URL}/{path}.json"
         if data is None:
-            async with _firebase_session.delete(url, headers=_headers()) as resp:
+            async with _firebase_session.delete(_auth_url(path), headers=_headers()) as resp:
                 return resp.status in (200, 204)
         else:
-            async with _firebase_session.put(url, headers=_headers(), json=data) as resp:
+            async with _firebase_session.put(_auth_url(path), headers=_headers(), json=data) as resp:
                 return resp.status == 200
     except Exception as e:
         logger.error(f"Firebase SET {path} failed: {e}")
@@ -88,8 +94,7 @@ async def update(path: str, data: dict) -> bool:
     """PATCH partial update in Firebase."""
     try:
         await init_session()
-        url = f"{FIREBASE_RTDB_URL}/{path}.json"
-        async with _firebase_session.patch(url, headers=_headers(), json=data) as resp:
+        async with _firebase_session.patch(_auth_url(path), headers=_headers(), json=data) as resp:
             return resp.status == 200
     except Exception as e:
         logger.error(f"Firebase UPDATE {path} failed: {e}")
@@ -99,8 +104,7 @@ async def push(path: str, data: dict) -> any:
     """POST (push) new data, returns the generated key."""
     try:
         await init_session()
-        url = f"{FIREBASE_RTDB_URL}/{path}.json"
-        async with _firebase_session.post(url, headers=_headers(), json=data) as resp:
+        async with _firebase_session.post(_auth_url(path), headers=_headers(), json=data) as resp:
             if resp.status == 200:
                 result = await resp.json()
                 return result.get("name")
