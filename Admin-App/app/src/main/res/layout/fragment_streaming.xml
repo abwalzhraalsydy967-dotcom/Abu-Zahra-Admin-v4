@@ -356,13 +356,10 @@
     </LinearLayout>
 
     <!-- Stream type cards -->
-    <androidx.gridlayout.widget.GridLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:columnCount="2"
-        android:rowCount="2"
-        app:orientation="horizontal"
-        app:useDefaultMargins="true">
+        android:orientation="vertical">
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardStreamScreen"
@@ -511,6 +508,6 @@
                     android:layout_marginTop="4dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-    </androidx.gridlayout.widget.GridLayout>
+    </LinearLayout>
 
 </LinearLayout>

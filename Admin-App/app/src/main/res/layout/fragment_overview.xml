@@ -64,13 +64,11 @@
             </LinearLayout>
 
             <!-- Stats grid 2x2 -->
-            <androidx.gridlayout.widget.GridLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:columnCount="2"
-                android:rowCount="2"
-                app:orientation="horizontal"
-                app:useDefaultMargins="true">
+                android:orientation="vertical"
+                android:weightSum="2">
 
                 <!-- Online / Total -->
                 <com.google.android.material.card.MaterialCardView
@@ -243,7 +241,7 @@
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-            </androidx.gridlayout.widget.GridLayout>
+            </LinearLayout>
 
             <!-- Quick actions row -->
             <LinearLayout
