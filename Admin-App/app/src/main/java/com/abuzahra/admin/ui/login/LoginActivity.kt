@@ -323,11 +323,13 @@ class LoginActivity : AppCompatActivity() {
                 is Result.Error -> {
                     showLoading(false)
                     addLog("❌ فشل تسجيل الدخول: ${result.message} (code=${result.code})")
-                    if (result.code == 401) {
-                        showError("البريد الإلكتروني أو كلمة المرور غير صحيحة")
-                    } else {
-                        showError(result.message)
-                    }
+                    // The ViewModel posts context-specific messages (password
+                    // login vs Google Sign-In vs register), so we just surface
+                    // the message it provided instead of overriding it with a
+                    // generic "wrong password" string. The 401 case for Google
+                    // Sign-In would otherwise look identical to a wrong
+                    // password, which was confusing users.
+                    showError(result.message)
                 }
             }
         }

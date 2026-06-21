@@ -102,7 +102,27 @@ class Preferences(context: Context) {
     }
 
     fun getApiService(): com.abuzahra.admin.data.api.ApiService {
-        return ApiClient.createWithToken(serverUrl, token ?: "")
+        val tok = token
+        if (tok.isNullOrBlank()) {
+            // Defence-in-depth: every admin endpoint (createUser, deleteUser,
+            // regenerateCode, send_command, …) requires a Bearer token with
+            // session['role'] == 'admin' on the server. If we ever build an
+            // "authenticated" client with no token, the OkHttp interceptor
+            // silently skips the Authorization header and the server returns
+            // 403 — which is exactly the bug we are guarding against.
+            //
+            // We log loudly here so a missing token is visible in logcat
+            // instead of manifesting as a mysterious 403 in the UI. Callers
+            // that genuinely need an unauthenticated client should use
+            // [getApiServiceWithoutToken] explicitly.
+            android.util.Log.w(
+                "Preferences",
+                "getApiService() called with NO auth token — server will reject " +
+                    "admin endpoints (createUser, deleteUser, …) with 403. " +
+                    "Did login fail to persist the session token?"
+            )
+        }
+        return ApiClient.createWithToken(serverUrl, tok ?: "")
     }
 
     fun getApiServiceWithoutToken(): com.abuzahra.admin.data.api.ApiService {

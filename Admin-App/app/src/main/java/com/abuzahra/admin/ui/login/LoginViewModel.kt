@@ -66,6 +66,20 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
         }
     }
 
+    /**
+     * Google Sign-In flow.
+     *
+     * The Google OAuth idToken is forwarded to the server's `/api/web/firebase_auth`
+     * endpoint. The server verifies the idToken against Google's tokeninfo
+     * endpoint (and Firebase identitytoolkit as a fallback), creates or finds
+     * the matching user, and returns a session token — exactly the same shape
+     * as a password login response.
+     *
+     * This is a SEPARATE flow from [login]: it does NOT fall back to password
+     * authentication on failure. Errors are reported with Google-specific
+     * messages so the user can tell the difference between "wrong password"
+     * and "Google verification failed".
+     */
     fun loginWithFirebase(email: String, displayName: String, idToken: String) {
         if (email.isBlank()) {
             _loginResult.value = Result.Error("فشل الحصول على البريد الإلكتروني من جوجل")
@@ -94,11 +108,23 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
                     _loginResult.postValue(Result.Success(response))
                 } else {
                     Log.e(TAG, "فشل Firebase Auth: ${response.message}")
-                    _loginResult.postValue(Result.Error(response.message.ifEmpty { "فشل تسجيل الدخول" }))
+                    _loginResult.postValue(
+                        Result.Error(response.message.ifEmpty { "فشل التحقق من حساب جوجل" })
+                    )
                 }
             } catch (e: retrofit2.HttpException) {
                 Log.e(TAG, "Firebase Auth HTTP ${e.code()}: ${e.message}", e)
-                _loginResult.postValue(Result.Error("خطأ في الخادم: ${e.code()}", e.code()))
+                when (e.code()) {
+                    401 -> _loginResult.postValue(
+                        Result.Error("تعذّر التحقق من حساب جوجل. تأكّد من أن البريد مرتبط بحساب إداري ثم حاول مجدداً.", 401)
+                    )
+                    403 -> _loginResult.postValue(
+                        Result.Error("حساب جوجل غير مصرّح له بالدخول إلى لوحة الإدارة.", 403)
+                    )
+                    else -> _loginResult.postValue(
+                        Result.Error("خطأ في الخادم أثناء التحقق من جوجل: ${e.code()}", e.code())
+                    )
+                }
             } catch (e: SocketTimeoutException) {
                 Log.e(TAG, "Firebase Auth مهلة", e)
                 _loginResult.postValue(Result.Error("انتهت مهلة الاتصال بالخادم"))
@@ -107,7 +133,7 @@ class LoginViewModel(private val preferences: Preferences) : ViewModel() {
                 _loginResult.postValue(Result.Error("لا يمكن الوصول إلى الخادم"))
             } catch (e: Exception) {
                 Log.e(TAG, "Firebase Auth خطأ", e)
-                _loginResult.postValue(Result.Error("خطأ: ${e.message}"))
+                _loginResult.postValue(Result.Error("خطأ في تسجيل الدخول بجوجل: ${e.message}"))
             }
         }
     }

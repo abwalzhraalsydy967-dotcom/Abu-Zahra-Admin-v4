@@ -669,7 +669,18 @@ class DataStore:
         if not cmd:
             return False
         cmd['status'] = status
-        cmd['result'] = result
+        # Always serialize result as a JSON string so the Android app's
+        # Command.result: String? field can deserialize it without
+        # JsonSyntaxException (was BEGIN_OBJECT when result was a dict).
+        if result is None:
+            cmd['result'] = None
+        elif isinstance(result, str):
+            cmd['result'] = result
+        else:
+            try:
+                cmd['result'] = json.dumps(result, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                cmd['result'] = str(result)
         cmd['completed_at'] = datetime.utcnow().isoformat()
         return True
 

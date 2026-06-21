@@ -3,12 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Shield,
   Smartphone,
   Battery,
   BatteryCharging,
   Wifi,
-  Clock,
   Users,
   Activity,
   Terminal,
@@ -29,13 +27,12 @@ import {
   SmartphoneNfc,
   ListChecks,
   Radio,
-  FolderOpen,
   MessageCircle,
   ExternalLink,
+  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -58,8 +55,11 @@ import api, { type Device, type Event, type Stats } from '@/lib/api'
 import { cn, formatTimestamp, timeAgo, addLog } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import CommandResults from '@/components/dashboard/command-results'
-import StreamingViewer from '@/components/dashboard/streaming-viewer'
 import FileViewer from '@/components/dashboard/file-viewer'
+import Sidebar, { MobileSidebarTrigger, type DashboardView } from '@/components/dashboard/sidebar'
+import OverviewView from '@/components/dashboard/views/overview'
+import StreamingView from '@/components/dashboard/views/streaming-view'
+import SettingsView from '@/components/dashboard/views/settings-view'
 
 /* ─── Types ──────────────────────────────────────────── */
 interface UserData {
@@ -76,16 +76,6 @@ function Skeleton({ className }: { className?: string }) {
     <div
       className={cn('animate-pulse rounded-lg bg-slate-800/60', className)}
     />
-  )
-}
-
-function StatsSkeleton() {
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-24 w-full" />
-      ))}
-    </div>
   )
 }
 
@@ -118,11 +108,11 @@ export default function Dashboard() {
   const [permanentCode, setPermanentCode] = useState<string>('')
 
   /* ── UI State ── */
+  const [activeView, setActiveView] = useState<DashboardView>('overview')
   const [loadingDevices, setLoadingDevices] = useState(true)
   const [loadingStats, setLoadingStats] = useState(true)
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [activeTab, setActiveTab] = useState('devices')
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
   const [activeCategory, setActiveCategory] = useState('data')
   const [commandLoading, setCommandLoading] = useState<string | null>(null)
@@ -130,6 +120,8 @@ export default function Dashboard() {
   const [showPermanentCode, setShowPermanentCode] = useState(false)
   const [linkCodeLoading, setLinkCodeLoading] = useState(false)
   const [tgLinkLoading, setTgLinkLoading] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [commandSearch, setCommandSearch] = useState('')
   const [tgLinkDialog, setTgLinkDialog] = useState<{
     open: boolean
     deep_link_url: string
@@ -245,9 +237,9 @@ export default function Dashboard() {
     }
   }, [])
 
-  /* ── Load Users when Users tab is active ── */
+  /* ── Load Users when Users view is active ── */
   useEffect(() => {
-    if (activeTab !== 'users' || user?.role !== 'admin') return
+    if (activeView !== 'users' || user?.role !== 'admin') return
     let cancelled = false
 
     ;(async () => {
@@ -271,12 +263,11 @@ export default function Dashboard() {
     })()
 
     return () => { cancelled = true }
-  }, [activeTab, user?.role])
+  }, [activeView, user?.role])
 
   /* ── Handlers ── */
   const handleSelectDevice = (device: Device) => {
     setSelectedDevice(device)
-    setActiveTab('commands')
     addLog('info', `تم اختيار الجهاز: ${device.name}`, `الموديل: ${device.model}`)
   }
 
@@ -326,7 +317,6 @@ export default function Dashboard() {
         setTgLinkCopied(false)
         addLog('success', 'تم توليد رابط ربط Telegram', `البوت: @${res.bot_username}`)
       } else if (res.ok && res.token && !res.deep_link_url) {
-        // Token issued but bot username not yet known — instruct user to retry.
         addLog('warning', 'لم يتم جلب اسم البوت بعد. أعد المحاولة خلال لحظات.', res.message || '')
       } else {
         addLog('error', 'فشل توليد رابط ربط Telegram', res.message)
@@ -418,7 +408,6 @@ export default function Dashboard() {
       const res = await api.deleteUser(userId)
       if (res.ok) {
         addLog('success', 'تم حذف المستخدم بنجاح')
-        // Re-fetch users (server returns { ok, users: [...] })
         const usersRes = await api.getUsers()
         if (usersRes.ok && usersRes.users) {
           setUsers(usersRes.users as UserData[])
@@ -433,195 +422,172 @@ export default function Dashboard() {
     setDeleteDialog({ open: false, user: null })
   }
 
+  const handleRefreshAll = () => {
+    setLoadingDevices(true)
+    setLoadingStats(true)
+    setLoadingEvents(true)
+    Promise.all([
+      api.getDevices(),
+      api.getStats(),
+      api.getEvents(100),
+    ]).then(([devRes, statsRes, evtRes]) => {
+      if (devRes.ok && devRes.devices) setDevices(devRes.devices as Device[])
+      if (statsRes.ok && statsRes.stats) setStats(statsRes.stats as Stats)
+      if (evtRes.ok && evtRes.events) setEvents(evtRes.events as Event[])
+    }).catch(() => {
+      addLog('error', 'فشل تحديث البيانات')
+    }).finally(() => {
+      setLoadingDevices(false)
+      setLoadingStats(false)
+      setLoadingEvents(false)
+    })
+  }
+
   const handleLogout = () => {
     addLog('info', 'تسجيل الخروج', `المستخدم: ${user?.username}`)
     api.logout().catch(() => {})
     logout()
   }
 
-  const formatUptime = (seconds: number): string => {
-    const h = Math.floor(seconds / 3600)
-    if (h < 24) return `${h} ساعة`
-    const d = Math.floor(h / 24)
-    const rh = h % 24
-    return `${d} يوم ${rh} ساعة`
+  /* ─── Page title for header ─── */
+  const viewTitles: Record<DashboardView, { title: string; subtitle: string }> = {
+    overview: { title: 'لوحة المعلومات', subtitle: 'نظرة شاملة على النظام' },
+    devices: { title: 'الأجهزة', subtitle: 'إدارة الأجهزة المتصلة' },
+    commands: { title: 'الأوامر', subtitle: 'مكتبة أوامر الجهاز' },
+    results: { title: 'النتائج', subtitle: 'نتائج الأوامر المُرسلة' },
+    streaming: { title: 'البث المباشر', subtitle: 'بث الشاشة والكاميرا والصوت' },
+    files: { title: 'الملفات', subtitle: 'الملفات المرفوعة من الأجهزة' },
+    events: { title: 'الأحداث', subtitle: 'سجل أحداث النظام' },
+    users: { title: 'المستخدمين', subtitle: 'إدارة حسابات النظام' },
+    settings: { title: 'الإعدادات', subtitle: 'إعدادات النظام والتنبيهات' },
   }
 
-  /* ─── Render: Header ───────────────────────────────── */
-  const renderHeader = () => (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
-      <div className="flex items-center justify-between px-4 py-3 md:px-6">
-        {/* Right side: Logo */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
-            <Shield className="w-5 h-5 text-white" />
-          </div>
-          <h1 className="text-lg font-bold text-white tracking-tight">أبو زهرة</h1>
-          <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/25 text-[10px] px-1.5">
-            v4.0
-          </Badge>
-        </div>
-
-        {/* Left side: User menu */}
-        <div className="flex items-center gap-3">
-          {/* Permanent Code Display */}
-          <AnimatePresence>
-            {showPermanentCode && permanentCode && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20"
-              >
-                <Link2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs text-emerald-300 font-mono" dir="ltr">
-                  {permanentCode}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(permanentCode)}
-                  className="text-emerald-400 hover:text-emerald-300 transition-colors"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPermanentCode(false)}
-                  className="text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* User Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-800/60 transition-colors outline-none cursor-pointer"
-                />
-              }
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-sm font-bold">
-                {user?.username?.charAt(0)?.toUpperCase() || 'م'}
-              </div>
-              <span className="hidden sm:block text-sm text-slate-200 font-medium">
-                {user?.username || 'مستخدم'}
-              </span>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={8}>
-              <DropdownMenuItem
-                onClick={handleGenerateLinkCode}
-                disabled={linkCodeLoading}
-              >
-                {linkCodeLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                كود الربط الخاص بي
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleGenerateTgLink}
-                disabled={tgLinkLoading}
-              >
-                {tgLinkLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <MessageCircle className="w-4 h-4" />
-                )}
-                ربط بوت Telegram
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={handleLogout}
-              >
-                <LogOut className="w-4 h-4" />
-                تسجيل الخروج
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    </header>
-  )
-
-  /* ─── Render: Stats Row ────────────────────────────── */
-  const renderStats = () => {
-    if (loadingStats) return <StatsSkeleton />
-
-    const items = [
-      {
-        label: 'الأجهزة المتصلة',
-        value: stats?.online_devices ?? 0,
-        icon: Wifi,
-        color: 'text-green-400',
-        border: 'border-green-500/20',
-        iconBg: 'bg-green-500/15',
-      },
-      {
-        label: 'إجمالي الأوامر',
-        value: stats?.total_commands ?? 0,
-        icon: Terminal,
-        color: 'text-emerald-400',
-        border: 'border-emerald-500/20',
-        iconBg: 'bg-emerald-500/15',
-      },
-      {
-        label: 'الأحداث',
-        value: stats?.total_events ?? 0,
-        icon: Activity,
-        color: 'text-amber-400',
-        border: 'border-amber-500/20',
-        iconBg: 'bg-amber-500/15',
-      },
-      {
-        label: 'وقت التشغيل',
-        value: stats?.uptime ? formatUptime(stats.uptime) : '0 ساعة',
-        icon: Clock,
-        color: 'text-cyan-400',
-        border: 'border-cyan-500/20',
-        iconBg: 'bg-cyan-500/15',
-      },
-    ]
-
+  /* ─── Render: Top bar (mobile hamburger + page title + actions) ─── */
+  const renderTopBar = () => {
+    const vt = viewTitles[activeView]
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {items.map((item) => (
-          <motion.div
-            key={item.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div
-              className={cn(
-                'bg-slate-900/80 border rounded-xl p-4',
-                item.border
-              )}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className={cn('p-2 rounded-lg', item.iconBg)}>
-                  <item.icon className={cn('w-4 h-4', item.color)} />
-                </div>
-              </div>
-              <p className={cn('text-2xl font-bold', item.color)}>
-                {item.value}
+      <header className="sticky top-0 z-30 w-full border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-4 py-3 md:px-6 gap-3">
+          {/* Right side: hamburger + page title */}
+          <div className="flex items-center gap-3 min-w-0">
+            <MobileSidebarTrigger onClick={() => setSidebarOpen(true)} />
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-white truncate">
+                {vt.title}
+              </h1>
+              <p className="text-[11px] text-slate-400 truncate hidden sm:block">
+                {vt.subtitle}
               </p>
-              <p className="text-slate-400 text-xs mt-1">{item.label}</p>
             </div>
-          </motion.div>
-        ))}
-      </div>
+          </div>
+
+          {/* Left side: actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Permanent Code Display */}
+            <AnimatePresence>
+              {showPermanentCode && permanentCode && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20"
+                >
+                  <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs text-emerald-300 font-mono" dir="ltr">
+                    {permanentCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(permanentCode)}
+                    className="text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPermanentCode(false)}
+                    className="text-slate-400 hover:text-slate-300 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Selected device quick badge */}
+            {selectedDevice && (activeView === 'commands' || activeView === 'results' || activeView === 'streaming') && (
+              <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <Smartphone className="w-3 h-3 text-emerald-400" />
+                <span className="text-xs text-emerald-300 truncate max-w-[120px]">
+                  {selectedDevice.name}
+                </span>
+              </div>
+            )}
+
+            {/* User Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/60 transition-colors outline-none cursor-pointer"
+                  />
+                }
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-sm font-bold">
+                  {user?.username?.charAt(0)?.toUpperCase() || 'م'}
+                </div>
+                <span className="hidden sm:block text-sm text-slate-200 font-medium max-w-[100px] truncate">
+                  {user?.username || 'مستخدم'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={8}>
+                <DropdownMenuItem
+                  onClick={handleGenerateLinkCode}
+                  disabled={linkCodeLoading}
+                >
+                  {linkCodeLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  كود الربط الخاص بي
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleGenerateTgLink}
+                  disabled={tgLinkLoading}
+                >
+                  {tgLinkLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <MessageCircle className="w-4 h-4" />
+                  )}
+                  ربط بوت Telegram
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setActiveView('settings')}
+                >
+                  <Terminal className="w-4 h-4" />
+                  الإعدادات
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="w-4 h-4" />
+                  تسجيل الخروج
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </header>
     )
   }
 
-  /* ─── Render: Device Card ──────────────────────────── */
+  /* ─── Render: Device Card ─── */
   const renderDeviceCard = (device: Device) => {
     const isSelected = selectedDevice?.id === device.id
     return (
@@ -635,11 +601,11 @@ export default function Dashboard() {
           type="button"
           onClick={() => handleSelectDevice(device)}
           className={cn(
-            'w-full text-right bg-slate-900/80 border rounded-xl p-4 transition-all duration-200',
-            'hover:bg-slate-800/80 hover:border-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/5',
+            'w-full text-right bg-white/5 backdrop-blur-md border rounded-xl p-4 transition-all duration-200',
+            'hover:bg-white/[0.07] hover:border-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/5',
             isSelected
               ? 'border-emerald-500/50 ring-1 ring-emerald-500/20 bg-emerald-500/5'
-              : 'border-slate-800/50'
+              : 'border-slate-800/60'
           )}
         >
           {/* Header */}
@@ -696,17 +662,16 @@ export default function Dashboard() {
     )
   }
 
-  /* ─── Render: Devices Tab ──────────────────────────── */
-  const renderDevicesTab = () => (
-    <div className="space-y-4">
-      {/* Top bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Smartphone className="w-5 h-5 text-emerald-400" />
-          <h2 className="text-lg font-semibold text-white">الأجهزة</h2>
-          <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/30 text-xs">
-            {devices.length}
-          </Badge>
+  /* ─── Render: Devices View ─── */
+  const renderDevicesView = () => (
+    <div className="space-y-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">الأجهزة</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            إدارة الأجهزة المتصلة بحسابك
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -724,7 +689,7 @@ export default function Dashboard() {
             className="text-slate-400 hover:text-white hover:bg-slate-800"
           >
             <RefreshCw className={cn('w-4 h-4', loadingDevices && 'animate-spin')} />
-            <span className="hidden sm:inline">تحديث</span>
+            <span>تحديث</span>
           </Button>
           <Button
             variant="outline"
@@ -738,9 +703,21 @@ export default function Dashboard() {
             ) : (
               <Plus className="w-4 h-4" />
             )}
-            <span className="hidden sm:inline">كود الربط الخاص بي</span>
+            <span className="hidden sm:inline">كود الربط</span>
           </Button>
         </div>
+      </div>
+
+      {/* Device count badge */}
+      <div className="flex items-center gap-3 text-sm">
+        <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/25 gap-1">
+          <Smartphone className="w-3 h-3" />
+          {devices.length} جهاز
+        </Badge>
+        <Badge className="bg-green-500/15 text-green-400 border-green-500/25 gap-1">
+          <Wifi className="w-3 h-3" />
+          {devices.filter(d => d.is_online).length} متصل
+        </Badge>
       </div>
 
       {/* Device Grid */}
@@ -754,36 +731,112 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-16 text-slate-400"
+          className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl"
         >
           <SmartphoneNfc className="w-12 h-12 mb-3 text-slate-600" />
           <p className="text-base font-medium">لا توجد أجهزة متصلة</p>
           <p className="text-sm mt-1">استخدم كود الربط لربط جهاز جديد</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGenerateLinkCode}
+            disabled={linkCodeLoading}
+            className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+          >
+            {linkCodeLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            الحصول على كود الربط
+          </Button>
         </motion.div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {devices.map(renderDeviceCard)}
         </div>
       )}
+
+      {/* Selected device actions */}
+      {selectedDevice && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white/5 backdrop-blur-md border border-emerald-500/20 rounded-xl p-4"
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-lg bg-emerald-500/15 shrink-0">
+              <Smartphone className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white font-medium truncate">
+                الجهاز المُختار: {selectedDevice.name}
+              </p>
+              <p className="text-xs text-slate-400 truncate">
+                {selectedDevice.model} • {selectedDevice.brand}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => {
+                setSelectedDevice(null)
+                addLog('info', 'تم إلغاء اختيار الجهاز')
+              }}
+              className="text-slate-400 hover:text-white hover:bg-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              onClick={() => setActiveView('commands')}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+            >
+              <Terminal className="w-4 h-4" />
+              عرض الأوامر
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setActiveView('streaming')}
+              className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+            >
+              <Radio className="w-4 h-4" />
+              البث المباشر
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setActiveView('results')}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 bg-transparent"
+            >
+              <ListChecks className="w-4 h-4" />
+              النتائج
+            </Button>
+          </div>
+        </motion.div>
+      )}
     </div>
   )
 
-  /* ─── Render: Commands Tab ─────────────────────────── */
-  const renderCommandsTab = () => {
+  /* ─── Render: Commands View ─── */
+  const renderCommandsView = () => {
     if (!selectedDevice) {
       return (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-16 text-slate-400"
+          className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl"
         >
           <Eye className="w-12 h-12 mb-3 text-slate-600" />
           <p className="text-base font-medium">اختر جهازاً لعرض الأوامر</p>
-          <p className="text-sm mt-1">انتقل إلى تبويب الأجهزة واختر جهازاً</p>
+          <p className="text-sm mt-1">انتقل إلى صفحة الأجهزة واختر جهازاً</p>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setActiveTab('devices')}
+            onClick={() => setActiveView('devices')}
             className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
           >
             <Smartphone className="w-4 h-4" />
@@ -795,7 +848,15 @@ export default function Dashboard() {
 
     const categoryKeys = Object.keys(CMD_CATEGORIES)
     const currentCategory = CMD_CATEGORIES[activeCategory]
-    const commands = currentCategory ? Object.values(currentCategory.commands) : []
+    let commands = currentCategory ? Object.values(currentCategory.commands) : []
+
+    // Filter by search query
+    if (commandSearch.trim()) {
+      const q = commandSearch.trim().toLowerCase()
+      commands = commands.filter(
+        (c) => c.name.toLowerCase().includes(q) || c.cmd.toLowerCase().includes(q)
+      )
+    }
 
     return (
       <div className="space-y-4">
@@ -833,17 +894,40 @@ export default function Dashboard() {
           </Button>
         </div>
 
+        {/* Search box */}
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            type="text"
+            value={commandSearch}
+            onChange={(e) => setCommandSearch(e.target.value)}
+            placeholder="ابحث عن أمر..."
+            className="pr-9 bg-slate-800/50 border-slate-700/60 text-white placeholder:text-slate-500 focus-visible:border-emerald-500/50 focus-visible:ring-emerald-500/20"
+          />
+          {commandSearch && (
+            <button
+              type="button"
+              onClick={() => setCommandSearch('')}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         {/* Category Chips */}
         <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
           {categoryKeys.map((key) => {
             const cat = CMD_CATEGORIES[key]
             const isActive = activeCategory === key
+            const count = Object.keys(cat.commands).length
             return (
               <button
                 key={key}
                 type="button"
                 onClick={() => {
                   setActiveCategory(key)
+                  setCommandSearch('')
                   addLog('info', `تبديل الفئة: ${cat.name}`)
                 }}
                 className={cn(
@@ -855,53 +939,68 @@ export default function Dashboard() {
               >
                 <span>{cat.icon}</span>
                 <span>{cat.name}</span>
+                <span className="text-[9px] text-slate-500">({count})</span>
               </button>
             )
           })}
         </div>
 
-        {/* Command Buttons Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-          {commands.map((cmd) => {
-            const isLoading = commandLoading === cmd.cmd
-            const isDangerous = cmd.category === 'security' && (cmd.cmd === 'wipe_data' || cmd.cmd === 'factory_reset')
-            return (
-              <motion.button
-                key={cmd.cmd}
-                type="button"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleCommandClick(cmd)}
-                disabled={isLoading}
-                className={cn(
-                  'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200',
-                  'bg-slate-900/80 border-slate-800/50',
-                  'hover:bg-slate-800/80 hover:border-emerald-500/30',
-                  'disabled:opacity-50 disabled:cursor-not-allowed',
-                  isDangerous && 'hover:border-red-500/30 hover:bg-red-500/5'
-                )}
-              >
-                <span className="text-lg">{cmd.icon}</span>
-                <span className="text-xs text-slate-300 text-center leading-tight">
-                  {isLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400 mx-auto" />
-                  ) : (
-                    cmd.name
-                  )}
-                </span>
-                {cmd.hasParams && (
-                  <span className="text-[9px] text-emerald-500/70">معلمات</span>
-                )}
-              </motion.button>
-            )
-          })}
+        {/* Command count */}
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            {commands.length} أمر متاح
+            {commandSearch && ` • نتائج البحث عن "${commandSearch}"`}
+          </p>
         </div>
+
+        {/* Command Buttons Grid */}
+        {commands.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">
+            لا توجد أوامر مطابقة
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            {commands.map((cmd) => {
+              const isLoading = commandLoading === cmd.cmd
+              const isDangerous = cmd.category === 'security' && (cmd.cmd === 'wipe_data' || cmd.cmd === 'factory_reset')
+              return (
+                <motion.button
+                  key={cmd.cmd}
+                  type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleCommandClick(cmd)}
+                  disabled={isLoading}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200',
+                    'bg-slate-900/60 border-slate-800/50 backdrop-blur-sm',
+                    'hover:bg-slate-800/80 hover:border-emerald-500/30',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                    isDangerous && 'hover:border-red-500/30 hover:bg-red-500/5'
+                  )}
+                >
+                  <span className="text-lg">{cmd.icon}</span>
+                  <span className="text-xs text-slate-300 text-center leading-tight">
+                    {isLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400 mx-auto" />
+                    ) : (
+                      cmd.name
+                    )}
+                  </span>
+                  {cmd.hasParams && (
+                    <span className="text-[9px] text-emerald-500/70">معلمات</span>
+                  )}
+                </motion.button>
+              )
+            })}
+          </div>
+        )}
       </div>
     )
   }
 
-  /* ─── Render: Events Tab ───────────────────────────── */
-  const renderEventsTab = () => {
+  /* ─── Render: Events View ─── */
+  const renderEventsView = () => {
     const levelColors: Record<string, string> = {
       info: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/25',
       success: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -918,14 +1017,11 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-semibold text-white">الأحداث</h2>
-            <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/30 text-xs">
-              {events.length}
-            </Badge>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white">الأحداث</h1>
+            <p className="text-sm text-slate-400 mt-1">سجل أحداث النظام</p>
           </div>
           <Button
             variant="ghost"
@@ -941,7 +1037,15 @@ export default function Dashboard() {
             className="text-slate-400 hover:text-white hover:bg-slate-800"
           >
             <RefreshCw className={cn('w-4 h-4', loadingEvents && 'animate-spin')} />
+            <span>تحديث</span>
           </Button>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/30 text-xs gap-1">
+            <Activity className="w-3 h-3" />
+            {events.length} حدث
+          </Badge>
         </div>
 
         {loadingEvents ? (
@@ -954,13 +1058,13 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-16 text-slate-400"
+            className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl"
           >
             <Activity className="w-12 h-12 mb-3 text-slate-600" />
             <p className="text-base font-medium">لا توجد أحداث</p>
           </motion.div>
         ) : (
-          <div className="max-h-[600px] overflow-y-auto rounded-xl border border-slate-800/50 bg-slate-900/50" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
+          <div className="max-h-[600px] overflow-y-auto rounded-xl border border-slate-800/50 bg-slate-900/50 backdrop-blur-md" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
             <div className="divide-y divide-slate-800/50">
               {events.map((event) => (
                 <div
@@ -993,11 +1097,11 @@ export default function Dashboard() {
     )
   }
 
-  /* ─── Render: Users Tab ────────────────────────────── */
-  const renderUsersTab = () => {
+  /* ─── Render: Users View ─── */
+  const renderUsersView = () => {
     if (user?.role !== 'admin') {
       return (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl">
           <AlertTriangle className="w-12 h-12 mb-3 text-slate-600" />
           <p className="text-base font-medium">ليس لديك صلاحية الوصول</p>
           <p className="text-sm mt-1">هذا القسم متاح للمسؤولين فقط</p>
@@ -1006,14 +1110,11 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-lg font-semibold text-white">المستخدمين</h2>
-            <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/30 text-xs">
-              {users.length}
-            </Badge>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white">المستخدمين</h1>
+            <p className="text-sm text-slate-400 mt-1">إدارة حسابات النظام</p>
           </div>
           <Button
             variant="ghost"
@@ -1029,7 +1130,20 @@ export default function Dashboard() {
             className="text-slate-400 hover:text-white hover:bg-slate-800"
           >
             <RefreshCw className={cn('w-4 h-4', loadingUsers && 'animate-spin')} />
+            <span>تحديث</span>
           </Button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/30 text-xs gap-1">
+            <Users className="w-3 h-3" />
+            {users.length} مستخدم
+          </Badge>
+          {user?.role === 'admin' && (
+            <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/25 text-xs">
+              صلاحية المسؤول
+            </Badge>
+          )}
         </div>
 
         {loadingUsers ? (
@@ -1042,13 +1156,13 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-16 text-slate-400"
+            className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl"
           >
             <Users className="w-12 h-12 mb-3 text-slate-600" />
             <p className="text-base font-medium">لا يوجد مستخدمين</p>
           </motion.div>
         ) : (
-          <div className="max-h-[600px] overflow-y-auto rounded-xl border border-slate-800/50 bg-slate-900/50" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
+          <div className="max-h-[600px] overflow-y-auto rounded-xl border border-slate-800/50 bg-slate-900/50 backdrop-blur-md" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
             {/* Table header */}
             <div className="grid grid-cols-12 gap-4 px-4 py-3 border-b border-slate-800/50 text-xs text-slate-500 font-medium">
               <div className="col-span-3">البريد</div>
@@ -1105,7 +1219,7 @@ export default function Dashboard() {
     )
   }
 
-  /* ─── Render: Param Dialog ─────────────────────────── */
+  /* ─── Render: Param Dialog ─── */
   const renderParamDialog = () => (
     <Dialog
       open={paramDialog.open}
@@ -1189,7 +1303,7 @@ export default function Dashboard() {
     </Dialog>
   )
 
-  /* ─── Render: Security Confirm Dialog ──────────────── */
+  /* ─── Render: Security Confirm Dialog ─── */
   const renderConfirmDialog = () => (
     <Dialog
       open={confirmDialog.open}
@@ -1247,7 +1361,7 @@ export default function Dashboard() {
     </Dialog>
   )
 
-  /* ─── Render: Delete User Dialog ───────────────────── */
+  /* ─── Render: Delete User Dialog ─── */
   const renderDeleteDialog = () => (
     <Dialog
       open={deleteDialog.open}
@@ -1299,7 +1413,7 @@ export default function Dashboard() {
     </Dialog>
   )
 
-  /* ─── Render: Telegram Deep-Link Dialog ────────────── */
+  /* ─── Render: Telegram Deep-Link Dialog ─── */
   const renderTgLinkDialog = () => (
     <Dialog
       open={tgLinkDialog.open}
@@ -1402,197 +1516,150 @@ export default function Dashboard() {
     </Dialog>
   )
 
+  /* ─── Render: Active view content ─── */
+  const renderActiveView = () => {
+    switch (activeView) {
+      case 'overview':
+        return (
+          <OverviewView
+            devices={devices}
+            events={events}
+            stats={stats}
+            loadingDevices={loadingDevices}
+            loadingStats={loadingStats}
+            loadingEvents={loadingEvents}
+            onRefresh={handleRefreshAll}
+            onGoToDevices={() => setActiveView('devices')}
+          />
+        )
+
+      case 'devices':
+        return renderDevicesView()
+
+      case 'commands':
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-white">الأوامر</h1>
+                <p className="text-sm text-slate-400 mt-1">
+                  مكتبة أوامر الجهاز — جميع الأوامر المتاحة
+                </p>
+              </div>
+            </div>
+            {renderCommandsView()}
+          </div>
+        )
+
+      case 'results':
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-white">نتائج الأوامر</h1>
+                <p className="text-sm text-slate-400 mt-1">
+                  عرض نتائج الأوامر المُرسلة للجهاز
+                </p>
+              </div>
+            </div>
+            {selectedDevice ? (
+              <CommandResults device={selectedDevice} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white/5 backdrop-blur-md border border-slate-800/60 rounded-xl">
+                <ListChecks className="w-12 h-12 mb-3 text-slate-600" />
+                <p className="text-base font-medium">اختر جهازاً لعرض النتائج</p>
+                <p className="text-sm mt-1">
+                  انتقل إلى صفحة الأجهزة واختر جهازاً لرؤية نتائج أوامره
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActiveView('devices')}
+                  className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  عرض الأجهزة
+                </Button>
+              </div>
+            )}
+          </div>
+        )
+
+      case 'streaming':
+        return (
+          <StreamingView
+            device={selectedDevice || devices[0] || ({} as Device)}
+            devices={devices}
+            onSelectDevice={handleSelectDevice}
+          />
+        )
+
+      case 'files':
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-white">الملفات</h1>
+                <p className="text-sm text-slate-400 mt-1">
+                  الملفات المرفوعة من الأجهزة
+                </p>
+              </div>
+            </div>
+            <FileViewer devices={devices} />
+          </div>
+        )
+
+      case 'events':
+        return renderEventsView()
+
+      case 'users':
+        return renderUsersView()
+
+      case 'settings':
+        return <SettingsView />
+
+      default:
+        return null
+    }
+  }
+
   /* ─── Main Render ──────────────────────────────────── */
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-950 via-emerald-950/50 to-slate-950">
-      {renderHeader()}
+    <div className="min-h-screen flex bg-gradient-to-br from-slate-950 via-emerald-950/30 to-slate-950">
+      {/* Sidebar (RTL: renders on the right) */}
+      <Sidebar
+        activeView={activeView}
+        onSelect={setActiveView}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        onlineDevices={devices.filter((d) => d.is_online).length}
+        totalDevices={devices.length}
+        eventsCount={events.length}
+        usersCount={users.length}
+        onGenerateLinkCode={handleGenerateLinkCode}
+        onGenerateTgLink={handleGenerateTgLink}
+        linkCodeLoading={linkCodeLoading}
+        tgLinkLoading={tgLinkLoading}
+      />
 
-      <main className="flex-1 px-4 py-6 md:px-6 pb-20">
-        {/* Stats */}
-        <div className="mb-6">{renderStats()}</div>
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {renderTopBar()}
 
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={(val: string) => {
-            setActiveTab(val)
-            addLog('info', `التبديل إلى: ${val}`)
-          }}
-        >
-          <div className="overflow-x-auto mb-6 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
-            <TabsList className="inline-flex min-w-full sm:min-w-0 bg-slate-900/80 border border-slate-800/50 p-1 rounded-xl">
-              <TabsTrigger value="devices" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <Smartphone className="w-4 h-4" />
-                الأجهزة
-              </TabsTrigger>
-              <TabsTrigger value="commands" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <Terminal className="w-4 h-4" />
-                الأوامر
-              </TabsTrigger>
-              <TabsTrigger value="results" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <ListChecks className="w-4 h-4" />
-                النتائج
-              </TabsTrigger>
-              <TabsTrigger value="streaming" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <Radio className="w-4 h-4" />
-                البث
-              </TabsTrigger>
-              <TabsTrigger value="events" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <Activity className="w-4 h-4" />
-                الأحداث
-              </TabsTrigger>
-              <TabsTrigger value="files" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                <FolderOpen className="w-4 h-4" />
-                الملفات
-              </TabsTrigger>
-              {user?.role === 'admin' && (
-                <TabsTrigger value="users" className="rounded-lg text-sm gap-1.5 data-active:bg-emerald-500/15 data-active:text-emerald-400">
-                  <Users className="w-4 h-4" />
-                  المستخدمين
-                </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
-
-          <TabsContent value="devices">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key="devices"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {renderDevicesTab()}
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          <TabsContent value="commands">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`commands-${selectedDevice?.id || 'none'}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {renderCommandsTab()}
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          <TabsContent value="results">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`results-${selectedDevice?.id || 'none'}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {selectedDevice ? (
-                  <CommandResults device={selectedDevice} />
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                    <ListChecks className="w-12 h-12 mb-3 text-slate-600" />
-                    <p className="text-base font-medium">اختر جهازاً لعرض النتائج</p>
-                    <p className="text-sm mt-1">
-                      انتقل إلى تبويب الأجهزة واختر جهازاً لرؤية نتائج أوامره
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setActiveTab('devices')}
-                      className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      عرض الأجهزة
-                    </Button>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          <TabsContent value="streaming">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`streaming-${selectedDevice?.id || 'none'}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {selectedDevice ? (
-                  <StreamingViewer device={selectedDevice} />
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                    <Radio className="w-12 h-12 mb-3 text-slate-600" />
-                    <p className="text-base font-medium">اختر جهازاً لبدء البث</p>
-                    <p className="text-sm mt-1">
-                      انتقل إلى تبويب الأجهزة واختر جهازاً لبث الشاشة أو الكاميرا
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setActiveTab('devices')}
-                      className="mt-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      عرض الأجهزة
-                    </Button>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          <TabsContent value="events">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key="events"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                {renderEventsTab()}
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          <TabsContent value="files">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key="files"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                <FileViewer devices={devices} />
-              </motion.div>
-            </AnimatePresence>
-          </TabsContent>
-
-          {user?.role === 'admin' && (
-            <TabsContent value="users">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key="users"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {renderUsersTab()}
-                </motion.div>
-              </AnimatePresence>
-            </TabsContent>
-          )}
-        </Tabs>
-      </main>
+        <main className="flex-1 px-4 py-6 md:px-6 pb-20">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              {renderActiveView()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
 
       {/* Dialogs */}
       {renderParamDialog()}

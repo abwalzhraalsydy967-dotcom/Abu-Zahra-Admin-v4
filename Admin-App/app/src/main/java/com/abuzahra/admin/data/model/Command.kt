@@ -1,5 +1,7 @@
 package com.abuzahra.admin.data.model
 
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -17,6 +19,30 @@ data class Command(
     @SerializedName("requested_by") val requestedBy: String? = null,
     @SerializedName("source") val source: String? = null
 ) {
+
+    /**
+     * Pretty-printed version of [result].
+     *
+     * The server stores `result` as a JSON-serialised string (double-encoded:
+     * the wire payload is itself a JSON string whose value is another JSON
+     * document). Gson already deserialises that into a Kotlin `String`, so
+     * [result] holds the inner JSON text — e.g. `[{"address":"+123", ...}]` or
+     * `{"battery": 87, ...}`.
+     *
+     * This helper attempts to pretty-print the inner JSON so the admin UI
+     * shows readable output instead of a single-line escaped blob. If the
+     * content is not JSON, it is returned verbatim.
+     */
+    val prettyResult: String
+        get() {
+            val raw = result ?: return ""
+            return try {
+                val element = JsonParser.parseString(raw)
+                GsonBuilder().setPrettyPrinting().create().toJson(element)
+            } catch (_: Exception) {
+                raw
+            }
+        }
 
     val displayStatus: String
         get() = when (status.lowercase()) {
