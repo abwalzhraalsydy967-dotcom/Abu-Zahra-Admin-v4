@@ -3379,3 +3379,58 @@ Stage Summary:
 - **Back press ذكي**: يُغلق الـ drawer أولاً، ثم يرجع لـ overview، ثم يُظهر logout dialog
 - **onResume refresh**: يُعيد تحميل البيانات عند العودة من نشاط ابن (مثل DeviceDetail بعد إرسال أمر)
 - **لا كسر للوظائف الموجودة**: قائمة الأجهزة + البحث + الفلاتر + Chips + DeviceAdapter كلها تعمل كما هي داخل devicesRoot
+
+---
+Task ID: 13 (Phase 13)
+Agent: Main Agent + Admin App Full Redesigner subagent
+Task: إعادة تصميم تطبيق الإدارة بـ Navigation Drawer مطابق للوحة التحكم الويب
+
+Work Log:
+المشكلة:
+- تطبيق الإدارة كان يستخدم BottomNavigation بـ 4 عناصر فقط
+- لوحة التحكم الويب تستخدم sidebar بـ 9 عناصر
+- المستخدم أراد التطبيق طبق الأصل للوحة التحكم
+
+إعادة التصميم:
+- استبدال BottomNavigation بـ Navigation Drawer (RTL، ينزلق من اليمين)
+- 9 عناصر في الـ drawer مطابقة لـ sidebar الويب:
+  1. لوحة المعلومات (Overview) — stat cards + أحدث الأجهزة + آخر الأحداث
+  2. الأجهزة (Devices) — قائمة الأجهزة
+  3. الأوامر (Commands) — device picker → DeviceDetailActivity
+  4. النتائج (Results) — device picker → CommandResultActivity
+  5. البث (Streaming) — device picker → StreamingActivity
+  6. الملفات (Files) → FilesActivity
+  7. الأحداث (Events) → LogsActivity
+  8. المستخدمين (Users) → UsersActivity
+  9. الإعدادات (Settings) → SettingsActivity
+  + تسجيل الخروج
+
+ملفات جديدة:
+- view_overview.xml: overview بـ 4 stat cards + quick actions + recent lists
+- nav_drawer_header.xml: user info + badges
+- drawer_menu.xml: 9 عناصر + logout
+
+ملفات معدّلة:
+- activity_dashboard.xml: DrawerLayout + NavigationView (RTL right-side)
+- DashboardActivity.kt: drawer setup + overview + smart routing
+
+مطابقة الويب:
+- Overview يطابق OverviewView: 4 stat cards + quick actions + أحدث الأجهزة + آخر الأحداث
+- Drawer header يطابق sidebar footer: shield + username + email + role + badges
+- 9 عناصر مطابقة لـ sidebar.tsx navItems
+
+إزالة أسرار من git:
+- filter-branch كامل لإزالة firebase-admin-sdk.json من كل التاريخ
+- gc --prune=now --aggressive
+- force push ناجح
+
+التحقق:
+- GitHub Actions: Run #48 (Admin-App) ✅، Run #47 (Android APKs) ✅، Run #26 (Android-App) ✅
+- Admin-App v4.1.0 (7.4MB) — مع Navigation Drawer الجديد
+- Android-App v4.0.0 (7.7MB) — بدون تغيير
+
+Stage Summary:
+- Phase 13 مكتمل
+- تطبيق الإدارة الآن طبق الأصل للوحة التحكم الويب
+- Navigation Drawer بـ 9 عناصر + Overview page
+- البناء ناجح و APKs جاهزة
