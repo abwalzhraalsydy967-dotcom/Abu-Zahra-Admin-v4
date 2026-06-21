@@ -2986,3 +2986,54 @@ Stage Summary:
 - **كل الـ 116+ commands متاحة** عبر الـ command picker (منظمة بـ 8 فئات) + بحث فوري
 - **Layout**: sidebar (right in RTL) + main content area (top bar + active view)، responsive (mobile drawer)، Framer Motion transitions
 - **Styling**: dark theme (slate-950 + emerald accents)، glassmorphism cards (bg-white/5 backdrop-blur-md)، RTL كامل، Arabic text throughout
+
+---
+Task ID: 11 (Phase 11)
+Agent: Main Agent + 3 subagents (Android Fixer, Web Redesigner, Firebase Guide)
+Task: إصلاحات حرجة شاملة — JSON, Google login, restore, sidebar UI, Firebase guide
+
+Work Log:
+إصلاحات السيرفر (Main Agent، منشورة على الإنتاج):
+1. store.update_command_result: تسلسل result كـ JSON string (يصلح JsonSyntaxException)
+2. api_firebase_auth: التحقق من Google OAuth tokens عبر Google tokeninfo (بالإضافة لـ Firebase identitytoolkit)
+3. api_restore_session: قبول link_code (الكود الدائم) كبديل لـ device_token
+
+إصلاحات الأندرويد (Android Critical Fixer):
+- Admin-App: إزالة رسالة 401 المضللة في Google flow + رسائل أخطاء مخصصة
+- Admin-App: Command.prettyResult لعرض JSON بشكل جميل
+- Client-App: LinkActivity استعادة على مرحلتين — device_token ثم link_code
+- Client-App: ApiClient.sendData يرسل type field (كان مفقوداً)
+- Client-App: CommandExecutor.forwardDataPayload يرسل البيانات لـ /api/data → Firebase
+
+إعادة تصميم لوحة التحكم (Web Redesigner):
+- sidebar.tsx: sidebar عمودي احترافي (RTL، 9 عناصر، قابل للطي)
+- views/overview.tsx: لوحة معلومات ببطاقات إحصائية + رسوم بيانية
+- views/streaming-view.tsx: واجهة بث كاملة مع "جاري الاقتران" + عارض ملء الشاشة + LIVE badge
+- views/settings-view.tsx: صفحة إعدادات شاملة
+- dashboard.tsx: أُعيدت كتابتها بـ sidebar + main content area
+
+دليل Firebase (Firebase Guide Writer):
+- FIREBASE-SETUP.md: 1237 سطر بالعربية
+- المفاتيح المطلوبة، إعداد Console، RTDB Rules، .env templates
+- تحذيرات: FIREBASE_DB_SECRET و firebase-admin-sdk.json مفقودان ويجب إنشاؤهما
+
+إصلاح البناء:
+- CommandExecutor.forwardDataPayload: sendData هو suspend → GlobalScope.launch
+
+التحقق:
+- GitHub Actions: Run #24 (Android-App) ✅، Run #44 (Android APKs) ✅، Run #45 (Admin-App) ✅
+- الويب الإنتاجي: HTTP 200 مع sidebar الجديد
+- Google auth: token خاطئ → فشل تحقق (صحيح)
+- Restore: كود خاطئ → "كود الربط غير صالح" (صحيح)
+
+Stage Summary:
+- Phase 11 مكتمل — كل المشاكل المُبلَّغ عنها أُصلحت:
+  1. JsonSyntaxException ✅ (result يُسلسل كـ JSON string)
+  2. Google login ✅ (التحقق من Google OAuth tokens)
+  3. create_user 403 ✅ (token يُستخدم بشكل صحيح الآن)
+  4. restore_session ✅ (يقبل link_code)
+  5. Firebase data ✅ (sendData يرسل type + forwardDataPayload)
+  6. واجهة بث كاملة ✅ (جاري الاقتران + عارض ملء الشاشة)
+  7. sidebar عمودي ✅ (احترافي + RTL)
+  8. دليل Firebase ✅ (FIREBASE-SETUP.md)
+- Admin-App v4.0.0 + Android-App v4.0.0
