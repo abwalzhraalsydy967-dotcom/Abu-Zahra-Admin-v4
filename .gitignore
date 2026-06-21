@@ -58,3 +58,6 @@ local.properties
 /dev.log
 /dev.pid
 /upload/
+
+# Firebase Admin SDK (secrets)
+src/credentials/

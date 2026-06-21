@@ -3211,3 +3211,171 @@ Stage Summary:
 - البوت: 3 أخطاء كارثية أُصلحت + مطابق للوحة التحكم
 - الويب: toast notifications + انتقال تلقائي للنتائج
 - APKs محمّلة وجاهزة
+
+---
+Task ID: 13-A
+Agent: Admin App Full Redesigner
+Task: إعادة تصميم تطبيق الإدارة بـ Navigation Drawer مطابق للوحة التحكم الويب
+
+Work Log:
+- قُرئ worklog.md لفهم سياق Phase 11-12 (السيرفر، الـ sidebar الويب بـ 9 عناصر، الإصلاحات الحرجة للبوت والـ streaming view).
+- قُرئت الملفات الحالية:
+  • Admin-App/app/src/main/java/com/abuzahra/admin/ui/dashboard/DashboardActivity.kt (258 سطر قبل، يستخدم BottomNavigationView بـ 4 عناصر فقط)
+  • Admin-App/app/src/main/res/layout/activity_dashboard.xml (404 سطر، بدون DrawerLayout)
+  • Admin-App/app/src/main/res/menu/menu_bottom_nav.xml (4 عناصر فقط: dashboard/files/logs/settings)
+  • Admin-App/app/src/main/java/com/abuzahra/admin/ui/dashboard/DashboardViewModel.kt (يحمّل devices + stats فقط)
+  • Admin-App/app/src/main/AndroidManifest.xml (LoginActivity هو launcher؛ DashboardActivity غير مُصدَّر)
+  • src/components/dashboard/sidebar.tsx (الـ sidebar الويب بـ 9 navItems: overview, devices, commands, results, streaming, files, events, users, settings)
+  • src/components/dashboard/views/overview.tsx (نظرة شاملة: 4 stat cards + system status + battery/events charts + recent activity + recent devices + online/offline summary)
+  • Preferences.kt, ApiService.kt, StatsResponse.kt, Event.kt, Device.kt (للتحقق من الـ data layer)
+  • LoginViewModel.kt (للتأكد من تعبئة prefs.userName/Email/Role/permanentCode عند الدخول)
+  • StreamingActivity.kt + DeviceDetailActivity.kt + LogsActivity.kt + UsersActivity.kt + FilesActivity.kt (للتأكد من الـ companion methods: newIntent(context, device) و startActivity patterns)
+
+- أُنشئت أيقونات Material جديدة:
+  • res/drawable/ic_terminal.xml (أوامر)
+  • res/drawable/ic_list_checks.xml (نتائج)
+  • res/drawable/ic_radio.xml (بث)
+  • res/drawable/ic_dashboard.xml (لوحة المعلومات)
+  • res/drawable/ic_activity.xml (أحداث)
+  • res/drawable/ic_people.xml (مستخدمين)
+  • res/drawable/ic_menu.xml (هامبرغر للـ toolbar)
+  • res/drawable/ic_check.xml, ic_block.xml, ic_refresh.xml
+  • res/drawable/bg_drawer_badge.xml, bg_role_chip.xml, bg_drawer_item.xml (selector للعنصر النشط)
+  • res/drawable/bg_status_summary_online.xml, bg_status_summary_offline.xml
+
+- أُنشئت ألوان selector:
+  • res/color/drawer_item_tint.xml (emerald عند التحديد، رمادي عند عدمه)
+
+- أُنشئت layouts جديدة:
+  • res/menu/drawer_menu.xml — قائمة بـ 9 عناصر (مطابقة لـ sidebar.tsx navItems) + مجموعة منفصلة لـ logout:
+    1. nav_overview (ic_dashboard) — لوحة المعلومات
+    2. nav_devices (ic_phone) — الأجهزة
+    3. nav_commands (ic_terminal) — الأوامر
+    4. nav_results (ic_list_checks) — النتائج
+    5. nav_streaming (ic_radio) — البث
+    6. nav_files (ic_folder) — الملفات
+    7. nav_events (ic_activity) — الأحداث
+    8. nav_users (ic_people) — المستخدمين
+    9. nav_settings (ic_settings) — الإعدادات
+    + nav_logout (ic_logout) في مجموعة منفصلة
+  • res/layout/nav_drawer_header.xml — ترويسة الـ drawer مع:
+    - شعار + "أبو زهرة" / "لوحة التحكم الإدارية"
+    - avatar دائري (الحرف الأول من اسم المستخدم) + نقطة حالة خضراء
+    - اسم المستخدم + البريد + شارة دور "مسؤول" (للأدمن فقط)
+    - صف شارات: "X متصل" + "Y حدث"
+  • res/layout/view_overview.xml (662 سطر) — صفحة لوحة المعلومات الكاملة:
+    - ترويسة: عنوان + زر تحديث (ic_refresh)
+    - شبكة 2×2 من بطاقات الإحصائيات (MaterialCardView):
+      * الأجهزة المتصلة (X / Y) — لون أخضر
+      * إجمالي الأوامر — لون emerald
+      * الأحداث — لون أصفر
+      * إجمالي المستخدمين — لون سماوي
+    - صفا إجراءات سريعة: "كود الربط" (نسخ الكود الدائم) + "ربط بوت Telegram"
+    - بطاقة "أحدث الأجهزة" — قائمة ديناميكية بآخر 5 أجهزة + زر "عرض الكل"
+    - بطاقة "آخر الأحداث" — قائمة ديناميكية بآخر 5 أحداث + زر "عرض الكل"
+    - بطاقة "توزيع حالة الاتصال" — متصل/غير متصل بألوان مميزة
+    - SwipeRefreshLayout للحPtr-to-refresh
+  • res/layout/item_recent_device.xml — صف جهاز (أيقونة + اسم + ميتا + حالة)
+  • res/layout/item_recent_event.xml — صف حدث (مستوى + رسالة + ميتا)
+
+- أُعيدت كتابة res/layout/activity_dashboard.xml بالكامل:
+  • الجذر: androidx.drawerlayout.widget.DrawerLayout (layoutDirection="rtl" لضبط الاتجاه)
+  • المحتوى الرئيسي: CoordinatorLayout يحوي:
+    - AppBarLayout + MaterialToolbar (navigationIcon=ic_menu)
+    - FrameLayout ديناميكي يبدّل بين:
+      * overviewRoot (include layout=view_overview.xml) — افتراضي
+      * devicesRoot (LinearLayout) — البحث + Chips + RecyclerView (القائمة القديمة)
+    - loadingOverlay للتحميل
+  • الـ Drawer: NavigationView (layout_gravity="start" = يمين فعلي في RTL)
+    - app:headerLayout=@layout/nav_drawer_header
+    - app:menu=@menu/drawer_menu
+    - itemIconTint/itemTextColor=@color/drawer_item_tint (selector: emerald عند التحديد)
+    - itemBackground=@drawable/bg_drawer_item (خلفية شفافة خضراء عند التحديد)
+
+- أُعيدت كتابة DashboardViewModel.kt — أضفت:
+  • _events: MutableLiveData<Result<List<Event>>> (يحمّل آخر الأحداث لـ overview)
+  • _users: MutableLiveData<Result<List<User>>> (يحمّل عدد المستخدمين لـ overview)
+  • loadEvents() — يستدعي api.getEvents() مع fallback صامت
+  • loadUsers() — يستدعي api.getUsers() مع fallback صامت (للمشاهدين)
+  • helper functions: recentDevices(limit), recentEvents(limit), onlineDeviceCount(), offlineDeviceCount(), totalUsersCount()
+
+- أُعيدت كتابة DashboardActivity.kt بالكامل (527 سطر):
+  • implements NavigationView.OnNavigationItemSelectedListener
+  • setupToolbar(): hamburger يفتح الـ drawer (GravityCompat.START = يمين في RTL)
+  • setupDrawer(): setupNavigationItemSelectedListener + populateDrawerHeader() (اسم المستخدم + البريد + الدور + الحرف الأول في avatar)
+  • onNavigationItemSelected: closeDrawer → handleDrawerItem
+  • handleDrawerItem: التوجيه حسب itemId:
+    - nav_overview: showView(overview)
+    - nav_devices: showView(devices)
+    - nav_commands/results/streaming: pickDeviceAndOpen { DeviceDetail/Streaming.newIntent }
+    - nav_files: startActivity(FilesActivity)
+    - nav_events: startActivity(LogsActivity) [يستخدم اسم "الأحداث" بدلاً من "السجلات"]
+    - nav_users: startActivity(UsersActivity)
+    - nav_settings: startActivity(SettingsActivity)
+    - nav_logout: showLogoutDialog()
+  • showView(viewId): يبدّل visibility بين overviewRoot و devicesRoot + يحدّث visibleView
+  • pickDeviceAndOpen: مُختار جهاز بـ MaterialAlertDialog (قائمة بالأجهزة المتاحة) — إذا لم توجد أجهزة، يُوجّه المستخدم لصفحة الأجهزة
+  • setupOverviewActions():
+    - btnOverviewRefresh: viewModel.refresh()
+    - btnViewAllDevices: تبديل لـ devices view
+    - btnViewAllEvents: startActivity(LogsActivity)
+    - btnLinkCodeAction: نسخ prefs.permanentCode للحافظة + Snackbar "تم نسخ الكود"
+    - btnTgLinkAction: Snackbar توجيهي للوحة الويب + زر "المستخدمين" يفتح UsersActivity
+  • observeViewModel():
+    - devices → submitList + renderOverviewDevices + renderOnlineSummary + updateEmptyState
+    - stats → يحدّث بطاقات overview + summary في devices view + شارات drawer header
+    - events → renderOverviewEvents (آخر 5 أحداث)
+    - users → يحدّث بطاقة "إجمالي المستخدمين"
+  • renderOverviewDevices(devices): ينفخ آخر 5 صفوف item_recent_device (يدوياً، بدون adapter — كفاءة لـ 5 عناصر)
+  • renderOverviewEvents(events): ينفخ آخر 5 صفوف item_recent_event
+  • renderOnlineSummary(devices): يحدّث بطاقة متصل/غير متصل
+  • updateDrawerBadges(online, events): يحدّث شارات الترويسة
+  • handleBackPressed: أولاً يُغلق الـ drawer إذا مفتوح، ثم يرجع لـ overview إذا كان في devices، ثم يُظهر logout dialog
+  • onResume: re-sync لـ selection + viewModel.refresh()
+  •保留了: setupRecyclerView, setupSearch, setupFilters (لـ devices view)
+
+- أُضيفت سلاسل نصية جديدة في res/values/strings.xml:
+  • nav_overview, nav_devices, nav_commands, nav_results, nav_streaming, nav_events, nav_users
+  • overview_title, overview_subtitle, stat_online_devices, stat_total_commands, stat_total_events, stat_total_users
+  • recent_events, recent_devices, view_all, quick_actions_title, link_code_action, tg_link_action
+  • no_recent_activity, no_recent_devices, select_device_first, hint_online
+  • drawer_open, drawer_close, role_admin, role_viewer, copied_code, refresh
+
+التحقق:
+- كل ملفات XML الـ 22 تُمرّ بنجاح عبر xml.etree.ElementTree.parse ✓
+- توازن الأقواس في DashboardActivity.kt: 103 open / 103 close ✓
+- توازن الأقواس في DashboardViewModel.kt: 36 open / 36 close ✓
+- فحص روابط binding.overviewRoot.<field>: كل الـ 17 مرجعاً موجودة في view_overview.xml IDs ✓
+- فحص روابط binding.<field>: كل الـ 17 مرجعاً موجودة في activity_dashboard.xml IDs ✓ (الاستثناء: ActivityDashboardBinding import)
+- لا توجد orphaned references لأي ID غير معرّف
+- الـ dependency androidx.gridlayout:gridlayout:1.0.0 موجود في build.gradle ✓
+- material:1.11.0 يوفّر NavigationView + MaterialToolbar + MaterialAlertDialog ✓
+- لا توجد تغييرات على API layer (ApiClient, ApiService, Preferences) — استُخدمت الواجهات الموجودة فقط
+- الأنشطة الموجودة (DeviceDetail, Streaming, Files, Users, Logs, Settings) لم تُلمس — فقط يُطلقها الـ drawer
+- AndroidManifest.xml لم يُعدَّل (DashboardActivity يبقى exported=false؛ LoginActivity يبقى launcher)
+- bun run lint على مشروع الويب: لم تُضَف أخطاء جديدة (الأخطاء الـ 69 موجودة في skills/ وملفات pre-existing، ليست من عملي)
+
+Stage Summary:
+- **Navigation Drawer بـ 9 عناصر** مطابق تماماً للـ sidebar.tsx الويب:
+  لوحة المعلومات، الأجهزة، الأوامر، النتائج، البث، الملفات، الأحداث، المستخدمين، الإعدادات
+  + زر تسجيل خروج منفصل في أسفل القائمة
+- **Drawer يفتح من اليمين (RTL)** عبر android:layoutDirection="rtl" على DrawerLayout + layout_gravity="start" على NavigationView (= يمين فعلي في RTL)
+- **Overview view كامل** مطابق لـ OverviewView الويب:
+  - 4 بطاقات إحصائية (متصل/إجمالي/أوامر/أحداث/مستخدمين) بألوان emerald/green/amber/cyan
+  - إجراءات سريعة (نسخ كود الربط + ربط بوت Telegram)
+  - قائمة آخر 5 أجهزة (نقر على الجهاز يفتح DeviceDetailActivity)
+  - قائمة آخر 5 أحداث
+  - بطاقة ملخص متصل/غير متصل
+  - SwipeRefreshLayout + زر تحديث
+- **ترويسة Drawer** مطابقة لـ footer الويب:
+  - شعار "أبو زهرة" / "لوحة التحكم الإدارية"
+  - avatar دائري بالحرف الأول + نقطة حالة
+  - اسم + بريد + شارة دور "مسؤول" للأدمن
+  - شارات "X متصل" و "Y حدث" تتحدّث تلقائياً مع الـ stats
+- **Material Design 3** (MaterialToolbar, NavigationView, MaterialCardView, MaterialAlertDialog, Chips, Buttons)
+- **Dark theme** مطابق للويب (slate-950 bg، emerald accents، #1A10B981 strokes)
+- **عربية كاملة + RTL** في كل النصوص والاتجاهات
+- **توجيه ذكي**: العناصر التي تتطلب جهازاً (أوامر/نتائج/بث) تُظهر مُختار جهاز أولاً — العناصر الأخرى تُطلق نشاطها مباشرة
+- **Back press ذكي**: يُغلق الـ drawer أولاً، ثم يرجع لـ overview، ثم يُظهر logout dialog
+- **onResume refresh**: يُعيد تحميل البيانات عند العودة من نشاط ابن (مثل DeviceDetail بعد إرسال أمر)
+- **لا كسر للوظائف الموجودة**: قائمة الأجهزة + البحث + الفلاتر + Chips + DeviceAdapter كلها تعمل كما هي داخل devicesRoot

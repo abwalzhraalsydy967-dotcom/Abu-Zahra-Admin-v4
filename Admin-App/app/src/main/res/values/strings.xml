@@ -117,11 +117,44 @@
     <string name="refreshing">جاري التحديث…</string>
     <string name="copied_to_clipboard">تم النسخ إلى الحافظة</string>
 
-    <!-- Bottom Navigation -->
+    <!-- Bottom Navigation (legacy) -->
     <string name="nav_dashboard">الرئيسية</string>
     <string name="nav_files">الملفات</string>
     <string name="nav_logs">السجلات</string>
     <string name="nav_settings">الإعدادات</string>
+
+    <!-- Navigation Drawer (matches web sidebar) -->
+    <string name="nav_overview">لوحة المعلومات</string>
+    <string name="nav_devices">الأجهزة</string>
+    <string name="nav_commands">الأوامر</string>
+    <string name="nav_results">النتائج</string>
+    <string name="nav_streaming">البث</string>
+    <string name="nav_events">الأحداث</string>
+    <string name="nav_users">المستخدمين</string>
+
+    <!-- Overview page -->
+    <string name="overview_title">لوحة المعلومات</string>
+    <string name="overview_subtitle">نظرة شاملة على نشاط النظام والأجهزة</string>
+    <string name="stat_online_devices">الأجهزة المتصلة</string>
+    <string name="stat_total_commands">إجمالي الأوامر</string>
+    <string name="stat_total_events">الأحداث</string>
+    <string name="stat_total_users">إجمالي المستخدمين</string>
+    <string name="recent_events">آخر الأحداث</string>
+    <string name="recent_devices">أحدث الأجهزة</string>
+    <string name="view_all">عرض الكل</string>
+    <string name="quick_actions_title">إجراءات سريعة</string>
+    <string name="link_code_action">كود الربط</string>
+    <string name="tg_link_action">ربط بوت Telegram</string>
+    <string name="no_recent_activity">لا توجد أحداث بعد</string>
+    <string name="no_recent_devices">لا توجد أجهزة مسجّلة</string>
+    <string name="select_device_first">اختر جهازاً أولاً من قسم الأجهزة</string>
+    <string name="hint_online">متصل الآن</string>
+    <string name="drawer_open">فتح القائمة</string>
+    <string name="drawer_close">إغلاق القائمة</string>
+    <string name="role_admin">مسؤول</string>
+    <string name="role_viewer">مشاهد</string>
+    <string name="copied_code">تم نسخ الكود</string>
+    <string name="refresh">تحديث</string>
 
     <!-- About -->
     <string name="about_description">تطبيق إدارة أجهزة أبو زهرا\nللمراقبة والتحكم عن بُعد</string>
