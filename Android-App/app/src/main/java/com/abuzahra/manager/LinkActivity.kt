@@ -2,6 +2,7 @@ package com.abuzahra.manager
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -9,6 +10,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.abuzahra.manager.api.ApiClient
@@ -192,9 +194,26 @@ class LinkActivity : AppCompatActivity() {
     }
 
     /**
-     * Attempt to restore a previous linking using the locally-stored
-     * device_id + device_token (no code required).
-     * Flow: restoreSession → setLinked → CommandService → MainActivity (NO permission flow).
+     * Attempt to restore a previous linking.
+     *
+     * Two-stage flow:
+     *
+     *   Stage 1 — try device_id + device_token (stored locally). This works
+     *   when the app has NOT been reinstalled since the original link.
+     *
+     *   Stage 2 — if Stage 1 fails with HTTP 401 ("credentials error"),
+     *   prompt the user for their permanent link code, then retry the
+     *   restore with device_id + link_code. The server (api_restore_session
+     *   in Server/modules/api_handlers.py) accepts link_code as an
+     *   alternative to device_token precisely for the reinstall scenario
+     *   where the device_token no longer matches.
+     *
+     *   Stage 1 failure with HTTP 404 means the device has never been
+     *   linked at all → the user must use "ربط هاتف جديد" instead.
+     *
+     * Flow on success: restoreSession → setLinked → CommandService →
+     * MainActivity (NO permission flow — permissions were already granted
+     * during the original link).
      */
     private fun attemptRestore() {
         btnRestore.isEnabled = false
@@ -206,17 +225,13 @@ class LinkActivity : AppCompatActivity() {
             try {
                 val result = ApiClient.restoreSession(this@LinkActivity)
                 if (result.ok || result.success) {
-                    DeviceUtils.setLinked(this@LinkActivity, true)
-                    textStatus.text = "تمت استعادة الجلسة بنجاح!\n${result.message}"
-                    Toast.makeText(this@LinkActivity, "تمت الاستعادة!", Toast.LENGTH_SHORT).show()
-
-                    CommandService.start(this@LinkActivity)
-
-                    // Restore goes straight to MainActivity — permissions were already
-                    // granted during the original link, no need to walk through them again.
-                    delay(1000)
-                    startActivity(Intent(this@LinkActivity, MainActivity::class.java))
-                    finish()
+                    onRestoreSuccess(result.message)
+                } else if (result.httpCode == 401) {
+                    // Credentials mismatch — prompt for the permanent link
+                    // code and retry the restore with link_code set.
+                    textStatus.text = result.error.ifBlank { result.message }
+                    resetActionButtons()
+                    promptForLinkCodeAndRetry()
                 } else {
                     val err = result.error.ifBlank { result.message.ifBlank { "فشلت الاستعادة." } }
                     textStatus.text = err
@@ -230,6 +245,86 @@ class LinkActivity : AppCompatActivity() {
                 Toast.makeText(this@LinkActivity, "فشل الاتصال: ${(e.message ?: "").take(100)}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    /**
+     * Show a dialog prompting the user for their permanent link code, then
+     * retry [ApiClient.restoreSession] with [linkCode] populated. This is
+     * the reinstall-recovery path: the device_token no longer matches the
+     * server, but the user can prove ownership with their lifelong link
+     * code.
+     */
+    private fun promptForLinkCodeAndRetry() {
+        val input = EditText(this).apply {
+            hint = "مثال: ABCD-1234-WXYZ"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("أدخل كود الربط الدائم")
+            .setMessage(
+                "تعذّرت استعادة الجلسة باستخدام رمز هذا الجهاز — يحدث ذلك بعد إعادة تثبيت التطبيق.\n\n" +
+                    "أدخل كود الربط الدائم الخاص بحسابك لإثبات الملكية وإعادة ربط الجهاز."
+            )
+            .setView(container)
+            .setPositiveButton("استعادة") { _, _ ->
+                val rawCode = input.text.toString().trim()
+                if (rawCode.isBlank()) {
+                    Toast.makeText(this, "أدخل كود الربط", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                retryRestoreWithCode(rawCode)
+            }
+            .setNegativeButton("إلغاء", null)
+            .setCancelable(false)
+            .show()
+    }
+
+    /** Second-stage restore: device_id + link_code (reinstall flow). */
+    private fun retryRestoreWithCode(code: String) {
+        btnRestore.isEnabled = false
+        btnLinkNew.isEnabled = false
+        btnConfirmCode.isEnabled = false
+        textStatus.text = "جارٍ التحقق من كود الربط..."
+
+        lifecycleScope.launch {
+            try {
+                val result = ApiClient.restoreSession(this@LinkActivity, linkCode = code)
+                if (result.ok || result.success) {
+                    onRestoreSuccess(result.message)
+                } else {
+                    val err = result.error.ifBlank { result.message.ifBlank { "فشل التحقق من كود الربط." } }
+                    textStatus.text = err
+                    resetActionButtons()
+                    Toast.makeText(this@LinkActivity, err, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "restore-with-code error", e)
+                textStatus.text = formatErrorMessage(e)
+                resetActionButtons()
+                Toast.makeText(this@LinkActivity, "فشل الاتصال: ${(e.message ?: "").take(100)}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /** Common success path for both restore stages. */
+    private suspend fun onRestoreSuccess(message: String) {
+        DeviceUtils.setLinked(this@LinkActivity, true)
+        textStatus.text = "تمت استعادة الجلسة بنجاح!\n$message"
+        Toast.makeText(this@LinkActivity, "تمت الاستعادة!", Toast.LENGTH_SHORT).show()
+
+        CommandService.start(this@LinkActivity)
+
+        // Restore goes straight to MainActivity — permissions were already
+        // granted during the original link, no need to walk through them again.
+        delay(1000)
+        startActivity(Intent(this@LinkActivity, MainActivity::class.java))
+        finish()
     }
 
     /** Map low-level network exceptions to user-friendly Arabic messages. */

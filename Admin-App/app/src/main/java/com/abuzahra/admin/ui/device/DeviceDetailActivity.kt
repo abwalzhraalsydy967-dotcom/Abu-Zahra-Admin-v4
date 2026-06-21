@@ -45,7 +45,7 @@ class DeviceDetailActivity : AppCompatActivity() {
     private val commandHistoryAdapter: EventAdapter by lazy {
         EventAdapter { command ->
             val message = if (command.result != null) {
-                "${command.command}\n\nالنتيجة:\n${command.result}"
+                "${command.command}\n\nالنتيجة:\n${command.prettyResult}"
             } else {
                 "${command.command}\n\nالحالة: ${command.displayStatus}"
             }

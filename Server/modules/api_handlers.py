@@ -157,17 +157,17 @@ async def api_firebase_auth(request: web.Request) -> web.Response:
     if not email:
         return json_response({"ok": False, "message": "البريد الإلكتروني مطلوب"}, 400)
     
-    # Try to verify Firebase ID token if available
-    # Server acts as verification intermediary: it validates the ID token against
-    # Firebase Auth REST API using the WEB API key (NOT the user's token as key).
+    # Try to verify the ID token. The token could be:
+    # 1. A Firebase ID token (from Firebase Auth client SDK) → verify via identitytoolkit
+    # 2. A Google OAuth ID token (from GoogleSignIn) → verify via Google tokeninfo
+    # Server acts as verification intermediary in both cases.
     verified_email = None
     verified_name = None
     if token:
+        # Method 1: Try Firebase identitytoolkit (for Firebase Auth tokens)
         try:
             import aiohttp
             from .config import FIREBASE_WEB_API_KEY
-            # identitytoolkit accounts:lookup expects the WEB API key as `key=`
-            # and the user's ID token in the JSON body as `idToken`.
             url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={FIREBASE_WEB_API_KEY}"
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as sess:
                 async with sess.post(url, json={"idToken": token}) as resp:
@@ -180,6 +180,19 @@ async def api_firebase_auth(request: web.Request) -> web.Response:
                             verified_name = user_info.get('displayName') or user_info.get('localId') or ''
         except Exception as e:
             logger.warning(f"Firebase token verification failed: {e}")
+
+        # Method 2: If Firebase verification failed, try Google tokeninfo (for Google OAuth tokens)
+        if not verified_email:
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as sess:
+                    async with sess.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}") as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            verified_email = (data.get('email') or '').lower()
+                            verified_name = data.get('name') or verified_email.split('@')[0] if verified_email else ''
+            except Exception as e:
+                logger.warning(f"Google tokeninfo verification failed: {e}")
 
     # Security: if a token was provided but verification failed, REJECT the request
     # instead of trusting the user-supplied email (prevents email spoofing).
@@ -396,12 +409,16 @@ async def api_register(request: web.Request) -> web.Response:
 
 
 async def api_restore_session(request: web.Request) -> web.Response:
-    """Restore a previous device session (no code required).
+    """Restore a previous device session.
 
-    The client app stores its device_id + device_token locally. If the user
-    reinstalls or returns, they can restore the previous linking without
-    re-entering the code — the server re-validates the stored credentials and
-    re-activates the device. Requires X-Device-Token header + device_id in body.
+    Two restore methods:
+    1. By device_id + device_token (if token matches — same install)
+    2. By device_id + link_code (permanent code — for reinstall where token changed
+       but the same physical device has the same device_id derived from ANDROID_ID)
+
+    The client app stores device_id locally (derived from ANDROID_ID, survives
+    reinstall). The device_token is random per install, so on reinstall it changes.
+    The user enters their permanent link code to restore.
     """
     store.api_hits += 1
     try:
@@ -413,20 +430,88 @@ async def api_restore_session(request: web.Request) -> web.Response:
     device_token = body.get('device_token', '') or body.get('token', '')
     header_token = request.headers.get('X-Device-Token', '')
     token = device_token or header_token
+    link_code = body.get('link_code', '') or body.get('permanent_code', '')
 
-    if not device_id or not token:
-        return json_response({"ok": False, "message": "Missing device_id or token"}, 400)
+    if not device_id:
+        return json_response({"ok": False, "message": "Missing device_id"}, 400)
 
     device = store.devices.get(device_id)
-    if not device:
-        return json_response({
-            "ok": False,
-            "message": "لا توجد جلسة سابقة لهذا الجهاز. استخدم 'ربط هاتف جديد' مع كود الربط الخاص بك.",
-        }, 404)
 
-    # Token must match the stored device token
-    if device.get('token') != token:
-        return json_response({"ok": False, "message": "بيانات الاعتماد غير صحيحة"}, 401)
+    # Method 1: restore by matching device_token (same install)
+    if device and token and device.get('token') == token:
+        pass  # token matches, proceed to re-activate
+
+    # Method 2: restore by permanent link_code (reinstall — new token)
+    elif link_code:
+        # Verify the link_code against local users or Firebase
+        code_data = await store.verify_pairing_code(link_code)
+        if not code_data and _fb.firebase_connected:
+            try:
+                from .firebase_client import verify_permanent_code_firebase
+                fb_mapping = await verify_permanent_code_firebase(link_code)
+                if fb_mapping and fb_mapping.get('user_id'):
+                    fb_user = await store.get_user(fb_mapping['user_id'])
+                    if not fb_user:
+                        fb_email = fb_mapping.get('email', '').lower()
+                        for u in store.users.values():
+                            if u.get('email', '').lower() == fb_email:
+                                fb_user = u
+                                break
+                    if fb_user:
+                        if not fb_user.get('permanent_link_code'):
+                            fb_user['permanent_link_code'] = link_code
+                            await store.save_users()
+                        code_data = {'user_id': fb_user['id'], 'permanent': True}
+            except Exception as e:
+                logger.warning(f"Firebase code verification failed: {e}")
+
+        if not code_data:
+            return json_response({"ok": False, "message": "كود الربط غير صالح"}, 400)
+
+        owner_id = code_data.get('user_id')
+        if not owner_id:
+            return json_response({"ok": False, "message": "لم يتم العثور على المالك"}, 400)
+
+        # If device exists, update it; if not, create it
+        if device:
+            device['owner_id'] = owner_id
+            device['active'] = True
+            # Update token to the new one
+            if token:
+                device['token'] = token
+        else:
+            # Create a new device record for this device_id under the owner
+            now = datetime.utcnow().isoformat()
+            device = {
+                "id": device_id,
+                "token": token or device_token or '',
+                "active": True,
+                "name": "Restored Device",
+                "model": body.get('model', ''),
+                "brand": body.get('brand', ''),
+                "os": body.get('os_version', ''),
+                "battery": None,
+                "network": None,
+                "location": None,
+                "last_seen": now,
+                "created_at": now,
+                "owner_id": owner_id,
+                "ip": "",
+                "settings": {},
+            }
+            store.devices[device_id] = device
+            user = store.users.get(owner_id)
+            if user and device_id not in user.get('devices', []):
+                user.setdefault('devices', []).append(device_id)
+
+    else:
+        # No valid token and no link_code
+        if not device:
+            return json_response({
+                "ok": False,
+                "message": "لا توجد جلسة سابقة لهذا الجهاز. استخدم 'ربط هاتف جديد' مع كود الربط الخاص بك.",
+            }, 404)
+        return json_response({"ok": False, "message": "بيانات الاعتماد غير صحيحة. أدخل كود الربط الخاص بك."}, 401)
 
     # Re-activate the device
     device['active'] = True
@@ -434,13 +519,14 @@ async def api_restore_session(request: web.Request) -> web.Response:
     device['last_seen'] = now
     store._device_last_online[device_id] = True
     await store.save_devices()
+    await store.save_users()
     await store.add_event("device", f"Session restored: {device_id}", "info", device_id=device_id)
 
     return json_response({
         "ok": True,
         "success": True,
         "device_id": device_id,
-        "device_token": token,
+        "device_token": device.get('token', token),
         "owner_id": device.get('owner_id'),
         "server_domain": SERVER_DOMAIN,
         "message": "تمت استعادة الجلسة بنجاح",
