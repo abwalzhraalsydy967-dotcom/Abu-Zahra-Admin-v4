@@ -51,7 +51,7 @@ class AuthCallbackActivity : AppCompatActivity() {
         prefs.userId = ""
 
         // Navigate to dashboard
-        val dashboardIntent = Intent(this, com.abuzahra.admin.ui.dashboard.DashboardActivity::class.java)
+        val dashboardIntent = Intent(this, com.abuzahra.admin.MainActivity::class.java)
         dashboardIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         startActivity(dashboardIntent)
         finish()

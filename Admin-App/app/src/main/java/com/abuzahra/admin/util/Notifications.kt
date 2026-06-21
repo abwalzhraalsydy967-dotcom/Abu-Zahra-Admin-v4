@@ -12,7 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.abuzahra.admin.R
-import com.abuzahra.admin.ui.dashboard.DashboardActivity
+import com.abuzahra.admin.MainActivity
 
 class Notifications(private val context: Context) {
 
@@ -62,7 +62,7 @@ class Notifications(private val context: Context) {
         if (!prefs.notificationsEnabled || !prefs.onlineNotifications) return
         if (!hasNotificationPermission()) return
 
-        val intent = DashboardActivity.newIntent(context).apply {
+        val intent = MainActivity.newIntent(context).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         showNotification(
@@ -77,7 +77,7 @@ class Notifications(private val context: Context) {
         if (!prefs.notificationsEnabled || !prefs.offlineNotifications) return
         if (!hasNotificationPermission()) return
 
-        val intent = DashboardActivity.newIntent(context).apply {
+        val intent = MainActivity.newIntent(context).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         showNotification(
@@ -92,7 +92,7 @@ class Notifications(private val context: Context) {
         if (!prefs.notificationsEnabled || !prefs.eventNotifications) return
         if (!hasNotificationPermission()) return
 
-        val intent = DashboardActivity.newIntent(context).apply {
+        val intent = MainActivity.newIntent(context).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         showNotification(
@@ -106,7 +106,7 @@ class Notifications(private val context: Context) {
     fun showCommandResultNotification(commandName: String, success: Boolean) {
         if (!hasNotificationPermission()) return
 
-        val intent = DashboardActivity.newIntent(context).apply {
+        val intent = MainActivity.newIntent(context).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         showNotification(

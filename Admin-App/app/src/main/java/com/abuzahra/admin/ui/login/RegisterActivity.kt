@@ -9,7 +9,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityRegisterBinding
-import com.abuzahra.admin.ui.dashboard.DashboardActivity
+import com.abuzahra.admin.MainActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
@@ -208,7 +208,7 @@ class RegisterActivity : AppCompatActivity() {
     }
 
     private fun navigateToDashboard() {
-        startActivity(Intent(this, DashboardActivity::class.java).apply {
+        startActivity(Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()

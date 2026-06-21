@@ -17,7 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.databinding.ActivityLoginBinding
-import com.abuzahra.admin.ui.dashboard.DashboardActivity
+import com.abuzahra.admin.MainActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -353,7 +353,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun navigateToDashboard() {
-        startActivity(Intent(this, DashboardActivity::class.java))
+        startActivity(Intent(this, MainActivity::class.java))
         finish()
     }
 }

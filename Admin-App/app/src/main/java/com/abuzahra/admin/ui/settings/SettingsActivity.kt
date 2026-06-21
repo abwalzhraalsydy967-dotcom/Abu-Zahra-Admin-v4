@@ -6,7 +6,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.abuzahra.admin.R
 import com.abuzahra.admin.databinding.ActivitySettingsBinding
-import com.abuzahra.admin.ui.dashboard.DashboardActivity
+import com.abuzahra.admin.MainActivity
 import com.abuzahra.admin.ui.login.LoginActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -128,7 +128,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         // Navigate back to dashboard
-        startActivity(Intent(this, DashboardActivity::class.java))
+        startActivity(Intent(this, MainActivity::class.java))
         finish()
         return true
     }
