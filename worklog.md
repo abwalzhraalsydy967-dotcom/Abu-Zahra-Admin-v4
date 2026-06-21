@@ -3037,3 +3037,46 @@ Stage Summary:
   7. sidebar عمودي ✅ (احترافي + RTL)
   8. دليل Firebase ✅ (FIREBASE-SETUP.md)
 - Admin-App v4.0.0 + Android-App v4.0.0
+
+---
+Task ID: 11.1 (Firebase Fix)
+Agent: Main Agent (Z.ai Code)
+Task: إصلاح اتصال Firebase + نشر Admin SDK + DB Secret
+
+Work Log:
+- المستخدم زوّدنا بـ:
+  1. FIREBASE_DB_SECRET = ZKWlblKnxFOGRvpxKDBIErm9QUxo2Mg0qp8XlVZV
+  2. firebase-admin-sdk.json (Service Account JSON)
+
+- نشر الـ Admin SDK JSON على السيرفر في موقعين:
+  - /opt/abu-zahra/web/credentials/firebase-admin-sdk.json (لـ Next.js)
+  - /opt/abu-zahra/Server/credentials/firebase-admin-sdk.json (لـ Python)
+- تحديث FIREBASE_DB_SECRET في Server/.env
+
+- اكتشفت خطأ كارثي: firebase_client.py كان يرسل DB secret كـ HTTP header "auth"
+  لكن Firebase RTDB REST API يتوقع ?auth=SECRET كـ URL query parameter
+  → النتيجة: 401 Unauthorized، Firebase معطول منذ بداية المشروع!
+
+- الإصلاح:
+  - _headers(): أزلت auth header (Content-Type فقط)
+  - _auth_url(path): دالة جديدة تبني URL مع ?auth= query param
+  - جميع get/set/update/push/delete/check_connectivity تستخدم _auth_url الآن
+  - إصلاح _auth_url(".") للتعامل مع المسار الجذري بشكل صحيح
+
+- نسخ الـ SDK JSON محلياً في credentials/ (مع .gitignore)
+
+التحقق:
+- قبل: "firebase": false (Firebase معطول!)
+- بعد: "firebase": true ✅
+- RTDB write/read: OK ✅
+- Web register: firebase_ok: true ✅
+- Python server logs: "Firebase connected" ✅
+- Production: https://alsydyabwalzhra.online/api/health → firebase: true ✅
+
+Stage Summary:
+- Firebase متصل بالكامل الآن (كان معطول منذ بداية المشروع بسبب auth header)
+- Admin SDK منشور على السيرفر
+- DB Secret منشور في .env
+- كل البيانات (SMS، جهات اتصال، مكالمات، إشعارات، موقع، معلومات جهاز)
+  ستُخزن الآن في Firebase RTDB بشكل صحيح
+- الأوامر ستصل للأجهزة عبر Firebase (push_command يعمل الآن)
