@@ -3156,3 +3156,58 @@ Stage Summary:
   • view_users للمسؤول فقط (مع role check)
 - COMMAND RESULT FORWARDING FIX: forward_result كان مستدعى بالفعل من api_command_result (السطر 582) — لكن الدالة نفسها كانت هشة (JPEG فقط، لا PNG، نص طويل يُقتطع بدلاً من إرساله كملف، لا تحديث للرسالة الأصلية). تم تحسينها: كشف PNG، إرسال النتائج الطويلة كـ document، تحديث رسالة "جاري التنفيذ..." بنتيجة، معالجة آمنة لـ None/JSON. تدفق الأوامر الكامل (web + Telegram) متحقق منه من قراءة الكود + سجلات الإنتاج.
 - VERIFICATION: ملف telegram_bot.py منشور على الإنتاج (64687 bytes، match=True). خدمة abu-zahra active. health endpoint 200. سجلات الإنتاج تظهر "Telegram bot started" بدون أخطاء (بعد النشر). لا أخطاء callback_data في السجلات الجديدة. compile check نجح. 18 spot-checks على الملف المنشور كلها OK.
+
+---
+Task ID: 12 (Phase 12)
+Agent: Main Agent + Bot+CommandFlow Fixer subagent
+Task: إصلاح البوت + toast notifications + تدفق الأوامر + رفع APKs
+
+Work Log:
+إصلاحات البوت (3 أخطاء كارثية):
+1. NameError في send_photo/send_document: aiohttp.FormData() → FormData()
+   (aiohttp module لم يكن مستورداً، فقط FormData — كان يتعطل عند أي إرسال صورة/ملف)
+2. TypeError في handle_callback: answer_callback_query(callback_data=msg_id) →
+   answer_callback_query(callback_query_id=cb_id) — كان يتعطل عند EVERY button press!
+   (سجلات الإنتاج أكدت: 'answer_callback_query() got unexpected keyword callback_data')
+3. exec_ callback parsing: split('_', 2) يقسم 3 أجزاء فقط، لكن ~60 أمر يحتوي شرطات سفلية
+   (wifi_info, start_screen_stream, etc.) → تحليل خاطئ لـ cmd_key و device_id
+
+البوت مطابق للوحة التحكم:
+- main_menu_keyboard: 9 عناصر مطابقة لـ sidebar (overview, devices, commands, results,
+  streaming, files, events, users, settings)
+- device_menu_keyboard: كل 8 فئات CMD_CATEGORIES (كان ينقص social + apps)
+- 6 أوامر slash جديدة: /overview /results /streaming /files /events /users
+- 6 معالجات callback جديدة
+- streaming_keyboard للتحكم بالبث
+- forward_result محسّن: كشف PNG، نتائج طويلة كـ documents، editMessageText
+
+لوحة التحكم الويب:
+- handleSendCommand: أضفت toast.success/error notifications (sonner)
+- الانتقال التلقائي لتبويب النتائج بعد إرسال أمر
+- import { toast } from 'sonner'
+
+تدفق الأوامر:
+- forward_result كان متصلاً بـ api_command_result بالفعل
+- تحسين: كشف PNG، نتائج طويلة كـ documents، معالجة None/JSON
+
+رفع APKs:
+- Android-App v4.0.0 (7.7MB) — أحدث بناء ناجح
+- Admin-App v4.0.0 (7.4MB) — أحدث بناء ناجح
+- كلاهما في /home/z/my-project/upload/apks/
+
+إزالة أسرار من git:
+- استخدمت git filter-branch لإزالة firebase-admin-sdk.json من التاريخ
+- force push ناجح
+
+التحقق:
+- البوت: getMe OK، username @Beuushhskjgabot
+- TG link token: يرجع deep_link_url صحيح
+- الويب: toast "تم إرسال الأمر: get_location" مرئي بعد الإرسال
+- الانتقال التلقائي لتبويب النتائج يعمل
+- Firebase: true (متصل)
+
+Stage Summary:
+- Phase 12 مكتمل
+- البوت: 3 أخطاء كارثية أُصلحت + مطابق للوحة التحكم
+- الويب: toast notifications + انتقال تلقائي للنتائج
+- APKs محمّلة وجاهزة
