@@ -26,7 +26,7 @@ from modules.api_handlers import (
     api_health, api_login, api_firebase_auth, api_web_register,
     # Device
     api_register, api_restore_session, api_get_commands, api_command_result, api_device_data,
-    api_heartbeat, api_device_event, api_upload_file, api_upload_base64,
+    api_heartbeat, api_register_fcm_token, api_device_event, api_upload_file, api_upload_base64,
     api_download_file, api_device_settings,
     # Web/Admin
     api_web_devices, api_web_device_detail, api_web_commands, api_web_events,
@@ -49,6 +49,7 @@ from modules.api_handlers import (
 )
 from modules.dashboard_html import DASHBOARD_HTML
 from modules.commands import CMD_CATEGORIES
+from modules import fcm_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +89,7 @@ def create_app() -> web.Application:
     app.router.add_post('/api/data/{device_id}', api_device_data)
     app.router.add_post('/api/data', api_device_data)
     app.router.add_post('/api/heartbeat', api_heartbeat)
+    app.router.add_post('/api/register_fcm_token', api_register_fcm_token)
     app.router.add_post('/api/event', api_device_event)
     app.router.add_post('/api/upload', api_upload_file)
     app.router.add_post('/api/upload_base64', api_upload_base64)
@@ -149,6 +151,8 @@ def create_app() -> web.Application:
         # Check Firebase
         await firebase_client.check_connectivity()
         logger.info(f"Firebase: {'connected' if firebase_client.firebase_connected else 'disconnected'}")
+        # Log FCM status (best-effort silent push channel)
+        logger.info(f"FCM silent push: {'configured' if fcm_client.is_configured() else 'NOT configured (set FCM_SERVER_KEY)'}")
         
         # Start background tasks
         app['bg_tasks'] = set()
@@ -192,6 +196,7 @@ def create_app() -> web.Application:
         
         # Close connections
         await firebase_client.close()
+        await fcm_client.close()
         await tg_close()
         
         logger.info("Server stopped")

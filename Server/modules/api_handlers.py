@@ -592,6 +592,46 @@ async def api_heartbeat(request: web.Request) -> web.Response:
     return json_response({"ok": True, "success": True, "message": "Heartbeat received"})
 
 
+async def api_register_fcm_token(request: web.Request) -> web.Response:
+    """Register (or refresh) a device's FCM (Firebase Cloud Messaging) token.
+
+    The Android app calls this on CommandService startup AND whenever
+    FirebaseMessagingService.onNewToken fires. The server stores the token on
+    the device record and uses it to push silent data-message commands for
+    instant wake-up.
+
+    Auth: device token (X-Device-Token header) — same as /api/heartbeat.
+    Body: {"device_id": "...", "fcm_token": "..."}
+    """
+    store.api_hits += 1
+    try:
+        body = await request.json()
+    except:
+        return json_response({"ok": False, "message": "Invalid JSON"}, 400)
+
+    device_id = body.get('device_id', '')
+    token = request.headers.get('X-Device-Token', '')
+    fcm_token = body.get('fcm_token', '') or body.get('token', '')
+
+    if not device_id or not token or not store.validate_device_token(device_id, token):
+        return json_response({"ok": False, "message": "Invalid device credentials"}, 401)
+
+    if not fcm_token:
+        return json_response({"ok": False, "message": "Missing fcm_token"}, 400)
+
+    # Persist the FCM token on the device record.
+    ok = await store.update_device(device_id, {
+        "fcm_token": fcm_token,
+        "fcm_token_updated_at": time.time(),
+    })
+
+    if not ok:
+        return json_response({"ok": False, "message": "Device not found"}, 404)
+
+    logger.info(f"FCM token registered for device {device_id} (token=…{fcm_token[-8:]})")
+    return json_response({"ok": True, "message": "FCM token registered"})
+
+
 async def api_device_event(request: web.Request) -> web.Response:
     """Device sends events."""
     device_id, error = get_device_auth(request)
@@ -887,6 +927,26 @@ async def api_web_send_command(request: web.Request) -> web.Response:
             })
         except Exception as e:
             logger.warning(f"Firebase push failed for cmd {queued['id']}: {e}")
+
+    # ─── FCM silent push for instant wake-up ──────────────────────────
+    # FCM data-only messages are delivered directly to the app's
+    # FirebaseMessagingService.onMessageReceived even when the app is
+    # killed/backgrounded. This is the "instant" channel; the existing
+    # RTDB ChildEventListener + REST polling remain as fallbacks.
+    fcm_token = device.get('fcm_token', '')
+    if fcm_token:
+        try:
+            from . import fcm_client
+            await fcm_client.send_fcm_command(
+                token=fcm_token,
+                command_name=actual_cmd,
+                command_id=queued['id'],
+                params=actual_params,
+                device_id=device_id,
+            )
+        except Exception as e:
+            # FCM is best-effort — never fail the command queue over FCM.
+            logger.warning(f"FCM push failed for cmd {queued['id']}: {e}")
     
     await store.add_event("command", f"Command queued: {actual_cmd} -> {device_id}",
                          "info", device_id=device_id, user_id=session['user_id'])

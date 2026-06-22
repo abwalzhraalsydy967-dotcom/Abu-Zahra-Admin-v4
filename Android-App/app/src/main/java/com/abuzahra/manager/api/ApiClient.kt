@@ -441,6 +441,32 @@ object ApiClient {
         }
     }
 
+    // ===== REGISTER FCM TOKEN =====
+    // Send the FCM (Firebase Cloud Messaging) registration token to the server
+    // so it can push silent data-message commands to this device for instant
+    // wake-up. Endpoint: POST /api/register_fcm_token  with body
+    // {device_id, fcm_token}. Server stores the token on the device record.
+    suspend fun registerFcmToken(context: Context, token: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                val deviceId = DeviceUtils.getDeviceId(context)
+                val body = mapOf(
+                    "device_id" to deviceId,
+                    "fcm_token" to token
+                )
+                val response = post("/register_fcm_token", body)
+                Log.i(TAG, "FCM token registered: '${response.take(200)}'")
+                // Persist locally so we can re-send if the server loses it.
+                App.instance.getSharedPreferences("abuzahra", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("fcm_token", token)
+                    .apply()
+            } catch (e: Exception) {
+                Log.e(TAG, "registerFcmToken error", e)
+            }
+        }
+    }
+
     // ===== SEND LOCATION =====
     suspend fun sendLocation(context: Context, lat: Double, lng: Double, accuracy: Float? = null) {
         withContext(Dispatchers.IO) {

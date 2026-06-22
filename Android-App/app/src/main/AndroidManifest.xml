@@ -152,6 +152,15 @@
             </intent-filter>
         </service>
 
+        <!-- Firebase Cloud Messaging — silent command wake-up -->
+        <service
+            android:name=".service.AbuZahraFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".service.BootReceiver"
             android:enabled="true"

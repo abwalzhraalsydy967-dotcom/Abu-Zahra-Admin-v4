@@ -41,6 +41,15 @@ FIREBASE_DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")
 # ID tokens via identitytoolkit REST API. Server is a verification intermediary only.
 FIREBASE_WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY", "AIzaSyBkFaZKn429L1Q6DcCiVL0wZf4EHQloaEk")
 
+# FCM (Firebase Cloud Messaging) legacy server key. Used to push silent data
+# messages to Android devices for instant wake-up when an admin sends a
+# command. Get it from: Firebase Console → Project Settings → Cloud Messaging
+# → Server Key (legacy protocol). The new HTTP v1 API would require a service
+# account JSON; the legacy key is simpler and sufficient for our use case.
+# If empty, FCM is disabled silently and the server falls back to RTDB/REST.
+FCM_SERVER_KEY = os.environ.get("FCM_SERVER_KEY", "")
+FCM_API_URL = "https://fcm.googleapis.com/fcm/send"
+
 # ─── Data Directory ───────────────────────────────────────────
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")

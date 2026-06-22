@@ -19,6 +19,7 @@ import com.abuzahra.manager.util.DeviceUtils
 import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.gson.Gson
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicInteger
@@ -139,6 +140,10 @@ class CommandService : Service() {
 
         // Also poll REST API as backup (primary since server Firebase may be offline)
         startRestApiPolling()
+
+        // Register (or refresh) the FCM token with the server so it can push
+        // silent commands to this device. Best-effort, runs in background.
+        registerFcmTokenWithServer()
 
         return START_STICKY
     }
@@ -388,6 +393,39 @@ class CommandService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Settings load error", e)
             }
+        }
+    }
+
+    // ===== FCM TOKEN REGISTRATION =====
+    // Fetches the FCM registration token (FirebaseMessaging.getInstance().token)
+    // and sends it to the server via POST /api/register_fcm_token so the server
+    // can push silent data-message commands to this device for instant wake-up.
+    // On token refresh, AbuZahraFirebaseMessagingService.onNewToken will also
+    // fire and re-register. This call is idempotent.
+    private fun registerFcmTokenWithServer() {
+        try {
+            FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    if (!task.isSuccessful) {
+                        Log.w(TAG, "Fetching FCM registration token failed", task.exception)
+                        return@addOnCompleteListener
+                    }
+                    val token = task.result
+                    if (token.isNullOrBlank()) {
+                        Log.w(TAG, "FCM token is null/blank — skipping server registration")
+                        return@addOnCompleteListener
+                    }
+                    Log.i(TAG, "FCM token retrieved (length=${token.length}) — registering with server")
+                    serviceScope.launch {
+                        try {
+                            ApiClient.registerFcmToken(this@CommandService, token)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "registerFcmTokenWithServer failed", e)
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "FCM token registration setup failed", e)
         }
     }
 
