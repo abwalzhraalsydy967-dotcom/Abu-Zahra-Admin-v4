@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/nav_overview"
+            android:icon="@drawable/ic_devices"
+            android:title="لوحة المعلومات" />
+        <item
+            android:id="@+id/nav_devices"
+            android:icon="@drawable/ic_devices"
+            android:title="الأجهزة" />
+        <item
+            android:id="@+id/nav_commands"
+            android:icon="@drawable/ic_command"
+            android:title="الأوامر" />
+        <item
+            android:id="@+id/nav_results"
+            android:icon="@drawable/ic_command"
+            android:title="النتائج" />
+        <item
+            android:id="@+id/nav_streaming"
+            android:icon="@drawable/ic_devices"
+            android:title="البث المباشر" />
+        <item
+            android:id="@+id/nav_files"
+            android:icon="@drawable/ic_download"
+            android:title="الملفات" />
+        <item
+            android:id="@+id/nav_events"
+            android:icon="@drawable/ic_logs"
+            android:title="الأحداث" />
+        <item
+            android:id="@+id/nav_users"
+            android:icon="@drawable/ic_devices"
+            android:title="حسابي" />
+        <item
+            android:id="@+id/nav_settings"
+            android:icon="@drawable/ic_settings"
+            android:title="الإعدادات" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item
+            android:id="@+id/nav_logout"
+            android:icon="@drawable/ic_settings"
+            android:title="تسجيل الخروج" />
+    </group>
+
+</menu>

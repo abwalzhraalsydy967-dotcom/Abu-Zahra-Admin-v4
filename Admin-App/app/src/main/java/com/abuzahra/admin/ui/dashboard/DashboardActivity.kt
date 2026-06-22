@@ -1,14 +1,16 @@
 package com.abuzahra.admin.ui.dashboard
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
+import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doOnTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,21 +18,22 @@ import com.abuzahra.admin.R
 import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.databinding.ActivityDashboardBinding
-import com.abuzahra.admin.ui.data.DataActivity
 import com.abuzahra.admin.ui.device.DeviceDetailActivity
 import com.abuzahra.admin.ui.files.FilesActivity
 import com.abuzahra.admin.ui.logs.LogsActivity
 import com.abuzahra.admin.ui.login.LoginActivity
-import com.abuzahra.admin.ui.monitor.MonitorActivity
 import com.abuzahra.admin.ui.settings.SettingsActivity
+import com.abuzahra.admin.ui.streaming.StreamingActivity
 import com.abuzahra.admin.ui.users.UsersActivity
 import com.abuzahra.admin.util.Preferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.navigation.NavigationView
 import com.google.android.material.snackbar.Snackbar
 
-class DashboardActivity : AppCompatActivity() {
+class DashboardActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
 
     private lateinit var binding: ActivityDashboardBinding
+    private lateinit var drawerToggle: ActionBarDrawerToggle
     private val viewModel: DashboardViewModel by viewModels {
         DashboardViewModelFactory(Preferences.getInstance(this))
     }
@@ -44,42 +47,47 @@ class DashboardActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupToolbar()
+        setupDrawer()
         setupRecyclerView()
         setupSearch()
         setupFilters()
-        setupBottomNav()
         setupLinkCode()
-        setupQuickActions()
+        setupDrawerHeader()
         observeViewModel()
         handleBackPressed()
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.menu_dashboard, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_settings -> {
-                startActivity(Intent(this, SettingsActivity::class.java))
-                true
-            }
-            R.id.action_logout -> {
-                showLogoutDialog()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
     }
 
     private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.title = getString(R.string.dashboard)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         binding.swipeRefresh.setOnRefreshListener {
             viewModel.refresh()
         }
+    }
+
+    private fun setupDrawer() {
+        drawerToggle = ActionBarDrawerToggle(
+            this,
+            binding.drawerLayout,
+            binding.toolbar,
+            R.string.dashboard,
+            R.string.dashboard
+        )
+        binding.drawerLayout.addDrawerListener(drawerToggle)
+        drawerToggle.syncState()
+
+        binding.navView.setNavigationItemSelectedListener(this)
+    }
+
+    private fun setupDrawerHeader() {
+        val headerView = binding.navView.getHeaderView(0)
+        val prefs = Preferences.getInstance(this)
+        headerView.findViewById<android.widget.TextView>(R.id.tvDrawerUsername)
+            ?.text = prefs.userName ?: "المستخدم"
+        headerView.findViewById<android.widget.TextView>(R.id.tvDrawerEmail)
+            ?.text = prefs.userEmail ?: ""
     }
 
     private fun setupRecyclerView() {
@@ -116,25 +124,62 @@ class DashboardActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupBottomNav() {
-        binding.bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_dashboard -> true
-                R.id.nav_files -> {
-                    startActivity(Intent(this, FilesActivity::class.java))
-                    false
+    override fun onNavigationItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.nav_overview -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+            }
+            R.id.nav_devices -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+            }
+            R.id.nav_commands -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                val devices = (viewModel.devices.value as? Result.Success)?.data
+                if (devices.isNullOrEmpty()) {
+                    Toast.makeText(this, "لا توجد أجهزة — اربط جهازاً أولاً", Toast.LENGTH_SHORT).show()
+                } else if (devices.size == 1) {
+                    startActivity(DeviceDetailActivity.newIntent(this, devices[0]))
+                } else {
+                    Toast.makeText(this, "اختر جهازاً من القائمة بالأسفل", Toast.LENGTH_SHORT).show()
                 }
-                R.id.nav_logs -> {
-                    startActivity(Intent(this, LogsActivity::class.java))
-                    false
+            }
+            R.id.nav_results -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                Toast.makeText(this, "اختر جهازاً من القائمة لعرض النتائج", Toast.LENGTH_SHORT).show()
+            }
+            R.id.nav_streaming -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                val devices = (viewModel.devices.value as? Result.Success)?.data
+                if (devices.isNullOrEmpty()) {
+                    Toast.makeText(this, "لا توجد أجهزة", Toast.LENGTH_SHORT).show()
+                } else if (devices.size == 1) {
+                    startActivity(StreamingActivity.newIntent(this, devices[0]))
+                } else {
+                    Toast.makeText(this, "اختر جهازاً من القائمة للبث", Toast.LENGTH_SHORT).show()
                 }
-                R.id.nav_settings -> {
-                    startActivity(Intent(this, SettingsActivity::class.java))
-                    false
-                }
-                else -> false
+            }
+            R.id.nav_files -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                startActivity(Intent(this, FilesActivity::class.java))
+            }
+            R.id.nav_events -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                startActivity(Intent(this, LogsActivity::class.java))
+            }
+            R.id.nav_users -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                startActivity(Intent(this, UsersActivity::class.java))
+            }
+            R.id.nav_settings -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                startActivity(Intent(this, SettingsActivity::class.java))
+            }
+            R.id.nav_logout -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                showLogoutDialog()
             }
         }
+        return true
     }
 
     private fun observeViewModel() {
@@ -222,27 +267,18 @@ class DashboardActivity : AppCompatActivity() {
             binding.tvLinkCode.text = code
             binding.btnCopyCode.setOnClickListener {
                 val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-                val clip = android.content.ClipData.newPlainText("link_code", code)
+                val clip = ClipData.newPlainText("link_code", code)
                 clipboard.setPrimaryClip(clip)
                 Snackbar.make(binding.root, "تم نسخ الكود", Snackbar.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun setupQuickActions() {
-        binding.btnData.setOnClickListener { startActivity(Intent(this, DataActivity::class.java)) }
-        binding.btnMonitor.setOnClickListener { startActivity(Intent(this, MonitorActivity::class.java)) }
-        binding.btnUsers.setOnClickListener { startActivity(Intent(this, UsersActivity::class.java)) }
-        binding.btnStreaming.setOnClickListener {
-            Snackbar.make(binding.root, "اختر جهازاً من القائمة لبدء البث", Snackbar.LENGTH_LONG).show()
-        }
-    }
-
     private fun handleBackPressed() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.bottomNav.selectedItemId != R.id.nav_dashboard) {
-                    binding.bottomNav.selectedItemId = R.id.nav_dashboard
+                if (binding.drawerLayout.isDrawerOpen(binding.navView)) {
+                    binding.drawerLayout.closeDrawer(binding.navView)
                 } else {
                     showLogoutDialog()
                 }
