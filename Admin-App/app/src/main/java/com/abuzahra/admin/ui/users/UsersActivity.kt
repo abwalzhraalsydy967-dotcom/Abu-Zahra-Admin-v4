@@ -48,7 +48,7 @@ class UsersActivity : AppCompatActivity() {
         loadDevices()
 
         // Show admin section only for admins
-        val role = prefs.role ?: "user"
+        val role = prefs.userRole ?: "user"
         if (role == "admin") {
             setupAdminSection()
             loadUsers()
