@@ -113,6 +113,9 @@ private interface RetrofitApiService {
         @Part("path") path: String,
         @Part file: MultipartBody.Part
     ): CommandResponse
+
+    @POST("api/web/tg_link_token")
+    suspend fun getTgLinkToken(): TgLinkTokenResponse
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -186,19 +189,7 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
     }
 
     override suspend fun getTgLinkToken(): TgLinkTokenResponse {
-        return try {
-            val resp = client.newCall(
-                Request.Builder()
-                    .url("$baseUrl/api/web/tg_link_token")
-                    .post("{}".toRequestBody("application/json".toMediaType()))
-                    .addHeader("Authorization", "Bearer $authToken")
-                    .build()
-            ).execute()
-            gson.fromJson(resp.body?.string() ?: "{}", TgLinkTokenResponse::class.java)
-        } catch (e: Exception) {
-            Log.e("ApiClient", "getTgLinkToken error", e)
-            TgLinkTokenResponse(ok = false)
-        }
+        return retrofit.getTgLinkToken()
     }
 
     override suspend fun regenerateCode(): RegenerateCodeResponse {

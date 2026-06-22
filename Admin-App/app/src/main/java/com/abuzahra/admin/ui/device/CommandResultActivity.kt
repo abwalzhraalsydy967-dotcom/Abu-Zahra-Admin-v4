@@ -263,21 +263,21 @@ class CommandResultActivity : AppCompatActivity() {
         if (arr.size() == 0) return "لا توجد بيانات"
 
         val sb = StringBuilder()
-        sb.appendline("📊 النتائج (${arr.size()} عنصر):")
-        sb.appendline()
+        sb.appendLine("📊 النتائج (${arr.size()} عنصر):")
+        sb.appendLine()
 
         for (i in 0 until minOf(arr.size(), 100)) {
             val item = arr[i]
             if (item.isJsonObject) {
                 val obj = item.asJsonObject
-                sb.appendline("${i + 1}. ${objToString(obj, cmdStr)}")
+                sb.appendLine("${i + 1}. ${objToString(obj, cmdStr)}")
             } else {
-                sb.appendline("${i + 1}. ${item.asString}")
+                sb.appendLine("${i + 1}. ${item.asString}")
             }
         }
 
         if (arr.size() > 100) {
-            sb.appendline("... و${arr.size() - 100} عنصر آخر")
+            sb.appendLine("... و${arr.size() - 100} عنصر آخر")
         }
 
         return sb.toString()
@@ -339,8 +339,8 @@ class CommandResultActivity : AppCompatActivity() {
 
     private fun formatJsonObject(obj: JsonObject, cmdStr: String): String {
         val sb = StringBuilder()
-        sb.appendline("📋 النتائج:")
-        sb.appendline()
+        sb.appendLine("📋 النتائج:")
+        sb.appendLine()
         for ((key, value) in obj.entrySet()) {
             sb.append("$key: $value\n")
         }
