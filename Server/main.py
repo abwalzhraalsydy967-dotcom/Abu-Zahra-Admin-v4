@@ -152,7 +152,7 @@ def create_app() -> web.Application:
         await firebase_client.check_connectivity()
         logger.info(f"Firebase: {'connected' if firebase_client.firebase_connected else 'disconnected'}")
         # Log FCM status (best-effort silent push channel)
-        logger.info(f"FCM silent push: {'configured' if fcm_client.is_configured() else 'NOT configured (set FCM_SERVER_KEY)'}")
+        logger.info(f"FCM silent push: {'configured' if fcm_client.is_fcm_available() else 'NOT configured (Service Account JSON missing)'}")
         
         # Start background tasks
         app['bg_tasks'] = set()

@@ -938,7 +938,7 @@ async def api_web_send_command(request: web.Request) -> web.Response:
         try:
             from . import fcm_client
             await fcm_client.send_fcm_command(
-                token=fcm_token,
+                device_token=fcm_token,
                 command_name=actual_cmd,
                 command_id=queued['id'],
                 params=actual_params,
