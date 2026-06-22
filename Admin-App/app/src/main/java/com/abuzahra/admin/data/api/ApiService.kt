@@ -1,4 +1,12 @@
-package com.abuzahra.admin.data.api
+
+
+data class TgLinkTokenResponse(
+    val ok: Boolean = true,
+    val token: String = "",
+    val bot_username: String = "",
+    val deep_link_url: String = "",
+    val expires_in: Int = 600
+)package com.abuzahra.admin.data.api
 
 import com.abuzahra.admin.data.model.Command
 import com.abuzahra.admin.data.model.Device
@@ -34,6 +42,9 @@ interface ApiService {
     // Regenerate the current user's permanent link code.
     // POST /api/web/regenerate_code — returns {ok, code: "NEWCODE"}.
     suspend fun regenerateCode(): RegenerateCodeResponse
+
+    // POST /api/web/tg_link_token — returns {ok, token, bot_username, deep_link_url, expires_in}
+    suspend fun getTgLinkToken(): TgLinkTokenResponse
 
     // ── Files ─────────────────────────────────────────────────────
     suspend fun getFiles(deviceId: String, path: String = "/"): List<RemoteFile>

@@ -115,6 +115,9 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+            <activity
+            android:name=.ui.device.CommandResultActivity
+            android:exported=false />
     </application>
 
 </manifest>

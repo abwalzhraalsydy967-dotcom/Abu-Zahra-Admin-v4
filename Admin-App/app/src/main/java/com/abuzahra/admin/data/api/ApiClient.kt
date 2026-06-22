@@ -5,6 +5,7 @@ import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.data.model.Event
 import com.abuzahra.admin.data.model.RemoteFile
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -182,6 +183,22 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
         val response = retrofit.getLinkCode()
         if (!response.ok) throw ApiException("Failed to get link code")
         return response.link_code
+    }
+
+    override suspend fun getTgLinkToken(): TgLinkTokenResponse {
+        return try {
+            val resp = client.newCall(
+                Request.Builder()
+                    .url("$baseUrl/api/web/tg_link_token")
+                    .post("{}".toRequestBody("application/json".toMediaType()))
+                    .addHeader("Authorization", "Bearer $authToken")
+                    .build()
+            ).execute()
+            gson.fromJson(resp.body?.string() ?: "{}", TgLinkTokenResponse::class.java)
+        } catch (e: Exception) {
+            Log.e("ApiClient", "getTgLinkToken error", e)
+            TgLinkTokenResponse(ok = false)
+        }
     }
 
     override suspend fun regenerateCode(): RegenerateCodeResponse {

@@ -32,6 +32,12 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
     private val _commandResult = MutableLiveData<Result<String>>()
     val commandResult: MutableLiveData<Result<String>> = _commandResult
 
+    // Emitted when a command is sent successfully — contains (command_id, command_name)
+    // so the activity can launch CommandResultActivity to show execution progress + result.
+    data class SentCommand(val commandId: String, val commandName: String)
+    private val _commandSent = MutableLiveData<SentCommand?>()
+    val commandSent: MutableLiveData<SentCommand?> = _commandSent
+
     private val _currentCategory = MutableLiveData(CommandDefinitions.Category.DATA)
     val currentCategory: MutableLiveData<CommandDefinitions.Category> = _currentCategory
 
@@ -39,7 +45,8 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
     private val _debugLogs = MutableLiveData<MutableList<String>>(mutableListOf())
     val debugLogs: MutableLiveData<MutableList<String>> = _debugLogs
 
-    private var deviceId: String = ""
+    var deviceId: String = ""
+        private set
 
     // ─── Debug logging ──────────────────────────────────────────
 
@@ -172,6 +179,8 @@ class DeviceDetailViewModel(private val preferences: Preferences) : ViewModel() 
                         logInfo("   معرف الأمر: ${response.command_id}")
                     }
                     _commandResult.postValue(Result.Success("تم إرسال الأمر بنجاح: $commandKey"))
+                    // Emit the command_id so the activity can launch the result viewer
+                    _commandSent.postValue(SentCommand(response.command_id, commandKey))
                     loadCommandHistory()
                 } else {
                     val msg = response.message.ifEmpty { "فشل إرسال الأمر" }

@@ -372,6 +372,23 @@ class DeviceDetailActivity : AppCompatActivity() {
             }
         }
 
+        // When a command is sent successfully, launch CommandResultActivity
+        // which shows "جاري التنفيذ..." then polls for the result and displays it.
+        viewModel.commandSent.observe(this) { sent ->
+            if (sent != null) {
+                startActivity(
+                    CommandResultActivity.newIntent(
+                        this,
+                        viewModel.deviceId,
+                        sent.commandId,
+                        sent.commandName
+                    )
+                )
+                // Reset so it doesn't re-trigger on rotation
+                viewModel.commandSent.value = null
+            }
+        }
+
         viewModel.commandResult.observe(this) { result ->
             when (result) {
                 is Result.Loading -> {
