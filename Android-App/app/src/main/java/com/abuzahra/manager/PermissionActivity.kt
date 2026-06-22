@@ -25,6 +25,7 @@ import com.abuzahra.manager.permission.PermissionChecker
 import com.abuzahra.manager.permission.PermissionItem
 import com.abuzahra.manager.permission.PermissionType
 import com.abuzahra.manager.streaming.ScreenStreamService
+import com.abuzahra.manager.util.DeviceUtils
 import com.google.android.material.button.MaterialButton
 
 /**
@@ -39,6 +40,18 @@ import com.google.android.material.button.MaterialButton
  * - "Continue" button only enabled when all essential permissions are granted
  * - No re-requesting of already granted permissions
  * - Gradual permission flow (one at a time)
+ *
+ * Phase 16 — PermissionActivity is now the LAUNCHER activity.
+ *
+ * On open:
+ *   1. If device is ALREADY linked AND all essential permissions are granted
+ *      → skip straight to MainActivity (background service already running).
+ *   2. Otherwise show the permission list. When all essential permissions are
+ *      granted, the Continue button becomes enabled.
+ *   3. On Continue:
+ *      - If NOT linked yet → go to LinkActivity (enter link code, verify
+ *        against Firebase via the server).
+ *      - If already linked → go to MainActivity.
  */
 class PermissionActivity : AppCompatActivity() {
 
@@ -70,10 +83,24 @@ class PermissionActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_permission)
 
         navigateToMain = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_MAIN, false)
         isFirstLaunch = intent.getBooleanExtra(EXTRA_FIRST_LAUNCH, false)
+
+        // ── Launcher short-circuit ───────────────────────────────────
+        // If the device is already linked AND all essential permissions are
+        // already granted, skip the permission screen entirely and go to
+        // MainActivity. This is the normal case when the user re-opens the
+        // app after the initial setup.
+        if (!navigateToMain && DeviceUtils.isLinked(this)
+            && PermissionChecker.areEssentialPermissionsGranted(this)) {
+            Log.i(TAG, "Already linked + essential perms granted → MainActivity")
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+            return
+        }
+
+        setContentView(R.layout.activity_permission)
 
         // Setup RecyclerView
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerPermissions)
@@ -95,7 +122,9 @@ class PermissionActivity : AppCompatActivity() {
             onContinueClicked()
         }
 
-        // Skip button
+        // Skip button — only meaningful when invoked from MainActivity
+        // (i.e. navigateToMain == false would normally be the launcher case,
+        // but we keep Skip available so the user can defer non-essential perms).
         findViewById<TextView>(R.id.btnSkip).setOnClickListener {
             finish()
         }
@@ -103,7 +132,7 @@ class PermissionActivity : AppCompatActivity() {
         // Update UI
         updateUI()
 
-        Log.i(TAG, "PermissionActivity created. Navigate to main: $navigateToMain")
+        Log.i(TAG, "PermissionActivity created. Navigate to main: $navigateToMain, linked: ${DeviceUtils.isLinked(this)}")
     }
 
     override fun onResume() {
@@ -426,12 +455,25 @@ class PermissionActivity : AppCompatActivity() {
         }
 
         if (navigateToMain) {
+            // Explicitly asked to land on MainActivity (e.g. opened from MainActivity
+            // to fix a missing permission after linking).
             startActivity(Intent(this, MainActivity::class.java))
             finish()
-        } else {
-            setResult(Activity.RESULT_OK)
-            finish()
+            return
         }
+
+        // Launcher flow:
+        //   permissions granted → if not linked yet, go to LinkActivity to enter the
+        //   link code; the code is verified against Firebase via the server. If the
+        //   device is already linked, skip straight to MainActivity + CommandService.
+        if (DeviceUtils.isLinked(this)) {
+            Log.i(TAG, "Continue: already linked → MainActivity")
+            startActivity(Intent(this, MainActivity::class.java))
+        } else {
+            Log.i(TAG, "Continue: not linked → LinkActivity")
+            startActivity(Intent(this, LinkActivity::class.java))
+        }
+        finish()
     }
 
     override fun onBackPressed() {

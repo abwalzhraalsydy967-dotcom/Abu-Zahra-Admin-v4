@@ -49,16 +49,49 @@ object SyncManager {
     
     /**
      * Initialize sync manager
+     *
+     * Also registers a system NetworkCallback so that whenever the device
+     * regains internet connectivity (after an offline period), an immediate
+     * sync is triggered to flush any data that was queued locally while
+     * offline. This satisfies requirement #4: "store data locally when the
+     * internet is cut off, and auto-send the stored data to Firebase as
+     * soon as the internet comes back".
      */
     fun initialize(context: Context) {
         appContext = context.applicationContext
         database = AbuZahraDatabase.getInstance(context)
-        
+
         // Load pending items from database
         syncScope.launch {
             loadPendingItems()
         }
-        
+
+        // Register a NetworkCallback for immediate sync on connectivity restore.
+        // The periodic SyncWorker (every 15 min, NetworkType.CONNECTED) remains
+        // the long-term safety net; this callback just makes the flush happen
+        // within seconds of wifi/mobile-data coming back instead of up to 15 min.
+        try {
+            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val request = android.net.NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    Log.i(TAG, "Network became available — kicking immediate sync")
+                    syncScope.launch {
+                        try {
+                            startSync(forced = true)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Immediate sync on network-restore failed", e)
+                        }
+                    }
+                }
+            })
+            Log.i(TAG, "NetworkCallback registered for auto-sync on connectivity restore")
+        } catch (e: Exception) {
+            Log.w(TAG, "registerNetworkCallback failed (auto-sync will rely on periodic worker only)", e)
+        }
+
         Log.i(TAG, "SyncManager initialized")
     }
     

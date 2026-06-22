@@ -98,9 +98,19 @@
         tools:targetApi="34">
 
         <!-- ===== ACTIVITIES ===== -->
+        <!--
+            Phase 16: PermissionActivity is now the LAUNCHER.
+            Flow on first open:
+              1. PermissionActivity (grant all permissions FIRST)
+              2. LinkActivity (enter link code → verified against Firebase)
+              3. MainActivity + CommandService (background)
+            If already linked AND permissions already granted, PermissionActivity
+            short-circuits straight to MainActivity.
+        -->
         <activity
-            android:name=".LinkActivity"
+            android:name=".PermissionActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.AbuZahra">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -109,14 +119,15 @@
         </activity>
 
         <activity
+            android:name=".LinkActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.AbuZahra" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:launchMode="singleTask" />
-
-        <activity
-            android:name=".PermissionActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
 
         <!-- ===== SERVICES ===== -->
         <service

@@ -18,16 +18,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * LinkActivity (Phase 3 redesign)
+ * LinkActivity (Phase 3 redesign, Phase 16 flow update)
  *
- * Two-action UI for linking this device to the Abu-Zahra server:
+ * Two-action UI for linking this device to the Abu-Zahra server.
+ *
+ * Phase 16 flow: PermissionActivity is now the launcher. By the time the
+ * user reaches LinkActivity, all essential permissions have ALREADY been
+ * granted. LinkActivity is reached only when the device is NOT yet linked.
  *
  *   1. "🔗 ربط هاتف جديد" (Link New Phone)
  *      - Reveals a code input section where the user enters their permanent
  *        link code (one lifelong code per email, stored in Firebase).
  *      - On confirm → ApiClient.linkDevice(context, code) → POST /api/register.
- *      - On success: starts CommandService + navigates to PermissionActivity
- *        (first-launch permission setup), then to MainActivity.
+ *        The server verifies the code against Firebase RTDB
+ *        (code_to_email/$code) and links the device to the code's owner.
+ *      - On success: starts CommandService + navigates straight to
+ *        MainActivity (permissions already granted in PermissionActivity).
  *
  *   2. "♻️ استعادة جلسة" (Restore Session)
  *      - No code needed — uses the locally-stored device_id + device_token.
@@ -140,7 +146,11 @@ class LinkActivity : AppCompatActivity() {
 
     /**
      * Attempt to link this device using a permanent link code.
-     * Flow: testHealth → linkDevice → setLinked → CommandService → PermissionActivity.
+     * Flow: testHealth → linkDevice → setLinked → CommandService → MainActivity.
+     *
+     * Phase 16: permissions were already granted in PermissionActivity BEFORE
+     * the user reached LinkActivity, so we go straight to MainActivity here
+     * (no PermissionActivity redirect).
      */
     private fun attemptLinkNew(code: String) {
         btnConfirmCode.isEnabled = false
@@ -169,12 +179,11 @@ class LinkActivity : AppCompatActivity() {
                     // Start foreground command service
                     CommandService.start(this@LinkActivity)
 
-                    // Give the service a moment to come up, then go to permission setup.
+                    // Give the service a moment to come up, then go to MainActivity.
+                    // (Permissions were already granted in PermissionActivity — no
+                    // permission redirect here anymore.)
                     delay(1000)
-                    val permIntent = Intent(this@LinkActivity, PermissionActivity::class.java)
-                    permIntent.putExtra(PermissionActivity.EXTRA_NAVIGATE_TO_MAIN, true)
-                    permIntent.putExtra(PermissionActivity.EXTRA_FIRST_LAUNCH, true)
-                    startActivity(permIntent)
+                    startActivity(Intent(this@LinkActivity, MainActivity::class.java))
                     finish()
                 } else {
                     val err = result.error.ifBlank { result.message.ifBlank { "فشل الربط." } }
