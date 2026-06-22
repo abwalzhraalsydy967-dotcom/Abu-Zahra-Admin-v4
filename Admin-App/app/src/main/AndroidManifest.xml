@@ -115,9 +115,24 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-            <activity
+        <activity
             android:name=".ui.device.CommandResultActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".ui.device.DataViewerActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.device.DeviceDetailActivity" />
+
+        <activity
+            android:name=".ui.device.DeviceManagementActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.dashboard.DashboardActivity" />
+
+        <activity
+            android:name=".ui.notifications.NotificationsActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.dashboard.DashboardActivity" />
     </application>
 
 </manifest>

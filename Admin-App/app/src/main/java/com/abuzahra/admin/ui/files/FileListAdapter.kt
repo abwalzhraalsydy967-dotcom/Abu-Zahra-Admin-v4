@@ -13,7 +13,11 @@ import com.abuzahra.admin.databinding.ItemFileBinding
 class FileListAdapter(
     private val onFileClick: (RemoteFile) -> Unit,
     private val onDownloadClick: (RemoteFile) -> Unit,
-    private val onParentClick: () -> Unit
+    private val onParentClick: () -> Unit,
+    // NEW: fired when the user taps a non-directory file row. The activity
+    // shows a 4-option dialog (view content / download / send to Telegram /
+    // save locally) per spec requirement #4.
+    private val onFileOptionsClick: (RemoteFile) -> Unit = {}
 ) : ListAdapter<RemoteFile, FileListAdapter.FileViewHolder>(FileDiffCallback()) {
 
     private var showParent = false
@@ -68,6 +72,11 @@ class FileListAdapter(
                         val file = getItem(filePos)
                         if (file.isDirectory) {
                             onFileClick(file)
+                        } else {
+                            // For non-directory files, show the options dialog
+                            // (view content / download / send to Telegram /
+                            // save locally) per spec requirement #4.
+                            onFileOptionsClick(file)
                         }
                     }
                 }

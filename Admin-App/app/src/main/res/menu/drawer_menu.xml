@@ -27,9 +27,17 @@
             android:icon="@drawable/ic_download"
             android:title="الملفات" />
         <item
+            android:id="@+id/nav_notifications"
+            android:icon="@drawable/ic_notifications"
+            android:title="الإشعارات" />
+        <item
             android:id="@+id/nav_events"
             android:icon="@drawable/ic_logs"
             android:title="الأحداث" />
+        <item
+            android:id="@+id/nav_management"
+            android:icon="@drawable/ic_management"
+            android:title="إدارة الجهاز" />
         <item
             android:id="@+id/nav_users"
             android:icon="@drawable/ic_devices"

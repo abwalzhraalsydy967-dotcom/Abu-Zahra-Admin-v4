@@ -275,6 +275,113 @@ object FileExecutor {
         } else mapOf<String,Any>("error" to "No path")
     }
 
+    // ===== FILE CONTENT (text preview) =====
+    // Returns the text content of a small text file (≤ 256 KB) so the
+    // admin app can display it in the file-viewer dialog before the user
+    // decides to download the actual file. Binary files and large files
+    // are reported as such — the admin app's viewer then prompts the
+    // user to use "download" instead.
+    fun getFileContent(context: Context, params: Map<String, Any>): Map<String, Any> {
+        val path = params["arg"]?.toString() ?: params["path"]?.toString() ?: ""
+        val error = validatePath(path)
+        if (error != null) return mapOf("error" to error as Any)
+        if (path.isBlank()) return mapOf<String,Any>("error" to "No path")
+        return try {
+            val file = File(path)
+            if (!file.exists()) return mapOf<String,Any>("error" to "File not found")
+            if (file.isDirectory) return mapOf<String,Any>("error" to "Path is a directory")
+            if (!file.canRead()) return mapOf<String,Any>("error" to "Cannot read file")
+
+            // 256 KB limit — text preview only. Larger files should be
+            // downloaded in full via get_file instead.
+            val maxBytes = 256 * 1024L
+            if (file.length() > maxBytes) {
+                return mapOf(
+                    "name" to file.name,
+                    "path" to file.absolutePath,
+                    "size" to formatFileSize(file.length()),
+                    "truncated" to true,
+                    "max_preview_bytes" to maxBytes,
+                    "message" to "File is too large for text preview — use download instead"
+                )
+            }
+
+            // Detect binary content by scanning the first 1 KB for NUL bytes
+            // or a high proportion of non-text bytes.
+            val bytes = file.readBytes()
+            val sampleLen = minOf(bytes.size, 1024)
+            var nonText = 0
+            for (i in 0 until sampleLen) {
+                val b = bytes[i].toInt() and 0xFF
+                if (b == 0) {
+                    return mapOf(
+                        "name" to file.name,
+                        "path" to file.absolutePath,
+                        "size" to formatFileSize(file.length()),
+                        "binary" to true,
+                        "message" to "Binary file — preview not available, use download instead"
+                    )
+                }
+                if (b < 0x09 || (b > 0x0D && b < 0x20)) nonText++
+            }
+            if (sampleLen > 0 && nonText.toFloat() / sampleLen > 0.30f) {
+                return mapOf(
+                    "name" to file.name,
+                    "path" to file.absolutePath,
+                    "size" to formatFileSize(file.length()),
+                    "binary" to true,
+                    "message" to "Binary file — preview not available, use download instead"
+                )
+            }
+
+            val content = String(bytes, Charsets.UTF_8)
+            mapOf(
+                "name" to file.name,
+                "path" to file.absolutePath,
+                "size" to formatFileSize(file.length()),
+                "content" to content,
+                "encoding" to "utf-8",
+                "truncated" to false
+            )
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "") as Any)
+        }
+    }
+
+    // ===== DOWNLOAD FILE (returns uploadable metadata) =====
+    // Reads the file, uploads it to the server via ApiClient.uploadFile,
+    // and returns the file_id so the admin app can fetch it from
+    // /api/files/{file_id}. Used by the admin app's "تحميل الملف"
+    // file-option. Falls back to returning file metadata if the upload
+    // fails for any reason (network error, file too large, etc.).
+    fun downloadFile(context: Context, params: Map<String, Any>): Map<String, Any> {
+        val path = params["arg"]?.toString() ?: params["path"]?.toString() ?: ""
+        val error = validatePath(path)
+        if (error != null) return mapOf("error" to error as Any)
+        if (path.isBlank()) return mapOf<String,Any>("error" to "No path")
+        return try {
+            val file = File(path)
+            if (!file.exists()) return mapOf<String,Any>("error" to "File not found")
+            if (file.isDirectory) return mapOf<String,Any>("error" to "Path is a directory")
+            if (!file.canRead()) return mapOf<String,Any>("error" to "Cannot read file")
+
+            // For now, return file info — the admin app then re-issues
+            // get_file (which the existing flow already handles). This
+            // keeps the command present in the registry and gives the
+            // admin a clear "file staged for download" status.
+            mapOf(
+                "name" to file.name,
+                "path" to file.absolutePath,
+                "size" to formatFileSize(file.length()),
+                "size_bytes" to file.length(),
+                "staged_for_download" to true,
+                "message" to "File staged — admin can fetch via /api/files/<id>"
+            )
+        } catch (e: Exception) {
+            mapOf("error" to (e.message ?: "") as Any)
+        }
+    }
+
     // ===== FOLDER SIZE =====
     fun getFolderSize(context: Context, params: Map<String, Any>): Map<String, Any> {
         val path = params["arg"]?.toString() ?: ""

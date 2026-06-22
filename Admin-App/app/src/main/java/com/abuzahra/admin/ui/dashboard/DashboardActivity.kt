@@ -19,9 +19,11 @@ import com.abuzahra.admin.data.api.Result
 import com.abuzahra.admin.data.model.Device
 import com.abuzahra.admin.databinding.ActivityDashboardBinding
 import com.abuzahra.admin.ui.device.DeviceDetailActivity
+import com.abuzahra.admin.ui.device.DeviceManagementActivity
 import com.abuzahra.admin.ui.files.FilesActivity
 import com.abuzahra.admin.ui.logs.LogsActivity
 import com.abuzahra.admin.ui.login.LoginActivity
+import com.abuzahra.admin.ui.notifications.NotificationsActivity
 import com.abuzahra.admin.ui.settings.SettingsActivity
 import com.abuzahra.admin.ui.streaming.StreamingActivity
 import com.abuzahra.admin.ui.users.UsersActivity
@@ -162,9 +164,25 @@ class DashboardActivity : AppCompatActivity(), NavigationView.OnNavigationItemSe
                 binding.drawerLayout.closeDrawer(binding.navView)
                 startActivity(Intent(this, FilesActivity::class.java))
             }
+            R.id.nav_notifications -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                startActivity(Intent(this, NotificationsActivity::class.java))
+            }
             R.id.nav_events -> {
                 binding.drawerLayout.closeDrawer(binding.navView)
                 startActivity(Intent(this, LogsActivity::class.java))
+            }
+            R.id.nav_management -> {
+                binding.drawerLayout.closeDrawer(binding.navView)
+                val devices = (viewModel.devices.value as? Result.Success)?.data
+                if (devices.isNullOrEmpty()) {
+                    Toast.makeText(this, "لا توجد أجهزة — اربط جهازاً أولاً", Toast.LENGTH_SHORT).show()
+                } else if (devices.size == 1) {
+                    startActivity(DeviceManagementActivity.newIntent(this, devices[0]))
+                } else {
+                    // Multiple devices — let the user pick one.
+                    showDevicePickerForManagement(devices)
+                }
             }
             R.id.nav_users -> {
                 binding.drawerLayout.closeDrawer(binding.navView)
@@ -227,6 +245,24 @@ class DashboardActivity : AppCompatActivity(), NavigationView.OnNavigationItemSe
 
     private fun navigateToDeviceDetail(device: Device) {
         startActivity(DeviceDetailActivity.newIntent(this, device))
+    }
+
+    /**
+     * Shows a device-picker dialog when the user picks "إدارة الجهاز"
+     * from the drawer and has more than one device. Selecting a device
+     * opens DeviceManagementActivity for that device.
+     */
+    private fun showDevicePickerForManagement(devices: List<Device>) {
+        val names = devices.map {
+            "${it.name.ifEmpty { it.model }} (${if (it.isOnline) "متصل" else "غير متصل"})"
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("اختر جهازاً للإدارة")
+            .setItems(names) { _, which ->
+                startActivity(DeviceManagementActivity.newIntent(this, devices[which]))
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showLogoutDialog() {

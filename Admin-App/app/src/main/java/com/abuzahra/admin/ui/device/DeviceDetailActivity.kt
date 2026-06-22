@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.abuzahra.admin.R
@@ -28,12 +29,16 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class DeviceDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDeviceDetailBinding
+    private val preferences: Preferences by lazy { Preferences.getInstance(this) }
     private val viewModel: DeviceDetailViewModel by viewModels {
-        DeviceDetailViewModelFactory(Preferences.getInstance(this))
+        DeviceDetailViewModelFactory(preferences)
     }
 
     private val commandAdapter: CommandAdapter by lazy {
@@ -272,16 +277,143 @@ class DeviceDetailActivity : AppCompatActivity() {
     private fun handleCommandClick(commandDef: CommandDefinitions.CommandDef) {
         val paramDef = COMMAND_PARAMS[commandDef.key]
         if (paramDef != null) {
+            // Parameterised command (e.g., send_sms, install_app, get_file)
+            // — always sends to device immediately, no choice dialog.
             showParamDialog(commandDef, paramDef)
-        } else {
-            MaterialAlertDialogBuilder(this)
-                .setTitle("إرسال أمر")
-                .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟\n\nمفتاح الأمر: ${commandDef.key}")
-                .setPositiveButton(R.string.confirm) { _, _ ->
-                    viewModel.sendCommand(commandDef.key)
+            return
+        }
+
+        // For data-fetch commands (sms, contacts, calls, notifications, ...)
+        // show a 3-option choice dialog:
+        //   📋 عرض البيانات الحالية  → open DataViewerActivity (Firebase read)
+        //   🔄 جلب بيانات جديدة     → send command to device (existing flow)
+        //   💾 حفظ البيانات محلياً  → fetch Firebase data and save to app storage
+        if (CommandDefinitions.isDataCommand(commandDef.key)) {
+            showDataCommandChoiceDialog(commandDef)
+            return
+        }
+
+        // Non-data, non-parameterised command — confirm + send.
+        MaterialAlertDialogBuilder(this)
+            .setTitle("إرسال أمر")
+            .setMessage("هل تريد إرسال أمر: ${commandDef.name}؟\n\nمفتاح الأمر: ${commandDef.key}")
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                viewModel.sendCommand(commandDef.key)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Three-option choice dialog for data-fetch commands. The user picks
+     * whether to view data already stored in Firebase (no device round-trip),
+     * fetch fresh data from the device, or save the Firebase snapshot locally.
+     */
+    private fun showDataCommandChoiceDialog(commandDef: CommandDefinitions.CommandDef) {
+        val options = arrayOf(
+            "📋 عرض البيانات الحالية",
+            "🔄 جلب بيانات جديدة",
+            "💾 حفظ البيانات محلياً"
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("أمر: ${commandDef.name}")
+            .setMessage("اختر طريقة التعامل مع بيانات «${commandDef.name}»:")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> openDataViewer(commandDef)
+                    1 -> {
+                        // Confirm before sending the command to the device.
+                        MaterialAlertDialogBuilder(this)
+                            .setTitle("جلب بيانات جديدة")
+                            .setMessage("سيتم إرسال أمر «${commandDef.name}» إلى الجهاز لجلب بيانات جديدة. متابعة؟")
+                            .setPositiveButton(R.string.confirm) { _, _ ->
+                                viewModel.sendCommand(commandDef.key)
+                            }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    }
+                    2 -> saveDataLocally(commandDef)
                 }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Opens the data viewer which fetches the data currently stored in
+     * Firebase and pretty-prints it.
+     */
+    private fun openDataViewer(commandDef: CommandDefinitions.CommandDef) {
+        val device = viewModel.device.value ?: return
+        startActivityForResult(
+            DataViewerActivity.newIntent(this, device, commandDef.key),
+            REQUEST_DATA_VIEWER
+        )
+    }
+
+    /**
+     * "Save locally" choice: fetches the current Firebase snapshot via
+     * GET /api/web/data/{device_id}?type=... and writes it to local app
+     * storage via [com.abuzahra.admin.util.LocalDataStore]. No data is
+     * sent to the device.
+     */
+    private fun saveDataLocally(commandDef: CommandDefinitions.CommandDef) {
+        val device = viewModel.device.value ?: return
+        val dataType = CommandDefinitions.dataTypeForCommand(commandDef.key) ?: commandDef.key
+
+        binding.swipeRefresh.isRefreshing = true
+        lifecycleScope.launch {
+            try {
+                val api = preferences.getApiService()
+                val response = withContext(Dispatchers.IO) {
+                    api.getStoredData(device.id, dataType)
+                }
+                binding.swipeRefresh.isRefreshing = false
+
+                if (!response.ok || response.empty || response.data == null) {
+                    Snackbar.make(
+                        binding.coordinator,
+                        "لا توجد بيانات حالية في Firebase. استخدم «جلب بيانات جديدة» أولاً.",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+
+                val gson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
+                val json = gson.toJson(response.data)
+                val path = com.abuzahra.admin.util.LocalDataStore.save(
+                    this@DeviceDetailActivity, device.id, dataType, json
+                )
+                if (path != null) {
+                    Snackbar.make(
+                        binding.coordinator,
+                        "💾 تم حفظ البيانات محلياً (${commandDef.name})",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                } else {
+                    Snackbar.make(binding.coordinator, "فشل الحفظ المحلي", Snackbar.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                binding.swipeRefresh.isRefreshing = false
+                Snackbar.make(
+                    binding.coordinator,
+                    "خطأ: ${e.message ?: e.javaClass.simpleName}",
+                    Snackbar.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DATA_VIEWER && resultCode == RESULT_OK) {
+            // The user picked "جلب بيانات جديدة" from inside the viewer
+            // (which was opened via the choice dialog). Send the command.
+            val requestFetch = data?.getBooleanExtra(DataViewerActivity.EXTRA_REQUEST_FETCH_NEW, false) ?: false
+            val cmdKey = data?.getStringExtra(DataViewerActivity.EXTRA_COMMAND_KEY)
+            if (requestFetch && !cmdKey.isNullOrEmpty()) {
+                viewModel.sendCommand(cmdKey)
+            }
         }
     }
 
@@ -432,6 +564,11 @@ class DeviceDetailActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_DEVICE = "extra_device"
+
+        // Request code used when launching DataViewerActivity via
+        // startActivityForResult — used to detect the "جلب بيانات جديدة"
+        // fallback selection inside the viewer.
+        private const val REQUEST_DATA_VIEWER = 7001
 
         fun newIntent(context: Context, device: Device): Intent {
             return Intent(context, DeviceDetailActivity::class.java).apply {

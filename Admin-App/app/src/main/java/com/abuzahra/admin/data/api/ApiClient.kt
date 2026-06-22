@@ -85,6 +85,23 @@ private interface RetrofitApiService {
     @GET
     suspend fun downloadFile(@Url url: String): ResponseBody
 
+    // ── Stored Data (Firebase RTDB reads) ────────────────────────
+    @GET("api/web/data/{deviceId}")
+    suspend fun getStoredData(
+        @Path("deviceId") deviceId: String,
+        @Query("type") type: String
+    ): StoredDataResponse
+
+    @GET("api/web/notifications/{deviceId}")
+    suspend fun getDeviceNotifications(@Path("deviceId") deviceId: String): NotificationsListResponse
+
+    @DELETE("api/web/notifications/{deviceId}")
+    suspend fun clearDeviceNotifications(@Path("deviceId") deviceId: String): DeleteResponse
+
+    // ── Device Management ────────────────────────────────────────
+    @DELETE("api/web/unlink/{deviceId}")
+    suspend fun unlinkDevice(@Path("deviceId") deviceId: String): DeleteResponse
+
     @GET("api/stream/frame/{deviceId}")
     suspend fun getStreamFrame(
         @Path("deviceId") deviceId: String,
@@ -214,6 +231,26 @@ private class ApiServiceImpl(private val retrofit: RetrofitApiService) : ApiServ
 
     override suspend fun downloadFile(url: String): ResponseBody {
         return retrofit.downloadFile(url)
+    }
+
+    // ── Stored Data (Firebase RTDB reads) ────────────────────────
+    override suspend fun getStoredData(deviceId: String, type: String): StoredDataResponse {
+        return retrofit.getStoredData(deviceId, type)
+    }
+
+    override suspend fun getDeviceNotifications(deviceId: String): NotificationsListResponse {
+        return retrofit.getDeviceNotifications(deviceId)
+    }
+
+    override suspend fun clearDeviceNotifications(deviceId: String): Boolean {
+        val response = retrofit.clearDeviceNotifications(deviceId)
+        return response.ok
+    }
+
+    // ── Device Management ────────────────────────────────────────
+    override suspend fun unlinkDevice(deviceId: String): Boolean {
+        val response = retrofit.unlinkDevice(deviceId)
+        return response.ok
     }
 
     override suspend fun getStreamFrame(deviceId: String, type: String): StreamFrameResponse {

