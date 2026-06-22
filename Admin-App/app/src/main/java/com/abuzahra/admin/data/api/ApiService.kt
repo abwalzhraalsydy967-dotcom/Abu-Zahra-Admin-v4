@@ -1,12 +1,6 @@
 
 
-data class TgLinkTokenResponse(
-    val ok: Boolean = true,
-    val token: String = "",
-    val bot_username: String = "",
-    val deep_link_url: String = "",
-    val expires_in: Int = 600
-)package com.abuzahra.admin.data.api
+package com.abuzahra.admin.data.api
 
 import com.abuzahra.admin.data.model.Command
 import com.abuzahra.admin.data.model.Device
@@ -160,4 +154,12 @@ data class UserResponse(
 data class DeleteResponse(
     val ok: Boolean = true,
     val message: String = ""
+)
+
+data class TgLinkTokenResponse(
+    val ok: Boolean = true,
+    val token: String = "",
+    val bot_username: String = "",
+    val deep_link_url: String = "",
+    val expires_in: Int = 600
 )
