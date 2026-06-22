@@ -116,7 +116,7 @@
         </provider>
 
             <activity
-            android:name=.ui.device.CommandResultActivity
+            android:name=".ui.device.CommandResultActivity"
             android:exported=false />
     </application>
 
