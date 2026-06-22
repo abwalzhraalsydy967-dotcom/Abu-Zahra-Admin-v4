@@ -75,4 +75,7 @@
     <color name="google_green">#34A853</color>
     <color name="google_btn_bg">#0D1117</color>
     <color name="google_btn_stroke">#FFFFFF30</color>
+    <color name="emerald">#10B981</color>
+    <color name="red">#EF4444</color>
+    <color name="white">#FFFFFF</color>
 </resources>
