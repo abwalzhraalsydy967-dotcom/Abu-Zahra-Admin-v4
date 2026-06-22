@@ -117,7 +117,7 @@
 
             <activity
             android:name=".ui.device.CommandResultActivity"
-            android:exported=false />
+            android:exported="false" />
     </application>
 
 </manifest>
